@@ -208,6 +208,16 @@ input[type="checkbox"] {
   font-size: .85rem;
 }
 
+/* The banner is red by default because it normally carries a failure. A waiting
+   update is good news, so it gets the accent instead — a red bar that means
+   "nothing is wrong" trains you to ignore the red bar that means something is. */
+.banner--info {
+  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+}
+.banner--info .btn { margin-left: auto; }
+
 .empty { padding: 3rem 1.5rem; text-align: center; color: var(--ink-soft); }
 .empty h2 { margin: 0 0 .4rem; }
 .empty p { margin: 0 0 1.2rem; }

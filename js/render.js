@@ -378,5 +378,27 @@ export function setSaved(message, tone) {
 export function showBanner(message) {
   const el = $('#banner');
   el.hidden = !message;
+  el.classList.remove('banner--info');
   el.textContent = message || '';
+}
+
+/**
+ * Offer a reload once a new build has been installed by the service worker.
+ *
+ * Deliberately a prompt rather than an automatic reload: this app is read at a table
+ * mid-session, and yanking the page out from under someone who is typing into Notes to
+ * apply a cosmetic change is a worse failure than showing a slightly old sheet.
+ */
+export function showUpdatePrompt() {
+  const el = $('#banner');
+  el.hidden = false;
+  el.classList.add('banner--info');
+  el.textContent = 'A new version is ready.';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn--small';
+  button.dataset.action = 'reload-app';
+  button.textContent = 'Reload';
+  el.append(button);
 }

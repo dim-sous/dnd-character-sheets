@@ -11,7 +11,7 @@ import * as state from './state.js';
 import { exportToFile, readImportFile } from './storage.js';
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips,
-  invalidateRoster, setSaved, showBanner,
+  invalidateRoster, setSaved, showBanner, showUpdatePrompt,
 } from './render.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -141,6 +141,7 @@ const ACTIONS = {
     state.setSlotsUsed(level, pipTarget(char.spellcasting.slots[level].used, Number(el.dataset.index)));
   },
 
+  'reload-app': () => window.location.reload(),
   'long-rest': () => state.longRest(),
   'add-row': (el) => state.addRow(el.dataset.list),
   'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),
@@ -261,7 +262,28 @@ document.addEventListener('visibilitychange', () => {
 // inert over a plain http:// LAN address and active on HTTPS. One build, both paths.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js').catch(() => {
+    navigator.serviceWorker.register('./service-worker.js').then((registration) => {
+      // An installed PWA is never really "opened", so it can sit on a stale build for
+      // days: the browser only re-checks the worker script when it happens to. Coming
+      // back to the app is the natural moment to look, and it costs one request.
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') registration.update();
+      });
+
+      registration.addEventListener('updatefound', () => {
+        const incoming = registration.installing;
+        if (!incoming) return;
+        incoming.addEventListener('statechange', () => {
+          // A controller only exists if a previous worker was already running, which
+          // is what distinguishes "there is a newer build" from "this is a first
+          // visit and the very first worker just installed". Announcing the latter
+          // would tell a new player to reload the page they just opened.
+          if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdatePrompt();
+          }
+        });
+      });
+    }).catch(() => {
       /* offline support is a bonus; the app works without it */
     });
   });
