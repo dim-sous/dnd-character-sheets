@@ -1,0 +1,5 @@
+.DS_Store
+Thumbs.db
+.idea/
+# character backups exported from the app — user data, not code
+/backups/
