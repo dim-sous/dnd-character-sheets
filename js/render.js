@@ -14,7 +14,7 @@
  */
 
 import {
-  ABILITIES, SKILLS, CONDITIONS, SPELL_LEVELS, MAX_EXHAUSTION,
+  ABILITIES, SKILLS, CONDITIONS, SPELL_LEVELS, MAX_EXHAUSTION, HIT_DIE_SIZES,
 } from './constants.js';
 import * as rules from './rules.js';
 import { getByPath, getListPath } from './state.js';
@@ -150,6 +150,16 @@ function renderPipRow(host, count, action, extra = {}) {
   }
 }
 
+/** Suggestions only — the field stays free text, since the app rules on nothing. */
+function renderHitDieOptions() {
+  const host = $('#hit-dice');
+  host.replaceChildren(...HIT_DIE_SIZES.map((size) => {
+    const option = document.createElement('option');
+    option.value = size;
+    return option;
+  }));
+}
+
 function renderStatusPips() {
   renderPipRow($('#death-successes'), 3, 'death-save', { kind: 'successes' });
   renderPipRow($('#death-failures'), 3, 'death-save', { kind: 'failures' });
@@ -168,7 +178,10 @@ function renderSlots(char) {
     const total = $('.slot__total-input', node);
     total.id = `f-slot-total-${level}`;
     total.dataset.bind = `spellcasting.slots.${level}.total`;
-    total.dataset.structural = 'true'; // changing the total changes how many pips exist
+    // Changing the total changes how many pips exist, but rebuilding the whole sheet
+    // would destroy this very input mid-keystroke. data-slots asks for a targeted
+    // pip rebuild instead — see renderSlotPips.
+    total.dataset.slots = 'true';
     total.setAttribute('aria-label', `Level ${level} total spell slots`);
     $('.slot__total', node).setAttribute('for', total.id);
 
@@ -177,6 +190,19 @@ function renderSlots(char) {
     });
 
     host.append(node);
+  }
+}
+
+/**
+ * Rebuild just the slot pips, leaving the total inputs (and the caret in one of them)
+ * untouched. Cheap enough to run on every keystroke in a total field.
+ */
+export function renderSlotPips(char) {
+  for (const row of $$('#slots .slot')) {
+    const level = row.dataset.level;
+    renderPipRow($('.pips--slot', row), char.spellcasting.slots[level].total, 'slot-pip', {
+      level,
+    });
   }
 }
 
@@ -232,12 +258,16 @@ export function renderSheet(char) {
   if (!char) {
     $('#topbar-name').textContent = '—';
     $('#topbar-sub').textContent = '';
+    // renderDerived never runs without a character, so clear this here or it
+    // survives the deletion of the last (bloodied) character.
+    document.body.classList.remove('is-bloodied');
     return;
   }
 
   renderAbilities(char);
   renderSkills(char);
   renderConditions();
+  renderHitDieOptions();
   renderStatusPips();
   renderSlots(char);
   for (const listName of Object.keys(ROW_TEMPLATE_IDS)) renderRows(char, listName);

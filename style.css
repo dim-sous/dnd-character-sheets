@@ -69,6 +69,10 @@ button, input, select, textarea {
   color: inherit;
   /* 16px minimum: anything smaller makes iOS Safari zoom on focus and never zoom back. */
   font-size: max(16px, 1rem);
+  /* An input's min-content width comes from its default `size` (~20 characters), and
+     a grid/flex track will not shrink below that. Without this the whole page grows
+     wider than a 390px phone and everything on the right is cut off. */
+  min-width: 0;
 }
 
 button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
@@ -147,7 +151,7 @@ input[type="checkbox"] {
 
 .hint { margin: .5rem 0 0; font-size: .78rem; color: var(--ink-faint); line-height: 1.4; }
 
-.field { margin: 0; display: flex; flex-direction: column; gap: .25rem; }
+.field { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: .25rem; }
 .field > label {
   font-size: .72rem; font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
@@ -290,6 +294,9 @@ input[type="checkbox"] {
 
 .cards { display: flex; flex-direction: column; gap: .7rem; padding: .7rem; }
 
+/* On a phone the column wrappers disappear entirely and the cards fall into DOM order. */
+.col { display: contents; }
+
 .card {
   padding: .85rem;
   background: var(--card);
@@ -320,8 +327,9 @@ input[type="checkbox"] {
 }
 .list__head .card__title { margin: 0; border: 0; padding: 0; }
 
-.field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; }
-.field--narrow { grid-column: span 1; }
+/* auto-fit everywhere rather than a fixed column count: these cards sit in columns of
+   very different widths depending on breakpoint, and a fixed count clips. */
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: .6rem; }
 
 .inline-fields { display: flex; flex-wrap: wrap; gap: .6rem; }
 .inline-fields > .field { flex: 1 1 7rem; }
@@ -334,7 +342,9 @@ input[type="checkbox"] {
 
 /* ----------------------------------------------------------- abilities */
 
-.abilities { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+/* Six abilities wrap to fit whatever column the card lands in. A fixed
+   repeat(6, 1fr) clipped WIS and CHA straight out of the card at laptop width. */
+.abilities { display: grid; grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr)); gap: .5rem; }
 
 .ability {
   display: flex; flex-direction: column; align-items: center; gap: .25rem;
@@ -351,7 +361,7 @@ input[type="checkbox"] {
   font-variant-numeric: tabular-nums; line-height: 1;
 }
 .ability__score {
-  width: 3.4rem; min-height: 36px; padding: .15rem;
+  width: 100%; max-width: 3.4rem; min-height: 36px; padding: .15rem;
   font-size: .9rem;
 }
 .ability__save {
@@ -565,14 +575,16 @@ input[type="checkbox"] {
 .hpbar__side .field { flex: 0 1 4.5rem; }
 .hpbar__side .field > label { text-align: center; }
 .hpbar__side input { min-height: 40px; }
-.hpbar__side .btn { flex: 1 1 6rem; min-height: 40px; }
+.hpbar__side .btn { flex: 1 1 6rem; max-width: 10rem; min-height: 40px; }
 
 /* =============================================================== tablet */
 
 @media (min-width: 640px) {
-  .field-grid { grid-template-columns: repeat(3, 1fr); }
+  /* .field-grid and .abilities deliberately keep their auto-fit base rule. A fixed
+     column count here overflowed: at laptop width these cards sit in a ~365px column,
+     where six 1fr ability boxes are narrower than their own contents, so WIS and CHA
+     were pushed outside the card and clipped. auto-fit wraps them instead. */
   .vitals { grid-template-columns: repeat(6, 1fr); }
-  .abilities { grid-template-columns: repeat(6, 1fr); }
   /* Wide enough that a feature's name and body sit on one line. */
   .row--feature > input { flex: 0 1 14rem; }
   .row--feature > textarea { flex: 1 1 16rem; }
@@ -618,18 +630,24 @@ input[type="checkbox"] {
   .topbar { order: -2; }
   .banner { order: -1; }
 
+  /* Two columns. .col 1 and 2 become self-packing flex stacks; .col 3 dissolves so
+     its shorter cards flow as ordinary grid items underneath. align-items: start
+     stops a short card stretching to its row's height. */
   .cards {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
-    padding: 1rem;
     gap: 1rem;
+    padding: 1rem;
   }
-  .card--wide { grid-column: 1 / -1; }
+  .col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+  .col:last-child { display: contents; }
 }
 
 @media (min-width: 1280px) {
   .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Wide enough for the third column to stand on its own. */
+  .col:last-child { display: flex; }
 }
 
 /* ================================================================ dialog */

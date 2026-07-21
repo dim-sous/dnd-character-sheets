@@ -98,7 +98,15 @@
         </div>
       </section>
 
+      <!--
+        Cards are grouped into three explicit columns rather than left to a masonry-ish
+        auto layout. CSS multicol fragmented grids inside a card (WIS/CHA escaped the
+        Abilities card and painted over the next column), and a plain grid leaves a
+        screen-height gap beside the tall Skills card. On a phone each .col is
+        display: contents, so these wrappers vanish and the cards fall into DOM order.
+      -->
       <div class="cards">
+       <div class="col">
 
         <!-- identity -->
         <section class="card">
@@ -120,7 +128,10 @@
               <input id="f-background" type="text" data-bind="background" autocomplete="off"></p>
             <p class="field"><label for="f-alignment">Alignment</label>
               <input id="f-alignment" type="text" data-bind="alignment" autocomplete="off"></p>
-            <p class="field field--narrow"><label for="f-pb-override">PB override</label>
+            <p class="field"><label for="f-init-bonus">Init bonus</label>
+              <input id="f-init-bonus" type="number" inputmode="numeric"
+                     data-bind="initiativeBonus" data-type="number"></p>
+            <p class="field"><label for="f-pb-override">PB override</label>
               <input id="f-pb-override" type="number" inputmode="numeric" placeholder="auto"
                      data-bind="proficiencyBonusOverride" data-type="nullable-number"></p>
           </div>
@@ -141,6 +152,9 @@
           <ul class="skills" id="skills"></ul>
         </section>
 
+       </div>
+       <div class="col">
+
         <!-- status -->
         <section class="card">
           <h2 class="card__title">Status</h2>
@@ -153,7 +167,8 @@
               <p class="field field--narrow"><label for="f-hd-total">Total</label>
                 <input id="f-hd-total" type="number" inputmode="numeric" data-bind="hitDice.total" data-type="number"></p>
               <p class="field field--narrow"><label for="f-hd-size">Die</label>
-                <input id="f-hd-size" type="text" data-bind="hitDice.size" autocomplete="off"></p>
+                <input id="f-hd-size" type="text" list="hit-dice" data-bind="hitDice.size" autocomplete="off">
+                <datalist id="hit-dice"></datalist></p>
             </div>
           </div>
 
@@ -224,6 +239,9 @@
           </div>
         </section>
 
+       </div>
+       <div class="col">
+
         <!-- attacks -->
         <section class="card">
           <div class="list__head">
@@ -265,12 +283,13 @@
         </section>
 
         <!-- notes -->
-        <section class="card card--wide">
+        <section class="card">
           <h2 class="card__title">Notes</h2>
           <label class="visually-hidden" for="f-notes">Notes</label>
           <textarea id="f-notes" rows="8" data-bind="notes"></textarea>
         </section>
 
+       </div>
       </div>
     </div>
 

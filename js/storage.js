@@ -5,13 +5,17 @@
  */
 
 import {
-  STORAGE_KEY, SCHEMA_VERSION, SPELL_LEVELS, ROW_TEMPLATES,
+  STORAGE_KEY, SCHEMA_VERSION, SPELL_LEVELS, ROW_TEMPLATES, MAX_EXHAUSTION,
   blankCharacter, newId,
 } from './constants.js';
 
 function num(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function str(value, fallback = '') {
@@ -30,6 +34,9 @@ function normalizeRow(listName, raw) {
     const value = raw[key];
     if (typeof fallback === 'number') out[key] = num(value, fallback);
     else if (typeof fallback === 'boolean') out[key] = Boolean(value);
+    // A hand-edited file may hold "bonus": 5 where the app stores "+5". Coercing
+    // rather than str()-ing keeps the number instead of silently blanking it.
+    else if (typeof value === 'number') out[key] = String(value);
     else out[key] = str(value, fallback);
   }
   return out;
@@ -87,12 +94,15 @@ export function normalizeCharacter(raw) {
     total: num(raw.hitDice?.total, base.hitDice.total),
     remaining: num(raw.hitDice?.remaining, base.hitDice.remaining),
   };
+  // Clamped on the way in: there are only ever three death-save pips and six
+  // exhaustion pips, so an out-of-range import would display a number the sheet
+  // has no way to represent or undo.
   char.deathSaves = {
-    successes: num(raw.deathSaves?.successes, 0),
-    failures: num(raw.deathSaves?.failures, 0),
+    successes: clamp(num(raw.deathSaves?.successes, 0), 0, 3),
+    failures: clamp(num(raw.deathSaves?.failures, 0), 0, 3),
   };
   char.conditions = strArray(raw.conditions);
-  char.exhaustion = num(raw.exhaustion, 0);
+  char.exhaustion = clamp(num(raw.exhaustion, 0), 0, MAX_EXHAUSTION);
 
   char.attacks = normalizeRows('attacks', raw.attacks);
   char.features = normalizeRows('features', raw.features);

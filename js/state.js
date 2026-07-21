@@ -140,6 +140,14 @@ export function updateActive(path, value, type = 'derived') {
   const char = getActive();
   if (!char) return;
   setByPath(char, path, value);
+
+  // Lowering a slot total must not leave more slots spent than exist. setSlotsUsed
+  // clamps the other direction; this is the same invariant from the total's side.
+  if (path.startsWith('spellcasting.slots.') && path.endsWith('.total')) {
+    const slot = getByPath(char, path.slice(0, -'.total'.length));
+    slot.used = Math.max(0, Math.min(slot.total, slot.used));
+  }
+
   emit(type);
 }
 

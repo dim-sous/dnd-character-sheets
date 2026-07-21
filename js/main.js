@@ -10,7 +10,8 @@ import * as rules from './rules.js';
 import * as state from './state.js';
 import { exportToFile, readImportFile } from './storage.js';
 import {
-  renderRoster, renderSheet, renderDerived, invalidateRoster, setSaved, showBanner,
+  renderRoster, renderSheet, renderDerived, renderSlotPips,
+  invalidateRoster, setSaved, showBanner,
 } from './render.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -23,6 +24,8 @@ function render(type) {
     invalidateRoster();
     renderSheet(char);
   } else {
+    // 'slots' rebuilds the pip rows only — never the total input being typed into.
+    if (type === 'slots' && char) renderSlotPips(char);
     renderDerived(char);
   }
   renderRoster(state.getCharacters(), state.getActiveId());
@@ -54,8 +57,12 @@ function applyField(el) {
     return;
   }
   if (!el.dataset.bind) return;
-  const structural = el.dataset.structural === 'true';
-  state.updateActive(el.dataset.bind, coerce(el), structural ? 'structural' : 'derived');
+
+  let type = 'derived';
+  if (el.dataset.structural === 'true') type = 'structural';
+  else if (el.dataset.slots === 'true') type = 'slots';
+
+  state.updateActive(el.dataset.bind, coerce(el), type);
 }
 
 // Live fields update as you type. Structural ones (they change how much DOM exists)
@@ -115,6 +122,7 @@ const ACTIONS = {
 
   'death-save': (el) => {
     const char = state.getActive();
+    if (!char) return;
     const { kind } = el.dataset;
     const index = Number(el.dataset.index);
     state.updateActive(`deathSaves.${kind}`, pipTarget(char.deathSaves[kind], index));
@@ -122,11 +130,13 @@ const ACTIONS = {
 
   exhaustion: (el) => {
     const char = state.getActive();
+    if (!char) return;
     state.updateActive('exhaustion', pipTarget(char.exhaustion, Number(el.dataset.index)));
   },
 
   'slot-pip': (el) => {
     const char = state.getActive();
+    if (!char) return;
     const level = el.dataset.level;
     state.setSlotsUsed(level, pipTarget(char.spellcasting.slots[level].used, Number(el.dataset.index)));
   },
