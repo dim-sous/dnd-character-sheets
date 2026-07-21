@@ -376,7 +376,7 @@
 <template id="tpl-attack">
   <li class="row row--attack">
     <input type="text" data-bind-suffix="name" placeholder="Name" aria-label="Attack name">
-    <input type="text" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
+    <input type="text" class="row__narrow" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
     <input type="text" data-bind-suffix="damage" placeholder="1d8+3 slashing" aria-label="Damage">
     <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
     <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
@@ -390,7 +390,7 @@
       <span class="visually-hidden">Prepared</span>
     </label>
     <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
-    <input type="number" inputmode="numeric" data-bind-suffix="level" data-type="number" placeholder="0" aria-label="Spell level">
+    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="level" data-type="number" placeholder="0" aria-label="Spell level">
     <button type="button" class="row__remove" data-action="remove-row" data-list="spells" aria-label="Remove spell">✕</button>
   </li>
 </template>
@@ -406,7 +406,7 @@
 <template id="tpl-inventory">
   <li class="row row--inventory">
     <input type="text" data-bind-suffix="item" placeholder="Item" aria-label="Item">
-    <input type="number" inputmode="numeric" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
+    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
     <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
     <button type="button" class="row__remove" data-action="remove-row" data-list="inventory" aria-label="Remove item">✕</button>
   </li>

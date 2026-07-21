@@ -45,6 +45,11 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* The browser's own [hidden] rule is a UA style, so ANY author `display` — like the
+   `display: flex` on .hpbar — silently beats it and the element stays on screen.
+   Everything the app hides via the hidden attribute depends on this line. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -470,36 +475,42 @@ input[type="checkbox"] {
   color: var(--ink-faint); font-size: .82rem; font-style: italic;
 }
 
+/* Wrapping flex, not grid.
+   Grid was overlapping these: when some children have an explicit grid-column and
+   the rest are auto-placed, the placement cursor can drop an auto item into a cell
+   an explicit item already spans. Flex simply cannot overlap — it wraps. */
 .row {
-  display: grid;
+  display: flex; flex-wrap: wrap; align-items: flex-start;
   gap: .4rem;
   padding: .6rem;
   background: var(--parchment);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
 }
-.row--attack    { grid-template-columns: 1fr 4.5rem auto; }
-.row--attack > :nth-child(1) { grid-column: 1; }
-.row--attack > :nth-child(3) { grid-column: 1 / span 2; }
-.row--attack > :nth-child(4) { grid-column: 1 / span 2; }
-.row--spell     { grid-template-columns: auto 1fr 4rem auto; align-items: center; }
-.row--feature   { grid-template-columns: 1fr auto; }
-.row--feature > textarea { grid-column: 1 / span 2; }
-.row--inventory { grid-template-columns: 1fr 4rem auto; }
-.row--inventory > :nth-child(3) { grid-column: 1 / span 2; }
 
-.row__prepared { display: inline-flex; align-items: center; }
+/* min-width: 0 stops a flex item refusing to shrink below its content width,
+   which is what pushes siblings out of the row. */
+.row > input,
+.row > textarea { flex: 1 1 7rem; min-width: 0; }
+.row > textarea { flex-basis: 100%; }
+.row > .row__narrow { flex: 0 1 4.5rem; }
+
+.row__prepared { flex: none; display: inline-flex; align-items: center; min-height: 40px; }
 
 .row__remove {
+  flex: none;
   width: 38px; height: 38px;
-  justify-self: end; align-self: start;
+  margin-left: auto;
   background: none; border: 1px solid transparent; border-radius: 8px;
   color: var(--ink-faint); font-size: .95rem; cursor: pointer;
 }
 .row__remove:hover { color: var(--bad); border-color: var(--bad); }
 
-.currency { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; }
+/* auto-fit rather than a fixed 5 columns: at 375px five fixed columns leave each
+   input too narrow to show a four-digit number. */
+.currency { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr)); gap: .4rem; }
 .currency .field > label { text-align: center; }
+.currency input { padding-left: .2rem; padding-right: .2rem; }
 
 /* --------------------------------------------------------------- HP bar */
 
@@ -550,9 +561,11 @@ input[type="checkbox"] {
 }
 .hpbar__cur:focus, .hpbar__max:focus { background: var(--parchment); border-radius: 6px; }
 
-.hpbar__side { display: grid; grid-template-columns: 4.5rem 4.5rem 1fr 1fr; gap: .4rem; align-items: end; }
+.hpbar__side { display: flex; flex-wrap: wrap; gap: .4rem; align-items: flex-end; }
+.hpbar__side .field { flex: 0 1 4.5rem; }
 .hpbar__side .field > label { text-align: center; }
 .hpbar__side input { min-height: 40px; }
+.hpbar__side .btn { flex: 1 1 6rem; min-height: 40px; }
 
 /* =============================================================== tablet */
 
@@ -560,13 +573,9 @@ input[type="checkbox"] {
   .field-grid { grid-template-columns: repeat(3, 1fr); }
   .vitals { grid-template-columns: repeat(6, 1fr); }
   .abilities { grid-template-columns: repeat(6, 1fr); }
-  .row--attack { grid-template-columns: 1fr 4.5rem 1fr 1fr auto; }
-  .row--attack > :nth-child(3),
-  .row--attack > :nth-child(4) { grid-column: auto; }
-  .row--inventory { grid-template-columns: 1fr 4rem 1fr auto; }
-  .row--inventory > :nth-child(3) { grid-column: auto; }
-  .row--feature { grid-template-columns: 14rem 1fr auto; }
-  .row--feature > textarea { grid-column: auto; }
+  /* Wide enough that a feature's name and body sit on one line. */
+  .row--feature > input { flex: 0 1 14rem; }
+  .row--feature > textarea { flex: 1 1 16rem; }
   .hpbar { flex-direction: row; align-items: center; gap: 1.2rem; }
   .hpbar__main { flex: 0 1 22rem; }
   .hpbar__side { flex: 1; }
@@ -577,8 +586,13 @@ input[type="checkbox"] {
 @media (min-width: 900px) {
   .app { display: grid; grid-template-columns: 280px 1fr; }
 
-  /* The drawer becomes a permanent column. */
-  .sidebar { position: sticky; top: 0; height: 100dvh; transform: none; inset: auto; }
+  /* The drawer becomes a permanent column. width must drop back to auto or the
+     320px drawer width overflows the 280px grid column and covers the sheet. */
+  .sidebar {
+    position: sticky; top: 0; inset: auto;
+    width: auto; height: 100dvh;
+    transform: none;
+  }
   .sidebar__close, .topbar__menu, .scrim { display: none; }
 
   .main { padding-bottom: 2rem; }
@@ -588,7 +602,11 @@ input[type="checkbox"] {
   .vitals { position: static; }
 
   .hpbar {
-    position: sticky; top: var(--topbar-h); z-index: 25;
+    /* left/right/bottom carry over from the phone's fixed positioning and become
+       sticky constraints if left set — clear them. */
+    position: sticky; top: var(--topbar-h);
+    left: auto; right: auto; bottom: auto;
+    z-index: 25;
     margin: 0; padding: .6rem 1rem;
     border-top: 0; border-bottom: 2px solid var(--line);
     box-shadow: var(--shadow);
