@@ -1,0 +1,258 @@
+/**
+ * Wiring: DOM events in, state mutations out, renders back.
+ *
+ * There is no per-field event handler anywhere. Two delegated listeners read
+ * data-bind / data-toggle / data-action attributes, so adding a field to index.html
+ * needs no JavaScript at all.
+ */
+
+import * as rules from './rules.js';
+import * as state from './state.js';
+import { exportToFile, readImportFile } from './storage.js';
+import {
+  renderRoster, renderSheet, renderDerived, invalidateRoster, setSaved, showBanner,
+} from './render.js';
+
+const $ = (sel) => document.querySelector(sel);
+
+/* ------------------------------------------------------------ the loop */
+
+function render(type) {
+  const char = state.getActive();
+  if (type === 'structural') {
+    invalidateRoster();
+    renderSheet(char);
+  } else {
+    renderDerived(char);
+  }
+  renderRoster(state.getCharacters(), state.getActiveId());
+}
+
+/* --------------------------------------------------------- field input */
+
+function coerce(el) {
+  switch (el.dataset.type) {
+    case 'checkbox':
+      return el.checked;
+    case 'number': {
+      const n = Number(el.value);
+      return el.value.trim() === '' || !Number.isFinite(n) ? 0 : n;
+    }
+    case 'nullable-number': {
+      if (el.value.trim() === '') return null;
+      const n = Number(el.value);
+      return Number.isFinite(n) ? n : null;
+    }
+    default:
+      return el.value;
+  }
+}
+
+function applyField(el) {
+  if (el.dataset.toggle) {
+    state.toggleInArray(el.dataset.toggle, el.dataset.value, el.checked);
+    return;
+  }
+  if (!el.dataset.bind) return;
+  const structural = el.dataset.structural === 'true';
+  state.updateActive(el.dataset.bind, coerce(el), structural ? 'structural' : 'derived');
+}
+
+// Live fields update as you type. Structural ones (they change how much DOM exists)
+// wait for `change` — rebuilding mid-keystroke would throw the caret away.
+document.addEventListener('input', (event) => {
+  const el = event.target;
+  if (!el.dataset || el.dataset.structural === 'true') return;
+  applyField(el);
+});
+
+document.addEventListener('change', (event) => {
+  const el = event.target;
+  if (!el.dataset || el.dataset.structural !== 'true') return;
+  applyField(el);
+});
+
+/* -------------------------------------------------------------- actions */
+
+/** Clicking pip i fills through i; clicking the last filled pip clears it. */
+function pipTarget(current, index) {
+  return current === index + 1 ? index : index + 1;
+}
+
+function amountField() {
+  const el = $('#f-hp-amount');
+  const n = Number(el.value);
+  return { el, value: Number.isFinite(n) ? Math.abs(n) : 0 };
+}
+
+function adjustHp(delta) {
+  const char = state.getActive();
+  if (!char) return;
+  const next = char.hp.current + delta;
+  const max = char.hp.max;
+  state.updateActive('hp.current', Math.max(0, max > 0 ? Math.min(max, next) : next));
+}
+
+const ACTIONS = {
+  'hp-inc': () => adjustHp(1),
+  'hp-dec': () => adjustHp(-1),
+
+  damage: () => {
+    const char = state.getActive();
+    const { el, value } = amountField();
+    if (!char || value === 0) return;
+    state.updateActive('hp', rules.applyDamage(char.hp, value));
+    el.value = '';
+  },
+
+  heal: () => {
+    const char = state.getActive();
+    const { el, value } = amountField();
+    if (!char || value === 0) return;
+    state.updateActive('hp', rules.applyHealing(char.hp, value));
+    el.value = '';
+  },
+
+  'death-save': (el) => {
+    const char = state.getActive();
+    const { kind } = el.dataset;
+    const index = Number(el.dataset.index);
+    state.updateActive(`deathSaves.${kind}`, pipTarget(char.deathSaves[kind], index));
+  },
+
+  exhaustion: (el) => {
+    const char = state.getActive();
+    state.updateActive('exhaustion', pipTarget(char.exhaustion, Number(el.dataset.index)));
+  },
+
+  'slot-pip': (el) => {
+    const char = state.getActive();
+    const level = el.dataset.level;
+    state.setSlotsUsed(level, pipTarget(char.spellcasting.slots[level].used, Number(el.dataset.index)));
+  },
+
+  'long-rest': () => state.longRest(),
+  'add-row': (el) => state.addRow(el.dataset.list),
+  'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),
+};
+
+document.addEventListener('click', (event) => {
+  const actionEl = event.target.closest('[data-action]');
+  if (actionEl) {
+    const handler = ACTIONS[actionEl.dataset.action];
+    if (handler) handler(actionEl);
+    return;
+  }
+
+  const rosterBtn = event.target.closest('.roster__btn');
+  if (rosterBtn) {
+    state.setActive(rosterBtn.dataset.id);
+    closeDrawer();
+  }
+});
+
+/* ----------------------------------------------------- roster and files */
+
+$('#btn-add').addEventListener('click', () => { state.createCharacter(); closeDrawer(); });
+$('#btn-add-empty').addEventListener('click', () => state.createCharacter());
+
+$('#btn-duplicate').addEventListener('click', () => {
+  const char = state.getActive();
+  if (char) state.createCharacter(char.id);
+  closeDrawer();
+});
+
+$('#btn-delete').addEventListener('click', () => {
+  const char = state.getActive();
+  if (!char) return;
+  const name = char.name || 'this unnamed character';
+  if (confirm(`Delete ${name}? This cannot be undone.`)) state.deleteCharacter(char.id);
+});
+
+$('#btn-export').addEventListener('click', () => {
+  const characters = state.getCharacters();
+  if (characters.length === 0) {
+    showBanner('Nothing to export yet.');
+    return;
+  }
+  state.flush();
+  exportToFile(characters);
+});
+
+const fileInput = $('#file-import');
+$('#btn-import').addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files[0];
+  fileInput.value = ''; // so re-picking the same file fires change again
+  if (!file) return;
+
+  try {
+    const incoming = await readImportFile(file);
+    const choice = await askImport(incoming.length, state.getCharacters().length);
+    if (choice === 'replace') state.replaceAll(incoming);
+    else if (choice === 'merge') state.merge(incoming);
+    if (choice !== 'cancel') showBanner('');
+  } catch (err) {
+    showBanner(err.message);
+  }
+});
+
+function askImport(incomingCount, existingCount) {
+  const dialog = $('#import-dialog');
+  $('#import-summary').textContent =
+    `This file holds ${incomingCount} character${incomingCount === 1 ? '' : 's'}. `
+    + `You currently have ${existingCount}.`;
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener('close', () => resolve(dialog.returnValue || 'cancel'), { once: true });
+  });
+}
+
+/* ------------------------------------------------------- mobile drawer */
+
+const scrim = $('#scrim');
+
+function openDrawer() {
+  document.body.classList.add('drawer-open');
+  scrim.hidden = false;
+}
+
+function closeDrawer() {
+  document.body.classList.remove('drawer-open');
+  scrim.hidden = true;
+}
+
+$('#btn-menu').addEventListener('click', openDrawer);
+$('#btn-menu-close').addEventListener('click', closeDrawer);
+scrim.addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeDrawer();
+});
+
+/* -------------------------------------------------------------- startup */
+
+state.subscribe(render);
+state.onStatus((message, tone) => setSaved(tone === 'pending' ? '' : message, tone));
+
+const loadError = state.init();
+if (loadError) showBanner(loadError);
+
+render('structural');
+setSaved('', 'idle');
+
+// Phones kill tabs without warning; pagehide is the reliable last call.
+window.addEventListener('pagehide', () => state.flush());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') state.flush();
+});
+
+// navigator.serviceWorker is undefined on an insecure origin, so this is automatically
+// inert over a plain http:// LAN address and active on HTTPS. One build, both paths.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {
+      /* offline support is a bonus; the app works without it */
+    });
+  });
+}

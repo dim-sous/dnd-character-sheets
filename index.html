@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Character Sheets</title>
+<meta name="description" content="A D&amp;D 2024 character sheet that does its own arithmetic.">
+<meta name="theme-color" content="#f4ede0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1613" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sheets">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ---------------------------------------------------------- roster -->
+  <aside class="sidebar" id="sidebar" aria-label="Characters">
+    <div class="sidebar__head">
+      <h1 class="brand">Character&nbsp;Sheets</h1>
+      <button type="button" class="icon-btn sidebar__close" id="btn-menu-close" aria-label="Close character list">✕</button>
+    </div>
+
+    <ul class="roster" id="roster"></ul>
+
+    <div class="sidebar__foot">
+      <button type="button" class="btn btn--primary" id="btn-add">+ New character</button>
+      <div class="btn-row">
+        <button type="button" class="btn" id="btn-duplicate">Duplicate</button>
+        <button type="button" class="btn btn--danger" id="btn-delete">Delete</button>
+      </div>
+      <hr class="rule">
+      <div class="btn-row">
+        <button type="button" class="btn" id="btn-export">Export</button>
+        <button type="button" class="btn" id="btn-import">Import</button>
+      </div>
+      <p class="hint">Characters are stored on this device only. Export is your backup.</p>
+      <input type="file" id="file-import" accept=".json,application/json" hidden>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <!-- ------------------------------------------------------------ main -->
+  <main class="main">
+
+    <header class="topbar">
+      <button type="button" class="icon-btn topbar__menu" id="btn-menu" aria-label="Show character list">☰</button>
+      <div class="topbar__id">
+        <span class="topbar__name" id="topbar-name">—</span>
+        <span class="topbar__sub" id="topbar-sub"></span>
+      </div>
+      <span class="saved" id="saved" role="status" aria-live="polite"></span>
+    </header>
+
+    <p class="banner" id="banner" hidden></p>
+
+    <section class="empty" id="empty" hidden>
+      <h2>No characters yet</h2>
+      <p>Create one to get started, or import a backup from another device.</p>
+      <button type="button" class="btn btn--primary" id="btn-add-empty">Create a character</button>
+    </section>
+
+    <div class="sheet" id="sheet" hidden>
+
+      <!-- vitals: the at-a-glance strip -->
+      <section class="vitals" aria-label="Vital statistics">
+        <div class="vital">
+          <label class="vital__label" for="f-ac">AC</label>
+          <input class="vital__input" id="f-ac" type="number" inputmode="numeric" data-bind="ac" data-type="number">
+        </div>
+        <div class="vital">
+          <span class="vital__label">Initiative</span>
+          <output class="vital__value" data-derived="initiative">+0</output>
+        </div>
+        <div class="vital">
+          <label class="vital__label" for="f-speed">Speed</label>
+          <input class="vital__input" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number">
+        </div>
+        <div class="vital">
+          <span class="vital__label">Passive Perc.</span>
+          <output class="vital__value" data-derived="passive">10</output>
+        </div>
+        <div class="vital">
+          <span class="vital__label">Prof. Bonus</span>
+          <output class="vital__value" data-derived="pb">+2</output>
+        </div>
+        <div class="vital vital--toggle">
+          <span class="vital__label">Heroic Insp.</span>
+          <label class="switch">
+            <input type="checkbox" data-bind="heroicInspiration" data-type="checkbox">
+            <span class="switch__track" aria-hidden="true"></span>
+            <span class="visually-hidden">Heroic Inspiration</span>
+          </label>
+        </div>
+      </section>
+
+      <div class="cards">
+
+        <!-- identity -->
+        <section class="card">
+          <h2 class="card__title">Identity</h2>
+          <div class="field-grid">
+            <p class="field"><label for="f-name">Name</label>
+              <input id="f-name" type="text" data-bind="name" autocomplete="off"></p>
+            <p class="field"><label for="f-player">Player</label>
+              <input id="f-player" type="text" data-bind="player" autocomplete="off"></p>
+            <p class="field"><label for="f-class">Class</label>
+              <input id="f-class" type="text" data-bind="class" autocomplete="off"></p>
+            <p class="field"><label for="f-subclass">Subclass</label>
+              <input id="f-subclass" type="text" data-bind="subclass" autocomplete="off"></p>
+            <p class="field field--narrow"><label for="f-level">Level</label>
+              <input id="f-level" type="number" inputmode="numeric" data-bind="level" data-type="number"></p>
+            <p class="field"><label for="f-species">Species</label>
+              <input id="f-species" type="text" data-bind="species" autocomplete="off"></p>
+            <p class="field"><label for="f-background">Background</label>
+              <input id="f-background" type="text" data-bind="background" autocomplete="off"></p>
+            <p class="field"><label for="f-alignment">Alignment</label>
+              <input id="f-alignment" type="text" data-bind="alignment" autocomplete="off"></p>
+            <p class="field field--narrow"><label for="f-pb-override">PB override</label>
+              <input id="f-pb-override" type="number" inputmode="numeric" placeholder="auto"
+                     data-bind="proficiencyBonusOverride" data-type="nullable-number"></p>
+          </div>
+        </section>
+
+        <!-- abilities and saves -->
+        <section class="card">
+          <h2 class="card__title">Abilities &amp; Saves</h2>
+          <div class="abilities" id="abilities"></div>
+        </section>
+
+        <!-- skills -->
+        <section class="card">
+          <h2 class="card__title">Skills</h2>
+          <div class="skills__head" aria-hidden="true">
+            <span>Skill</span><span>Prof</span><span>Exp</span><span>Total</span>
+          </div>
+          <ul class="skills" id="skills"></ul>
+        </section>
+
+        <!-- status -->
+        <section class="card">
+          <h2 class="card__title">Status</h2>
+
+          <div class="status__block">
+            <h3 class="subhead">Hit Dice</h3>
+            <div class="inline-fields">
+              <p class="field field--narrow"><label for="f-hd-remaining">Remaining</label>
+                <input id="f-hd-remaining" type="number" inputmode="numeric" data-bind="hitDice.remaining" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-hd-total">Total</label>
+                <input id="f-hd-total" type="number" inputmode="numeric" data-bind="hitDice.total" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-hd-size">Die</label>
+                <input id="f-hd-size" type="text" data-bind="hitDice.size" autocomplete="off"></p>
+            </div>
+          </div>
+
+          <div class="status__block">
+            <h3 class="subhead">Death Saves</h3>
+            <div class="deathsaves">
+              <div class="deathsaves__row">
+                <span class="deathsaves__label">Successes</span>
+                <div class="pips" id="death-successes"></div>
+              </div>
+              <div class="deathsaves__row">
+                <span class="deathsaves__label">Failures</span>
+                <div class="pips pips--bad" id="death-failures"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="status__block">
+            <h3 class="subhead">Exhaustion <output class="badge" data-derived="exhaustion">0</output></h3>
+            <div class="pips pips--bad" id="exhaustion"></div>
+          </div>
+
+          <div class="status__block">
+            <h3 class="subhead">Conditions</h3>
+            <div class="chips" id="conditions"></div>
+          </div>
+        </section>
+
+        <!-- spellcasting -->
+        <section class="card" id="card-spellcasting">
+          <h2 class="card__title">Spellcasting</h2>
+          <div class="inline-fields">
+            <p class="field"><label for="f-spell-ability">Spellcasting ability</label>
+              <select id="f-spell-ability" data-bind="spellcasting.ability" data-structural="true">
+                <option value="">— none (not a caster) —</option>
+                <option value="int">Intelligence</option>
+                <option value="wis">Wisdom</option>
+                <option value="cha">Charisma</option>
+                <option value="str">Strength</option>
+                <option value="dex">Dexterity</option>
+                <option value="con">Constitution</option>
+              </select></p>
+          </div>
+
+          <div id="spell-body" hidden>
+            <div class="spell-stats">
+              <div class="vital">
+                <span class="vital__label">Spell save DC</span>
+                <output class="vital__value" data-derived="spellDC">—</output>
+              </div>
+              <div class="vital">
+                <span class="vital__label">Spell attack</span>
+                <output class="vital__value" data-derived="spellAtk">—</output>
+              </div>
+            </div>
+
+            <div class="slots__head">
+              <h3 class="subhead">Spell Slots</h3>
+              <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
+            </div>
+            <div class="slots" id="slots"></div>
+
+            <div class="list__head">
+              <h3 class="subhead">Spells</h3>
+              <button type="button" class="btn btn--small" data-action="add-row" data-list="spells">+ Add spell</button>
+            </div>
+            <ul class="rows" id="spells"></ul>
+          </div>
+        </section>
+
+        <!-- attacks -->
+        <section class="card">
+          <div class="list__head">
+            <h2 class="card__title">Attacks</h2>
+            <button type="button" class="btn btn--small" data-action="add-row" data-list="attacks">+ Add</button>
+          </div>
+          <ul class="rows" id="attacks"></ul>
+        </section>
+
+        <!-- features -->
+        <section class="card">
+          <div class="list__head">
+            <h2 class="card__title">Features &amp; Traits</h2>
+            <button type="button" class="btn btn--small" data-action="add-row" data-list="features">+ Add</button>
+          </div>
+          <ul class="rows" id="features"></ul>
+        </section>
+
+        <!-- inventory -->
+        <section class="card">
+          <div class="list__head">
+            <h2 class="card__title">Inventory</h2>
+            <button type="button" class="btn btn--small" data-action="add-row" data-list="inventory">+ Add</button>
+          </div>
+          <ul class="rows" id="inventory"></ul>
+          <h3 class="subhead">Currency</h3>
+          <div class="currency">
+            <p class="field field--narrow"><label for="f-cp">CP</label>
+              <input id="f-cp" type="number" inputmode="numeric" data-bind="currency.cp" data-type="number"></p>
+            <p class="field field--narrow"><label for="f-sp">SP</label>
+              <input id="f-sp" type="number" inputmode="numeric" data-bind="currency.sp" data-type="number"></p>
+            <p class="field field--narrow"><label for="f-ep">EP</label>
+              <input id="f-ep" type="number" inputmode="numeric" data-bind="currency.ep" data-type="number"></p>
+            <p class="field field--narrow"><label for="f-gp">GP</label>
+              <input id="f-gp" type="number" inputmode="numeric" data-bind="currency.gp" data-type="number"></p>
+            <p class="field field--narrow"><label for="f-pp">PP</label>
+              <input id="f-pp" type="number" inputmode="numeric" data-bind="currency.pp" data-type="number"></p>
+          </div>
+        </section>
+
+        <!-- notes -->
+        <section class="card card--wide">
+          <h2 class="card__title">Notes</h2>
+          <label class="visually-hidden" for="f-notes">Notes</label>
+          <textarea id="f-notes" rows="8" data-bind="notes"></textarea>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- HP: sticky top on a laptop, pinned to the thumb zone on a phone -->
+    <div class="hpbar" id="hpbar" hidden>
+      <div class="hpbar__main">
+        <button type="button" class="hpbar__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
+        <div class="hpbar__readout">
+          <label class="visually-hidden" for="f-hp-current">Current hit points</label>
+          <input class="hpbar__cur" id="f-hp-current" type="number" inputmode="numeric" data-bind="hp.current" data-type="number">
+          <span class="hpbar__slash">/</span>
+          <label class="visually-hidden" for="f-hp-max">Maximum hit points</label>
+          <input class="hpbar__max" id="f-hp-max" type="number" inputmode="numeric" data-bind="hp.max" data-type="number">
+          <span class="hpbar__caption">HP</span>
+        </div>
+        <button type="button" class="hpbar__step" data-action="hp-inc" aria-label="Gain one hit point">+</button>
+      </div>
+
+      <div class="hpbar__side">
+        <p class="field field--narrow">
+          <label for="f-hp-temp">Temp</label>
+          <input id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number">
+        </p>
+        <p class="field field--narrow">
+          <label for="f-hp-amount">Amount</label>
+          <input id="f-hp-amount" type="number" inputmode="numeric" placeholder="0">
+        </p>
+        <button type="button" class="btn btn--danger btn--small" data-action="damage">Damage</button>
+        <button type="button" class="btn btn--good btn--small" data-action="heal">Heal</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<dialog class="dialog" id="import-dialog">
+  <form method="dialog">
+    <h2 class="dialog__title">Import backup</h2>
+    <p class="dialog__body" id="import-summary"></p>
+    <p class="dialog__body hint">
+      <strong>Replace</strong> discards what is on this device. <strong>Merge</strong> keeps
+      both and renumbers anything that collides.
+    </p>
+    <menu class="dialog__actions">
+      <button type="submit" class="btn" value="cancel">Cancel</button>
+      <button type="submit" class="btn" value="merge">Merge</button>
+      <button type="submit" class="btn btn--danger" value="replace">Replace all</button>
+    </menu>
+  </form>
+</dialog>
+
+<!-- ------------------------------------------------------------ templates -->
+
+<template id="tpl-roster">
+  <li class="roster__item">
+    <button type="button" class="roster__btn">
+      <span class="roster__name"></span>
+      <span class="roster__meta"></span>
+    </button>
+  </li>
+</template>
+
+<template id="tpl-ability">
+  <div class="ability">
+    <span class="ability__name"></span>
+    <output class="ability__mod"></output>
+    <input class="ability__score" type="number" inputmode="numeric" data-type="number">
+    <label class="ability__save">
+      <input type="checkbox" class="ability__save-box">
+      <span class="ability__save-text">Save</span>
+      <output class="ability__save-total"></output>
+    </label>
+  </div>
+</template>
+
+<template id="tpl-skill">
+  <li class="skill">
+    <span class="skill__name"></span>
+    <input type="checkbox" class="skill__prof">
+    <input type="checkbox" class="skill__exp">
+    <output class="skill__total"></output>
+  </li>
+</template>
+
+<template id="tpl-chip">
+  <label class="chip">
+    <input type="checkbox" class="chip__box">
+    <span class="chip__text"></span>
+  </label>
+</template>
+
+<template id="tpl-slot-row">
+  <div class="slot">
+    <span class="slot__level"></span>
+    <div class="pips pips--slot"></div>
+    <label class="slot__total">
+      <span class="visually-hidden">Total slots</span>
+      <input type="number" inputmode="numeric" class="slot__total-input" data-type="number">
+    </label>
+  </div>
+</template>
+
+<template id="tpl-attack">
+  <li class="row row--attack">
+    <input type="text" data-bind-suffix="name" placeholder="Name" aria-label="Attack name">
+    <input type="text" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
+    <input type="text" data-bind-suffix="damage" placeholder="1d8+3 slashing" aria-label="Damage">
+    <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
+    <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
+  </li>
+</template>
+
+<template id="tpl-spell">
+  <li class="row row--spell">
+    <label class="row__prepared">
+      <input type="checkbox" data-bind-suffix="prepared" data-type="checkbox">
+      <span class="visually-hidden">Prepared</span>
+    </label>
+    <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
+    <input type="number" inputmode="numeric" data-bind-suffix="level" data-type="number" placeholder="0" aria-label="Spell level">
+    <button type="button" class="row__remove" data-action="remove-row" data-list="spells" aria-label="Remove spell">✕</button>
+  </li>
+</template>
+
+<template id="tpl-feature">
+  <li class="row row--feature">
+    <input type="text" data-bind-suffix="name" placeholder="Feature name" aria-label="Feature name">
+    <textarea rows="2" data-bind-suffix="text" placeholder="What it does" aria-label="Feature description"></textarea>
+    <button type="button" class="row__remove" data-action="remove-row" data-list="features" aria-label="Remove feature">✕</button>
+  </li>
+</template>
+
+<template id="tpl-inventory">
+  <li class="row row--inventory">
+    <input type="text" data-bind-suffix="item" placeholder="Item" aria-label="Item">
+    <input type="number" inputmode="numeric" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
+    <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
+    <button type="button" class="row__remove" data-action="remove-row" data-list="inventory" aria-label="Remove item">✕</button>
+  </li>
+</template>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
