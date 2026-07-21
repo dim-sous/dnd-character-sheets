@@ -17,9 +17,11 @@ No frameworks, no dependencies, no build step, no accounts, no backend.
 
 ## Running it
 
+**→ https://dim-sous.github.io/dnd-character-sheets/**
+
 ### On a phone (the way players use it)
 
-1. Open the published URL.
+1. Open **https://dim-sous.github.io/dnd-character-sheets/**
 2. **Add to Home Screen** — iOS: Share → Add to Home Screen. Android: menu → Install app.
 3. Open it from the home screen icon. It runs fullscreen and **works with no signal.**
 
