@@ -1,0 +1,64 @@
+# Deploy the sheet to GitHub Pages, stamping the service worker on the way.
+#
+# Pages was previously served straight from the main branch. The only reason it now
+# goes through a workflow is tools/stamp-sw.py: the cache version and precache list
+# have to be generated from the files being deployed, and doing that on a branch would
+# mean a bot commit looping back into CI.
+#
+# The stamped service-worker.js exists only in the uploaded artifact — the repo copy
+# stays unstamped and working, so a local Live Server needs no tooling at all. That is
+# the project's "no build step" constraint, and it still holds: you can clone the folder
+# and hit Go Live with nothing installed.
+
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  # Lets a deploy be re-run from the Actions tab without an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race. Queued rather than cancelled: an in-flight deploy that
+# is killed halfway can leave Pages serving a half-uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Rewrites CACHE_VERSION and SHELL in the checked-out copy only.
+      - name: Stamp the service worker
+        run: python3 tools/stamp-sw.py
+
+      # Fails loudly if the stamp silently did nothing, which would ship a worker
+      # pinned at 'v1' and quietly reintroduce the exact bug this workflow exists to fix.
+      - name: Verify the worker was stamped
+        run: |
+          if grep -q "^const CACHE_VERSION = 'v1';$" service-worker.js; then
+            echo "::error::service-worker.js is still at v1 — the stamp did not apply"
+            exit 1
+          fi
+          grep -m1 "^const CACHE_VERSION" service-worker.js
+
+      - uses: actions/configure-pages@v5
+
+      # Uploads the working directory as-is. This matches what branch-based Pages
+      # already published, so nothing becomes newly public by switching.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
