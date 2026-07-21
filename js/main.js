@@ -395,33 +395,110 @@ if (navigator.storage && typeof navigator.storage.persist === 'function') {
   navigator.storage.persist().catch(() => {});
 }
 
-// navigator.serviceWorker is undefined on an insecure origin, so this is automatically
-// inert over a plain http:// LAN address and active on HTTPS. One build, both paths.
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js').then((registration) => {
-      // An installed PWA is never really "opened", so it can sit on a stale build for
-      // days: the browser only re-checks the worker script when it happens to. Coming
-      // back to the app is the natural moment to look, and it costs one request.
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') registration.update();
-      });
+// navigator.serviceWorker is undefined on an insecure origin, so this stays inert over a
+// plain http:// LAN address.
+//
+// It is NOT inert on localhost. Browsers treat localhost as a secure context precisely so
+// service workers can be developed without TLS, so Live Server gets a worker too — and the
+// repo copy of service-worker.js is deliberately never stamped, leaving its cache version
+// pinned at 'v1' forever. A cache-first worker whose version never moves will serve your
+// own edits back to you stale, which looks exactly like a change that did not work.
+//
+// So the worker is off locally by default. Append ?sw=1 to exercise offline behaviour.
+const LOCAL_HOSTNAMES = ['localhost', '127.0.0.1', '::1', '[::1]'];
+const TEARDOWN_FLAG = 'dnd-sw-torn-down';
 
-      registration.addEventListener('updatefound', () => {
-        const incoming = registration.installing;
-        if (!incoming) return;
-        incoming.addEventListener('statechange', () => {
-          // A controller only exists if a previous worker was already running, which
-          // is what distinguishes "there is a newer build" from "this is a first
-          // visit and the very first worker just installed". Announcing the latter
-          // would tell a new player to reload the page they just opened.
-          if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
-            showUpdatePrompt();
-          }
-        });
-      });
-    }).catch(() => {
-      /* offline support is a bonus; the app works without it */
+/**
+ * Undo a worker installed by an earlier version of this file.
+ *
+ * Not calling register() is not enough on its own: an already-installed worker keeps
+ * controlling the page, so this code never gets a say and the stale cache survives. The
+ * fix has to actively remove it, or it appears to do nothing on exactly the machine that
+ * needs fixing.
+ */
+function removeWorker() {
+  const hadController = Boolean(navigator.serviceWorker.controller);
+
+  if (!hadController) {
+    // Nothing is controlling this page, so whatever happened last time worked. Drop the
+    // flag rather than leaving it to trigger a spurious warning later in the session.
+    sessionStorage.removeItem(TEARDOWN_FLAG);
+  } else if (sessionStorage.getItem(TEARDOWN_FLAG)) {
+    // Second pass through here and a worker is *still* in charge: the teardown did not
+    // take. The tempting move is to reload again, which loops, or to give up quietly,
+    // which leaves you debugging stale files without knowing it. Say so instead.
+    showBanner(
+      'A service worker is still controlling this page on localhost, so you may be '
+      + 'seeing cached files instead of your edits. Clear site data (DevTools → '
+      + 'Application → Storage) and reload.',
+    );
+    return;
+  }
+
+  navigator.serviceWorker.getRegistrations()
+    .then((registrations) => Promise.all(registrations.map((reg) => reg.unregister())))
+    .then((results) => {
+      // unregister() resolves false when it declined to do anything. Ignoring that is
+      // how a teardown reports success while changing nothing.
+      if (results.includes(false)) throw new Error('the browser declined to unregister a worker');
+      return caches.keys();
+    })
+    .then((names) => Promise.all(
+      names
+        .filter((name) => name.startsWith('dnd-sheets-'))
+        .map((name) => caches.delete(name)),
+    ))
+    .then(() => {
+      // This very page was served by the old worker, so what is on screen may already be
+      // stale. One reload lands on the network; the flag turns a second pass into the
+      // warning above rather than another reload.
+      if (hadController) {
+        sessionStorage.setItem(TEARDOWN_FLAG, '1');
+        window.location.reload();
+      }
+    })
+    .catch((error) => {
+      showBanner(
+        `Could not remove the local service worker: ${error.message}. `
+        + 'Your edits may be served from a stale cache.',
+      );
     });
+}
+
+function registerWorker() {
+  navigator.serviceWorker.register('./service-worker.js').then((registration) => {
+    // An installed PWA is never really "opened", so it can sit on a stale build for
+    // days: the browser only re-checks the worker script when it happens to. Coming
+    // back to the app is the natural moment to look, and it costs one request.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') registration.update();
+    });
+
+    registration.addEventListener('updatefound', () => {
+      const incoming = registration.installing;
+      if (!incoming) return;
+      incoming.addEventListener('statechange', () => {
+        // A controller only exists if a previous worker was already running, which
+        // is what distinguishes "there is a newer build" from "this is a first
+        // visit and the very first worker just installed". Announcing the latter
+        // would tell a new player to reload the page they just opened.
+        if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdatePrompt();
+        }
+      });
+    });
+  }).catch(() => {
+    /* offline support is a bonus; the app works without it */
   });
+}
+
+if ('serviceWorker' in navigator) {
+  const isLocalHost = LOCAL_HOSTNAMES.includes(window.location.hostname);
+  const workerRequested = new URLSearchParams(window.location.search).has('sw');
+
+  if (isLocalHost && !workerRequested) {
+    removeWorker();
+  } else {
+    window.addEventListener('load', registerWorker);
+  }
 }

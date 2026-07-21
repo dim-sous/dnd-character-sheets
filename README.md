@@ -43,6 +43,17 @@ Live Server, any static server works:
 python3 -m http.server 8000
 ```
 
+**The service worker is switched off on localhost.** It would otherwise cache the app
+shell and serve your own edits back to you stale — the repo copy of `service-worker.js`
+is deliberately never stamped, so its cache version never changes and nothing invalidates.
+Any worker left over from an older build is unregistered automatically on first load.
+
+To exercise offline behaviour on purpose, opt back in:
+
+```
+http://localhost:5500/?sw=1
+```
+
 ### Over your LAN, without internet
 
 Live Server binds to all interfaces, so a phone on the same Wi-Fi can reach your laptop:
