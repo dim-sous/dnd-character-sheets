@@ -53,9 +53,11 @@ export function skillTotal(char, skillKey) {
   const proficient = char.skillProficiencies.includes(skillKey);
   const expert = char.skillExpertise.includes(skillKey);
 
-  // Expertise is a second helping of PB, and it only applies on top of proficiency.
+  // Each toggle independently adds PB. Ticking expertise without proficiency is not
+  // legal by the rules, but this app does not police choices — the player is the
+  // authority, and the two toggles stay independent.
   let total = modFor(char, skill.ability);
-  if (proficient || expert) total += pb;
+  if (proficient) total += pb;
   if (expert) total += pb;
   return total;
 }

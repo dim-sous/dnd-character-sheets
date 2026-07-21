@@ -133,9 +133,13 @@ function renderConditions() {
   }
 }
 
+/** Pips are one DOM node each, so a fat-fingered "999" must not build 999 buttons. */
+const MAX_PIPS = 20;
+
 function renderPipRow(host, count, action, extra = {}) {
   host.replaceChildren();
-  for (let i = 0; i < count; i += 1) {
+  const capped = Math.min(Math.max(0, count), MAX_PIPS);
+  for (let i = 0; i < capped; i += 1) {
     const pip = document.createElement('button');
     pip.type = 'button';
     pip.className = 'pip';

@@ -18,6 +18,8 @@
 
   --radius: 10px;
   --tap: 44px;             /* minimum comfortable touch target */
+  /* Fixed so the sticky stack below the topbar is arithmetic, not guesswork. */
+  --topbar-h: 3.5rem;
   --shadow: 0 1px 2px rgba(60, 44, 26, .09), 0 4px 14px rgba(60, 44, 26, .06);
 
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
@@ -163,6 +165,7 @@ input[type="checkbox"] {
 .topbar {
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; gap: .5rem;
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
   padding: .35rem .6rem;
   padding-top: calc(.35rem + env(safe-area-inset-top));
   background: var(--parchment); /* fallback: a sticky bar must never be see-through */
@@ -246,7 +249,11 @@ input[type="checkbox"] {
 /* -------------------------------------------------------------- vitals */
 
 .vitals {
-  position: sticky; top: 0; z-index: 20;
+  /* Must clear the topbar, which is also sticky at top: 0 — otherwise this slides
+     underneath it and vanishes exactly when it is most needed. */
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  z-index: 20;
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
   margin: 0; padding: 1px;
   background: var(--line);
@@ -576,9 +583,12 @@ input[type="checkbox"] {
 
   .main { padding-bottom: 2rem; }
 
-  /* HP stops being a fixed bottom bar and rides along at the top instead. */
+  /* On a laptop the thumb zone is meaningless, so HP moves up under the topbar.
+     The vitals strip stops competing for sticky space and just scrolls. */
+  .vitals { position: static; }
+
   .hpbar {
-    position: sticky; top: 3.1rem; z-index: 25;
+    position: sticky; top: var(--topbar-h); z-index: 25;
     margin: 0; padding: .6rem 1rem;
     border-top: 0; border-bottom: 2px solid var(--line);
     box-shadow: var(--shadow);
