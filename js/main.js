@@ -93,9 +93,24 @@ function amountField() {
   return { el, value: Number.isFinite(n) ? Math.abs(n) : 0 };
 }
 
+/**
+ * iOS Safari and Firefox do NOT blur a focused <input> when you tap a <button>, so a
+ * tapped-into HP field stays document.activeElement — and renderDerived deliberately skips
+ * writing back the active element to protect the caret while typing. Net effect there: tap
+ * into an HP field, then tap +/-/Damage/Heal, and the number on screen stays STALE (Chromium
+ * blurs on tap, so it's already fine). Release the field first so the write-back repaints it.
+ * Scoped to the hp.* display inputs; a no-op when nothing (or the Amount scratch field) is
+ * focused. Typing is untouched — it never reaches these handlers.
+ */
+function blurActiveHpField() {
+  const el = document.activeElement;
+  if (el?.dataset?.bind?.startsWith('hp.')) el.blur();
+}
+
 function adjustHp(delta) {
   const char = state.getActive();
   if (!char) return;
+  blurActiveHpField();
   const next = char.hp.current + delta;
   const max = char.hp.max;
   state.updateActive('hp.current', Math.max(0, max > 0 ? Math.min(max, next) : next));
@@ -109,6 +124,7 @@ const ACTIONS = {
     const char = state.getActive();
     const { el, value } = amountField();
     if (!char || value === 0) return;
+    blurActiveHpField();
     state.updateActive('hp', rules.applyDamage(char.hp, value));
     el.value = '';
   },
@@ -117,6 +133,7 @@ const ACTIONS = {
     const char = state.getActive();
     const { el, value } = amountField();
     if (!char || value === 0) return;
+    blurActiveHpField();
     state.updateActive('hp', rules.applyHealing(char.hp, value));
     el.value = '';
   },
