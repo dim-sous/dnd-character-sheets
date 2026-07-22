@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sheet Design Bench</title>
+<link rel="stylesheet" href="css/bench.css">
+<link rel="stylesheet" href="css/preview.css">
+</head>
+<body>
+
+<aside class="rail">
+  <div class="rail__head">
+    <h1 class="rail__title">Sheet Design Bench</h1>
+    <p class="rail__sub">dnd-character-sheets
+      <span class="rail__source" id="source">reading style.css…</span></p>
+  </div>
+
+  <div class="modes" role="group" aria-label="Editing mode">
+    <button class="mode" id="mode-style" aria-pressed="true">Style</button>
+    <button class="mode" id="mode-structure" aria-pressed="false">Structure</button>
+    <button class="mode" id="mode-compose" aria-pressed="false">Compose</button>
+  </div>
+
+  <div class="rail__body" id="rail-body"></div>
+
+  <div class="rail__foot">
+    <button class="btn btn--wide" id="btn-reset">Reset</button>
+    <button class="btn btn--wide btn--live" id="btn-export">Export</button>
+  </div>
+</aside>
+
+<main class="stage">
+  <div class="stage__bar">
+    <div class="seg" role="group" aria-label="Preview width" id="seg-width"></div>
+    <div class="seg" role="group" aria-label="Colour scheme">
+      <button id="scheme-light" aria-pressed="true">Light</button>
+      <button id="scheme-dark" aria-pressed="false">Dark</button>
+    </div>
+    <span class="bar__label" id="width-readout"></span>
+    <div class="bar__spacer"></div>
+    <span class="bar__label" id="save-state"></span>
+  </div>
+
+  <div class="stage__body" id="stage-body" data-mode="style">
+    <div class="frame" id="frame">
+      <div class="frame__screen"><div class="sheet" id="sheet"></div></div>
+    </div>
+    <div class="canvas-area" id="structure" hidden></div>
+    <div class="canvas-area" id="compose" hidden></div>
+  </div>
+</main>
+
+<div class="overlay" id="overlay" data-open="false">
+  <div class="export" role="dialog" aria-modal="true" aria-label="Export">
+    <div class="export__head">
+      <h2 class="export__title">Export</h2>
+      <div class="bar__spacer"></div>
+      <button class="btn" id="btn-save">Save to style.css</button>
+      <button class="btn" id="btn-copy">Copy tokens</button>
+      <button class="btn" id="btn-close">Close</button>
+    </div>
+    <div class="export__body" id="export-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
