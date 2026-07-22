@@ -178,8 +178,12 @@ input[type="checkbox"] {
   height: calc(var(--topbar-h) + env(safe-area-inset-top));
   padding: .35rem .6rem;
   padding-top: calc(.35rem + env(safe-area-inset-top));
+  /* Landscape on a notched phone: keep the menu button clear of the cutout. */
+  padding-left: calc(.6rem + env(safe-area-inset-left));
+  padding-right: calc(.6rem + env(safe-area-inset-right));
   background: var(--parchment); /* fallback: a sticky bar must never be see-through */
   background: color-mix(in srgb, var(--parchment) 92%, transparent);
+  -webkit-backdrop-filter: saturate(140%) blur(8px); /* older iOS Safari only ships the prefix */
   backdrop-filter: saturate(140%) blur(8px);
   border-bottom: 1px solid var(--line);
 }
@@ -618,9 +622,11 @@ input[type="checkbox"] {
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
   display: flex; gap: .2rem;
-  padding: .3rem .4rem calc(.3rem + env(safe-area-inset-bottom));
+  /* Horizontal insets so the end tabs clear a landscape notch/rounded corners. */
+  padding: .3rem calc(.4rem + env(safe-area-inset-right)) calc(.3rem + env(safe-area-inset-bottom)) calc(.4rem + env(safe-area-inset-left));
   background: var(--card); /* fallback: the bar sits over scrolling content */
   background: color-mix(in srgb, var(--card) 96%, transparent);
+  -webkit-backdrop-filter: saturate(140%) blur(10px); /* older iOS Safari only ships the prefix */
   backdrop-filter: saturate(140%) blur(10px);
   border-top: 2px solid var(--line);
   box-shadow: 0 -4px 18px rgba(60, 44, 26, .12);
@@ -704,6 +710,9 @@ input[type="checkbox"] {
 
 /* ================================================================= print */
 
+/* A predictable paper margin instead of whatever the browser defaults to. */
+@page { margin: 1.5cm; }
+
 @media print {
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
   .sidebar__foot, .banner { display: none !important; }
@@ -714,6 +723,11 @@ input[type="checkbox"] {
   .tabpanel[hidden] { display: contents !important; }
   .cards { display: block; column-count: 2; column-gap: 1rem; padding: 0; }
   .card { break-inside: avoid; box-shadow: none; margin-bottom: .6rem; border-color: #999; }
+  /* Notes and feature text otherwise print only their visible rows and clip the rest.
+     field-sizing grows the control to fit its content where supported (Chromium, recent
+     Safari); where it isn't, the textarea prints at its natural height — no worse than
+     before. break-inside keeps a note from splitting mid-line across a page. */
+  textarea { field-sizing: content; height: auto; overflow: visible; break-inside: avoid; }
 }
 
 @media (prefers-reduced-motion: reduce) {
