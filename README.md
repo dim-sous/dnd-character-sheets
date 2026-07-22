@@ -1,7 +1,6 @@
 # D&D Character Sheets
 
-A character sheet for D&D 2024 that does its own arithmetic, built for a home game of
-three players going from level 3 to 10.
+A character sheet for D&D 2024 that does its own arithmetic, built for a home game.
 
 Modifiers, proficiency bonus, saving throws, all eighteen skills, passive Perception and
 spell save DC recalculate the moment anything changes — they are never stored, only
