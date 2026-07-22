@@ -377,6 +377,14 @@ window.addEventListener('storage', (event) => {
   if (event.key === STORAGE_KEY) state.reloadFromStorage();
 });
 
+// Ask the browser to keep our localStorage from being evicted under storage pressure.
+// Best-effort: Chromium/Firefox may grant it based on engagement; older Safari lacks the
+// API entirely (there the real protection is a Home-Screen install, which the README nudges),
+// and a denial is fine — Export stays the durable backup. Feature-detected, never throws.
+if (navigator.storage && typeof navigator.storage.persist === 'function') {
+  navigator.storage.persist().catch(() => {});
+}
+
 // navigator.serviceWorker is undefined on an insecure origin, so this is automatically
 // inert over a plain http:// LAN address and active on HTTPS. One build, both paths.
 if ('serviceWorker' in navigator) {
