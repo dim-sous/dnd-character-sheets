@@ -46,8 +46,9 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 /* The browser's own [hidden] rule is a UA style, so ANY author `display` — like the
-   `display: flex` on .hpbar — silently beats it and the element stays on screen.
-   Everything the app hides via the hidden attribute depends on this line. */
+   `display: flex` on .tabbar — silently beats it and the element stays on screen.
+   Everything the app hides via the hidden attribute depends on this line (including
+   inactive tab panels). The laptop breakpoint deliberately overrides it for panels. */
 [hidden] { display: none !important; }
 
 html { -webkit-text-size-adjust: 100%; }
@@ -167,8 +168,8 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  /* clear the fixed HP bar plus the iPhone home indicator */
-  padding-bottom: calc(148px + env(safe-area-inset-bottom));
+  /* clear the fixed tab bar plus the iPhone home indicator */
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
 
 .topbar {
@@ -267,16 +268,14 @@ input[type="checkbox"] {
 
 /* -------------------------------------------------------------- vitals */
 
+/* A segmented readout inside the Combat card (it used to be the sticky top strip).
+   auto-fit so it packs sensibly whether the card is a full-width phone column or a
+   narrow multicol column on a laptop. */
 .vitals {
-  /* Must clear the topbar, which is also sticky at top: 0 — otherwise this slides
-     underneath it and vanishes exactly when it is most needed. */
-  position: sticky;
-  top: calc(var(--topbar-h) + env(safe-area-inset-top));
-  z-index: 20;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); gap: 1px;
   margin: 0; padding: 1px;
   background: var(--line);
-  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
 }
 
 .vital {
@@ -304,8 +303,10 @@ input[type="checkbox"] {
 
 .cards { display: flex; flex-direction: column; gap: .7rem; padding: .7rem; }
 
-/* On a phone the column wrappers disappear entirely and the cards fall into DOM order. */
-.col { display: contents; }
+/* Each tab panel stacks its own cards. Only the active panel is shown; the rest carry
+   the [hidden] attribute. On a laptop this is overridden to display:contents so every
+   panel's cards flow into one multi-column layout (see § laptop). */
+.tabpanel { display: flex; flex-direction: column; gap: .7rem; }
 
 .card {
   padding: .85rem;
@@ -374,15 +375,20 @@ input[type="checkbox"] {
   width: 100%; max-width: 3.4rem; min-height: 36px; padding: .15rem;
   font-size: .9rem;
 }
-.ability__save {
-  display: flex; align-items: center; gap: .3rem;
-  width: 100%; min-height: 32px; padding-top: .3rem;
+/* Passive Perception sits under the ability grid on the Abilities tab. */
+.passive {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; margin-top: .7rem; padding-top: .7rem;
   border-top: 1px solid var(--line-soft);
-  justify-content: center;
-  cursor: pointer;
 }
-.ability__save-text { font-size: .68rem; color: var(--ink-faint); }
-.ability__save-total { font-variant-numeric: tabular-nums; font-weight: 600; font-size: .9rem; }
+.passive__label {
+  font-size: .72rem; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+.passive__value {
+  font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
 
 /* -------------------------------------------------------------- skills */
 
@@ -407,6 +413,36 @@ input[type="checkbox"] {
 .skill__name { font-size: .88rem; }
 .skill__prof, .skill__exp { justify-self: center; }
 .skill__total {
+  justify-self: center;
+  font-family: var(--serif); font-size: 1.05rem; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- saves */
+
+/* The six saving throws, moved to the Combat tab. Same grid shape as skills,
+   minus the expertise column. */
+.saves__head, .save {
+  display: grid;
+  grid-template-columns: 1fr 2.4rem 2.6rem;
+  align-items: center;
+  gap: .3rem;
+}
+.saves__head {
+  padding: 0 .2rem .35rem;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: .62rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-faint);
+  text-align: center;
+}
+.saves__head > :first-child { text-align: left; }
+
+.saves { list-style: none; margin: 0; padding: 0; }
+.save { min-height: var(--tap); border-bottom: 1px solid var(--line-soft); padding: 0 .2rem; }
+.save:last-child { border-bottom: 0; }
+.save__name { font-size: .88rem; }
+.save__prof { justify-self: center; }
+.save__total {
   justify-self: center;
   font-family: var(--serif); font-size: 1.05rem; font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -532,75 +568,78 @@ input[type="checkbox"] {
 .currency .field > label { text-align: center; }
 .currency input { padding-left: .2rem; padding-right: .2rem; }
 
-/* --------------------------------------------------------------- HP bar */
+/* ----------------------------------------------------------- hit points */
 
-.hpbar {
+/* The HP readout + damage/heal workflow, absorbed into the Combat tab from the
+   old sticky bottom bar. */
+.hp { display: flex; align-items: center; gap: .6rem; }
+
+.hp__step {
+  width: 56px; height: 52px; flex: none;
+  background: var(--parchment);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font-size: 1.6rem; line-height: 1; cursor: pointer;
+}
+.hp__step:active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.hp__readout {
+  flex: 1;
+  display: flex; align-items: baseline; justify-content: center; gap: .15rem;
+}
+.hp__cur {
+  width: 4.2rem; min-height: 44px; padding: 0;
+  background: none; border: 0;
+  font-family: var(--serif); font-size: 2.1rem; font-weight: 700;
+  text-align: right;
+}
+.is-bloodied .hp__cur { color: var(--bad); }
+.hp__slash { font-size: 1.3rem; color: var(--ink-faint); }
+.hp__max {
+  width: 3.2rem; min-height: 32px; padding: 0;
+  background: none; border: 0;
+  font-size: 1.15rem; color: var(--ink-soft); text-align: left;
+}
+.hp__cur:focus, .hp__max:focus { background: var(--parchment); border-radius: 6px; }
+
+.hp__work { display: flex; flex-wrap: wrap; gap: .4rem; align-items: flex-end; margin-top: .7rem; }
+.hp__work .field { flex: 0 1 4.5rem; }
+.hp__work .field > label { text-align: center; }
+.hp__work input { min-height: 40px; }
+.hp__work .btn { flex: 1 1 6rem; max-width: 10rem; min-height: 40px; }
+
+/* --------------------------------------------------------------- tab bar */
+
+/* Fixed to the bottom thumb zone on a phone; hidden on a laptop (§ laptop). */
+.tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
-  display: flex; flex-direction: column; gap: .5rem;
-  padding: .6rem .7rem calc(.6rem + env(safe-area-inset-bottom));
-  background: var(--card); /* fallback: the HP bar sits over scrolling content */
+  display: flex; gap: .2rem;
+  padding: .3rem .4rem calc(.3rem + env(safe-area-inset-bottom));
+  background: var(--card); /* fallback: the bar sits over scrolling content */
   background: color-mix(in srgb, var(--card) 96%, transparent);
   backdrop-filter: saturate(140%) blur(10px);
   border-top: 2px solid var(--line);
   box-shadow: 0 -4px 18px rgba(60, 44, 26, .12);
 }
 
-.is-bloodied .hpbar { border-top-color: var(--bad); }
-
-.hpbar__main { display: flex; align-items: center; gap: .6rem; }
-
-.hpbar__step {
-  width: 56px; height: 52px; flex: none;
-  background: var(--parchment);
-  border: 1px solid var(--line); border-radius: var(--radius);
-  font-size: 1.6rem; line-height: 1; cursor: pointer;
+.tab {
+  flex: 1 1 0; min-width: 44px; min-height: 44px;   /* comfortable touch target */
+  display: flex; align-items: center; justify-content: center;
+  padding: .2rem;
+  background: none; border: 0; border-radius: 8px;
+  font-family: var(--sans);
+  font-size: .74rem; color: var(--ink-soft); cursor: pointer;
 }
-.hpbar__step:active { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-.hpbar__readout {
-  flex: 1;
-  display: flex; align-items: baseline; justify-content: center; gap: .15rem;
+.tab[aria-selected="true"] {
+  color: var(--accent); font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
 }
-.hpbar__cur {
-  width: 4.2rem; min-height: 44px; padding: 0;
-  background: none; border: 0;
-  font-family: var(--serif); font-size: 2.1rem; font-weight: 700;
-  text-align: right;
-}
-.is-bloodied .hpbar__cur { color: var(--bad); }
-.hpbar__slash { font-size: 1.3rem; color: var(--ink-faint); }
-.hpbar__max {
-  width: 3.2rem; min-height: 32px; padding: 0;
-  background: none; border: 0;
-  font-size: 1.15rem; color: var(--ink-soft); text-align: left;
-}
-.hpbar__caption {
-  margin-left: .3rem;
-  font-size: .68rem; font-weight: 700; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--ink-faint);
-}
-.hpbar__cur:focus, .hpbar__max:focus { background: var(--parchment); border-radius: 6px; }
-
-.hpbar__side { display: flex; flex-wrap: wrap; gap: .4rem; align-items: flex-end; }
-.hpbar__side .field { flex: 0 1 4.5rem; }
-.hpbar__side .field > label { text-align: center; }
-.hpbar__side input { min-height: 40px; }
-.hpbar__side .btn { flex: 1 1 6rem; max-width: 10rem; min-height: 40px; }
 
 /* =============================================================== tablet */
 
 @media (min-width: 640px) {
-  /* .field-grid and .abilities deliberately keep their auto-fit base rule. A fixed
-     column count here overflowed: at laptop width these cards sit in a ~365px column,
-     where six 1fr ability boxes are narrower than their own contents, so WIS and CHA
-     were pushed outside the card and clipped. auto-fit wraps them instead. */
-  .vitals { grid-template-columns: repeat(6, 1fr); }
   /* Wide enough that a feature's name and body sit on one line. */
   .row--feature > input { flex: 0 1 14rem; }
   .row--feature > textarea { flex: 1 1 16rem; }
-  .hpbar { flex-direction: row; align-items: center; gap: 1.2rem; }
-  .hpbar__main { flex: 0 1 22rem; }
-  .hpbar__side { flex: 1; }
 }
 
 /* =============================================================== laptop */
@@ -619,45 +658,24 @@ input[type="checkbox"] {
 
   .main { padding-bottom: 2rem; }
 
-  /* On a laptop the thumb zone is meaningless, so HP moves up under the topbar.
-     The vitals strip stops competing for sticky space and just scrolls. */
-  .vitals { position: static; }
+  /* No thumb zone on a laptop: the tab bar goes away and every panel shows at once. */
+  .tabbar { display: none; }
 
-  .hpbar {
-    /* left/right/bottom carry over from the phone's fixed positioning and become
-       sticky constraints if left set — clear them. */
-    position: sticky; top: var(--topbar-h);
-    left: auto; right: auto; bottom: auto;
-    z-index: 25;
-    margin: 0; padding: .6rem 1rem;
-    border-top: 0; border-bottom: 2px solid var(--line);
-    box-shadow: var(--shadow);
-    order: -1;
-  }
-  .is-bloodied .hpbar { border-top: 0; border-bottom-color: var(--bad); }
+  /* Reveal every panel and dissolve its wrapper so the cards flow straight into the
+     .cards column layout. The [hidden] variant needs a higher-specificity !important
+     to beat the global `[hidden]{display:none!important}` kill-switch. */
+  .tabpanel { display: contents; }
+  .tabpanel[hidden] { display: contents !important; }
 
-  .main { display: flex; flex-direction: column; }
-  .topbar { order: -2; }
-  .banner { order: -1; }
-
-  /* Two columns. .col 1 and 2 become self-packing flex stacks; .col 3 dissolves so
-     its shorter cards flow as ordinary grid items underneath. align-items: start
-     stops a short card stretching to its row's height. */
-  .cards {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: start;
-    gap: 1rem;
-    padding: 1rem;
-  }
-  .col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-  .col:last-child { display: contents; }
+  /* Balanced multi-column card flow. break-inside keeps a whole card — and its inner
+     grid — intact, so the WIS/CHA clipping and screen-height gaps the old fixed .col
+     grid fought never arise. Same technique the print block already uses. */
+  .cards { display: block; column-count: 2; column-gap: 1rem; padding: 1rem; }
+  .card { break-inside: avoid; margin-bottom: 1rem; }
 }
 
 @media (min-width: 1280px) {
-  .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  /* Wide enough for the third column to stand on its own. */
-  .col:last-child { display: flex; }
+  .cards { column-count: 3; }
 }
 
 /* ================================================================ dialog */
@@ -682,14 +700,15 @@ input[type="checkbox"] {
 /* ================================================================= print */
 
 @media print {
-  .sidebar, .scrim, .topbar, .row__remove, .list__head .btn, .slots__head .btn,
+  .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
   .sidebar__foot, .banner { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }
-  .hpbar { position: static; box-shadow: none; border: 1px solid #999; }
+  /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */
+  .tabpanel { display: contents; }
+  .tabpanel[hidden] { display: contents !important; }
   .cards { display: block; column-count: 2; column-gap: 1rem; padding: 0; }
   .card { break-inside: avoid; box-shadow: none; margin-bottom: .6rem; border-color: #999; }
-  .vitals { position: static; }
 }
 
 @media (prefers-reduced-motion: reduce) {

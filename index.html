@@ -66,261 +66,296 @@
 
     <div class="sheet" id="sheet" hidden>
 
-      <!-- vitals: the at-a-glance strip -->
-      <section class="vitals" aria-label="Vital statistics">
-        <div class="vital">
-          <label class="vital__label" for="f-ac">AC</label>
-          <input class="vital__input" id="f-ac" type="number" inputmode="numeric" data-bind="ac" data-type="number">
-        </div>
-        <div class="vital">
-          <span class="vital__label">Initiative</span>
-          <output class="vital__value" data-derived="initiative">+0</output>
-        </div>
-        <div class="vital">
-          <label class="vital__label" for="f-speed">Speed</label>
-          <input class="vital__input" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number">
-        </div>
-        <div class="vital">
-          <span class="vital__label">Passive Perc.</span>
-          <output class="vital__value" data-derived="passive">10</output>
-        </div>
-        <div class="vital">
-          <span class="vital__label">Prof. Bonus</span>
-          <output class="vital__value" data-derived="pb">+2</output>
-        </div>
-        <div class="vital vital--toggle">
-          <span class="vital__label">Heroic Insp.</span>
-          <label class="switch">
-            <input type="checkbox" data-bind="heroicInspiration" data-type="checkbox">
-            <span class="switch__track" aria-hidden="true"></span>
-            <span class="visually-hidden">Heroic Inspiration</span>
-          </label>
-        </div>
-      </section>
-
       <!--
-        Cards are grouped into three explicit columns rather than left to a masonry-ish
-        auto layout. CSS multicol fragmented grids inside a card (WIS/CHA escaped the
-        Abilities card and painted over the next column), and a plain grid leaves a
-        screen-height gap beside the tall Skills card. On a phone each .col is
-        display: contents, so these wrappers vanish and the cards fall into DOM order.
+        The sheet is split into tabs. Every panel is rendered and kept in the DOM;
+        inactive ones carry the `hidden` attribute (renderDerived walks the whole
+        document on every change, so a panel must never leave the tree). On a laptop
+        the tab bar is hidden and CSS reveals every panel at once — see style.css.
       -->
       <div class="cards">
-       <div class="col">
 
-        <!-- identity -->
-        <section class="card">
-          <h2 class="card__title">Identity</h2>
-          <div class="field-grid">
-            <p class="field"><label for="f-name">Name</label>
-              <input id="f-name" type="text" data-bind="name" autocomplete="off"></p>
-            <p class="field"><label for="f-player">Player</label>
-              <input id="f-player" type="text" data-bind="player" autocomplete="off"></p>
-            <p class="field"><label for="f-class">Class</label>
-              <input id="f-class" type="text" data-bind="class" autocomplete="off"></p>
-            <p class="field"><label for="f-subclass">Subclass</label>
-              <input id="f-subclass" type="text" data-bind="subclass" autocomplete="off"></p>
-            <p class="field field--narrow"><label for="f-level">Level</label>
-              <input id="f-level" type="number" inputmode="numeric" data-bind="level" data-type="number"></p>
-            <p class="field"><label for="f-species">Species</label>
-              <input id="f-species" type="text" data-bind="species" autocomplete="off"></p>
-            <p class="field"><label for="f-background">Background</label>
-              <input id="f-background" type="text" data-bind="background" autocomplete="off"></p>
-            <p class="field"><label for="f-alignment">Alignment</label>
-              <input id="f-alignment" type="text" data-bind="alignment" autocomplete="off"></p>
-            <p class="field"><label for="f-init-bonus">Init bonus</label>
-              <input id="f-init-bonus" type="number" inputmode="numeric"
-                     data-bind="initiativeBonus" data-type="number"></p>
-            <p class="field"><label for="f-pb-override">PB override</label>
-              <input id="f-pb-override" type="number" inputmode="numeric" placeholder="auto"
-                     data-bind="proficiencyBonusOverride" data-type="nullable-number"></p>
-          </div>
-        </section>
+        <!-- ===================================================== Combat -->
+        <section class="tabpanel" id="panel-combat" role="tabpanel" aria-labelledby="tab-combat" tabindex="0">
 
-        <!-- abilities and saves -->
-        <section class="card">
-          <h2 class="card__title">Abilities &amp; Saves</h2>
-          <div class="abilities" id="abilities"></div>
-        </section>
+          <!-- hit points: absorbed from the old bottom bar -->
+          <section class="card">
+            <h2 class="card__title">Hit Points</h2>
+            <div class="hp">
+              <button type="button" class="hp__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
+              <div class="hp__readout">
+                <label class="visually-hidden" for="f-hp-current">Current hit points</label>
+                <input class="hp__cur" id="f-hp-current" type="number" inputmode="numeric" data-bind="hp.current" data-type="number">
+                <span class="hp__slash" aria-hidden="true">/</span>
+                <label class="visually-hidden" for="f-hp-max">Maximum hit points</label>
+                <input class="hp__max" id="f-hp-max" type="number" inputmode="numeric" data-bind="hp.max" data-type="number">
+              </div>
+              <button type="button" class="hp__step" data-action="hp-inc" aria-label="Gain one hit point">+</button>
+            </div>
+            <div class="hp__work">
+              <p class="field field--narrow"><label for="f-hp-temp">Temp</label>
+                <input id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-hp-amount">Amount</label>
+                <input id="f-hp-amount" type="number" inputmode="numeric" placeholder="0"></p>
+              <button type="button" class="btn btn--danger btn--small" data-action="damage">Damage</button>
+              <button type="button" class="btn btn--good btn--small" data-action="heal">Heal</button>
+            </div>
+          </section>
 
-        <!-- skills -->
-        <section class="card">
-          <h2 class="card__title">Skills</h2>
-          <div class="skills__head" aria-hidden="true">
-            <span>Skill</span><span>Prof</span><span>Exp</span><span>Total</span>
-          </div>
-          <ul class="skills" id="skills"></ul>
-        </section>
-
-       </div>
-       <div class="col">
-
-        <!-- status -->
-        <section class="card">
-          <h2 class="card__title">Status</h2>
-
-          <div class="status__block">
-            <h3 class="subhead">Hit Dice</h3>
+          <!-- combat stats: absorbed from the old vitals strip -->
+          <section class="card">
+            <h2 class="card__title">Combat</h2>
+            <div class="vitals">
+              <div class="vital">
+                <label class="vital__label" for="f-ac">AC</label>
+                <input class="vital__input" id="f-ac" type="number" inputmode="numeric" data-bind="ac" data-type="number">
+              </div>
+              <div class="vital">
+                <span class="vital__label">Initiative</span>
+                <output class="vital__value" data-derived="initiative">+0</output>
+              </div>
+              <div class="vital">
+                <label class="vital__label" for="f-speed">Speed</label>
+                <input class="vital__input" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number">
+              </div>
+              <div class="vital">
+                <span class="vital__label">Prof. Bonus</span>
+                <output class="vital__value" data-derived="pb">+2</output>
+              </div>
+              <div class="vital vital--toggle">
+                <span class="vital__label">Heroic Insp.</span>
+                <label class="switch">
+                  <input type="checkbox" data-bind="heroicInspiration" data-type="checkbox">
+                  <span class="switch__track" aria-hidden="true"></span>
+                  <span class="visually-hidden">Heroic Inspiration</span>
+                </label>
+              </div>
+            </div>
             <div class="inline-fields">
-              <p class="field field--narrow"><label for="f-hd-remaining">Remaining</label>
-                <input id="f-hd-remaining" type="number" inputmode="numeric" data-bind="hitDice.remaining" data-type="number"></p>
-              <p class="field field--narrow"><label for="f-hd-total">Total</label>
-                <input id="f-hd-total" type="number" inputmode="numeric" data-bind="hitDice.total" data-type="number"></p>
-              <p class="field field--narrow"><label for="f-hd-size">Die</label>
-                <input id="f-hd-size" type="text" list="hit-dice" data-bind="hitDice.size" autocomplete="off">
-                <datalist id="hit-dice"></datalist></p>
+              <p class="field field--narrow"><label for="f-init-bonus">Init bonus</label>
+                <input id="f-init-bonus" type="number" inputmode="numeric"
+                       data-bind="initiativeBonus" data-type="number"></p>
             </div>
-          </div>
+          </section>
 
-          <div class="status__block">
-            <h3 class="subhead">Death Saves</h3>
-            <div class="deathsaves">
-              <div class="deathsaves__row">
-                <span class="deathsaves__label">Successes</span>
-                <div class="pips" id="death-successes"></div>
-              </div>
-              <div class="deathsaves__row">
-                <span class="deathsaves__label">Failures</span>
-                <div class="pips pips--bad" id="death-failures"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="status__block">
-            <h3 class="subhead">Exhaustion <output class="badge" data-derived="exhaustion">0</output></h3>
-            <div class="pips pips--bad" id="exhaustion"></div>
-          </div>
-
-          <div class="status__block">
-            <h3 class="subhead">Conditions</h3>
+          <!-- conditions: moved out of the old Status card -->
+          <section class="card">
+            <h2 class="card__title">Conditions</h2>
             <div class="chips" id="conditions"></div>
-          </div>
-        </section>
+          </section>
 
-        <!-- spellcasting -->
-        <section class="card" id="card-spellcasting">
-          <h2 class="card__title">Spellcasting</h2>
-          <div class="inline-fields">
-            <p class="field"><label for="f-spell-ability">Spellcasting ability</label>
-              <select id="f-spell-ability" data-bind="spellcasting.ability" data-structural="true">
-                <option value="">— none (not a caster) —</option>
-                <option value="int">Intelligence</option>
-                <option value="wis">Wisdom</option>
-                <option value="cha">Charisma</option>
-                <option value="str">Strength</option>
-                <option value="dex">Dexterity</option>
-                <option value="con">Constitution</option>
-              </select></p>
-          </div>
-
-          <div id="spell-body" hidden>
-            <div class="spell-stats">
-              <div class="vital">
-                <span class="vital__label">Spell save DC</span>
-                <output class="vital__value" data-derived="spellDC">—</output>
-              </div>
-              <div class="vital">
-                <span class="vital__label">Spell attack</span>
-                <output class="vital__value" data-derived="spellAtk">—</output>
-              </div>
+          <!-- saving throws: the save half split out of the old ability cell -->
+          <section class="card">
+            <h2 class="card__title">Saving Throws</h2>
+            <div class="saves__head" aria-hidden="true">
+              <span>Save</span><span>Prof</span><span>Total</span>
             </div>
+            <ul class="saves" id="saves"></ul>
+          </section>
 
-            <div class="slots__head">
-              <h3 class="subhead">Spell Slots</h3>
-              <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
-            </div>
-            <div class="slots" id="slots"></div>
-
+          <!-- attacks -->
+          <section class="card">
             <div class="list__head">
-              <h3 class="subhead">Spells</h3>
-              <button type="button" class="btn btn--small" data-action="add-row" data-list="spells">+ Add spell</button>
+              <h2 class="card__title">Attacks</h2>
+              <button type="button" class="btn btn--small" data-action="add-row" data-list="attacks">+ Add</button>
             </div>
-            <ul class="rows" id="spells"></ul>
-          </div>
+            <ul class="rows" id="attacks"></ul>
+          </section>
+
+          <!-- status: hit dice, death saves, exhaustion (conditions moved above) -->
+          <section class="card">
+            <h2 class="card__title">Status</h2>
+
+            <div class="status__block">
+              <h3 class="subhead">Hit Dice</h3>
+              <div class="inline-fields">
+                <p class="field field--narrow"><label for="f-hd-remaining">Remaining</label>
+                  <input id="f-hd-remaining" type="number" inputmode="numeric" data-bind="hitDice.remaining" data-type="number"></p>
+                <p class="field field--narrow"><label for="f-hd-total">Total</label>
+                  <input id="f-hd-total" type="number" inputmode="numeric" data-bind="hitDice.total" data-type="number"></p>
+                <p class="field field--narrow"><label for="f-hd-size">Die</label>
+                  <input id="f-hd-size" type="text" list="hit-dice" data-bind="hitDice.size" autocomplete="off">
+                  <datalist id="hit-dice"></datalist></p>
+              </div>
+            </div>
+
+            <div class="status__block">
+              <h3 class="subhead">Death Saves</h3>
+              <div class="deathsaves">
+                <div class="deathsaves__row">
+                  <span class="deathsaves__label">Successes</span>
+                  <div class="pips" id="death-successes"></div>
+                </div>
+                <div class="deathsaves__row">
+                  <span class="deathsaves__label">Failures</span>
+                  <div class="pips pips--bad" id="death-failures"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="status__block">
+              <h3 class="subhead">Exhaustion <output class="badge" data-derived="exhaustion">0</output></h3>
+              <div class="pips pips--bad" id="exhaustion"></div>
+            </div>
+          </section>
+
         </section>
 
-       </div>
-       <div class="col">
+        <!-- ================================================== Abilities -->
+        <section class="tabpanel" id="panel-abilities" role="tabpanel" aria-labelledby="tab-abilities" tabindex="0" hidden>
 
-        <!-- attacks -->
-        <section class="card">
-          <div class="list__head">
-            <h2 class="card__title">Attacks</h2>
-            <button type="button" class="btn btn--small" data-action="add-row" data-list="attacks">+ Add</button>
-          </div>
-          <ul class="rows" id="attacks"></ul>
+          <!-- abilities: score half only -->
+          <section class="card">
+            <h2 class="card__title">Abilities</h2>
+            <div class="abilities" id="abilities"></div>
+            <div class="passive">
+              <span class="passive__label">Passive Perception</span>
+              <output class="passive__value" data-derived="passive">10</output>
+            </div>
+          </section>
+
+          <!-- skills -->
+          <section class="card">
+            <h2 class="card__title">Skills</h2>
+            <div class="skills__head" aria-hidden="true">
+              <span>Skill</span><span>Prof</span><span>Exp</span><span>Total</span>
+            </div>
+            <ul class="skills" id="skills"></ul>
+          </section>
+
         </section>
 
-        <!-- features -->
-        <section class="card">
-          <div class="list__head">
-            <h2 class="card__title">Features &amp; Traits</h2>
-            <button type="button" class="btn btn--small" data-action="add-row" data-list="features">+ Add</button>
-          </div>
-          <ul class="rows" id="features"></ul>
+        <!-- ===================================================== Spells -->
+        <section class="tabpanel" id="panel-spells" role="tabpanel" aria-labelledby="tab-spells" tabindex="0" hidden>
+
+          <section class="card" id="card-spellcasting">
+            <h2 class="card__title">Spellcasting</h2>
+            <div class="inline-fields">
+              <p class="field"><label for="f-spell-ability">Spellcasting ability</label>
+                <select id="f-spell-ability" data-bind="spellcasting.ability" data-structural="true">
+                  <option value="">— none (not a caster) —</option>
+                  <option value="int">Intelligence</option>
+                  <option value="wis">Wisdom</option>
+                  <option value="cha">Charisma</option>
+                  <option value="str">Strength</option>
+                  <option value="dex">Dexterity</option>
+                  <option value="con">Constitution</option>
+                </select></p>
+            </div>
+
+            <div id="spell-body" hidden>
+              <div class="spell-stats">
+                <div class="vital">
+                  <span class="vital__label">Spell save DC</span>
+                  <output class="vital__value" data-derived="spellDC">—</output>
+                </div>
+                <div class="vital">
+                  <span class="vital__label">Spell attack</span>
+                  <output class="vital__value" data-derived="spellAtk">—</output>
+                </div>
+              </div>
+
+              <div class="slots__head">
+                <h3 class="subhead">Spell Slots</h3>
+                <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
+              </div>
+              <div class="slots" id="slots"></div>
+
+              <div class="list__head">
+                <h3 class="subhead">Spells</h3>
+                <button type="button" class="btn btn--small" data-action="add-row" data-list="spells">+ Add spell</button>
+              </div>
+              <ul class="rows" id="spells"></ul>
+            </div>
+          </section>
+
         </section>
 
-        <!-- inventory -->
-        <section class="card">
-          <div class="list__head">
-            <h2 class="card__title">Inventory</h2>
-            <button type="button" class="btn btn--small" data-action="add-row" data-list="inventory">+ Add</button>
-          </div>
-          <ul class="rows" id="inventory"></ul>
-          <h3 class="subhead">Currency</h3>
-          <div class="currency">
-            <p class="field field--narrow"><label for="f-cp">CP</label>
-              <input id="f-cp" type="number" inputmode="numeric" data-bind="currency.cp" data-type="number"></p>
-            <p class="field field--narrow"><label for="f-sp">SP</label>
-              <input id="f-sp" type="number" inputmode="numeric" data-bind="currency.sp" data-type="number"></p>
-            <p class="field field--narrow"><label for="f-ep">EP</label>
-              <input id="f-ep" type="number" inputmode="numeric" data-bind="currency.ep" data-type="number"></p>
-            <p class="field field--narrow"><label for="f-gp">GP</label>
-              <input id="f-gp" type="number" inputmode="numeric" data-bind="currency.gp" data-type="number"></p>
-            <p class="field field--narrow"><label for="f-pp">PP</label>
-              <input id="f-pp" type="number" inputmode="numeric" data-bind="currency.pp" data-type="number"></p>
-          </div>
+        <!-- ======================================================= Gear -->
+        <section class="tabpanel" id="panel-gear" role="tabpanel" aria-labelledby="tab-gear" tabindex="0" hidden>
+
+          <!-- inventory -->
+          <section class="card">
+            <div class="list__head">
+              <h2 class="card__title">Inventory</h2>
+              <button type="button" class="btn btn--small" data-action="add-row" data-list="inventory">+ Add</button>
+            </div>
+            <ul class="rows" id="inventory"></ul>
+            <h3 class="subhead">Currency</h3>
+            <div class="currency">
+              <p class="field field--narrow"><label for="f-cp">CP</label>
+                <input id="f-cp" type="number" inputmode="numeric" data-bind="currency.cp" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-sp">SP</label>
+                <input id="f-sp" type="number" inputmode="numeric" data-bind="currency.sp" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-ep">EP</label>
+                <input id="f-ep" type="number" inputmode="numeric" data-bind="currency.ep" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-gp">GP</label>
+                <input id="f-gp" type="number" inputmode="numeric" data-bind="currency.gp" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-pp">PP</label>
+                <input id="f-pp" type="number" inputmode="numeric" data-bind="currency.pp" data-type="number"></p>
+            </div>
+          </section>
+
+          <!-- features -->
+          <section class="card">
+            <div class="list__head">
+              <h2 class="card__title">Features &amp; Traits</h2>
+              <button type="button" class="btn btn--small" data-action="add-row" data-list="features">+ Add</button>
+            </div>
+            <ul class="rows" id="features"></ul>
+          </section>
+
         </section>
 
-        <!-- notes -->
-        <section class="card">
-          <h2 class="card__title">Notes</h2>
-          <label class="visually-hidden" for="f-notes">Notes</label>
-          <textarea id="f-notes" rows="8" data-bind="notes"></textarea>
+        <!-- ================================================== Character -->
+        <section class="tabpanel" id="panel-character" role="tabpanel" aria-labelledby="tab-character" tabindex="0" hidden>
+
+          <!-- identity -->
+          <section class="card">
+            <h2 class="card__title">Identity</h2>
+            <div class="field-grid">
+              <p class="field"><label for="f-name">Name</label>
+                <input id="f-name" type="text" data-bind="name" autocomplete="off"></p>
+              <p class="field"><label for="f-player">Player</label>
+                <input id="f-player" type="text" data-bind="player" autocomplete="off"></p>
+              <p class="field"><label for="f-class">Class</label>
+                <input id="f-class" type="text" data-bind="class" autocomplete="off"></p>
+              <p class="field"><label for="f-subclass">Subclass</label>
+                <input id="f-subclass" type="text" data-bind="subclass" autocomplete="off"></p>
+              <p class="field field--narrow"><label for="f-level">Level</label>
+                <input id="f-level" type="number" inputmode="numeric" data-bind="level" data-type="number"></p>
+              <p class="field"><label for="f-species">Species</label>
+                <input id="f-species" type="text" data-bind="species" autocomplete="off"></p>
+              <p class="field"><label for="f-background">Background</label>
+                <input id="f-background" type="text" data-bind="background" autocomplete="off"></p>
+              <p class="field"><label for="f-alignment">Alignment</label>
+                <input id="f-alignment" type="text" data-bind="alignment" autocomplete="off"></p>
+              <p class="field"><label for="f-pb-override">PB override</label>
+                <input id="f-pb-override" type="number" inputmode="numeric" placeholder="auto"
+                       data-bind="proficiencyBonusOverride" data-type="nullable-number"></p>
+            </div>
+          </section>
+
+          <!-- notes -->
+          <section class="card">
+            <h2 class="card__title">Notes</h2>
+            <label class="visually-hidden" for="f-notes">Notes</label>
+            <textarea id="f-notes" rows="8" data-bind="notes"></textarea>
+          </section>
+
         </section>
 
-       </div>
       </div>
     </div>
 
-    <!-- HP: sticky top on a laptop, pinned to the thumb zone on a phone -->
-    <div class="hpbar" id="hpbar" hidden>
-      <div class="hpbar__main">
-        <button type="button" class="hpbar__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
-        <div class="hpbar__readout">
-          <label class="visually-hidden" for="f-hp-current">Current hit points</label>
-          <input class="hpbar__cur" id="f-hp-current" type="number" inputmode="numeric" data-bind="hp.current" data-type="number">
-          <span class="hpbar__slash">/</span>
-          <label class="visually-hidden" for="f-hp-max">Maximum hit points</label>
-          <input class="hpbar__max" id="f-hp-max" type="number" inputmode="numeric" data-bind="hp.max" data-type="number">
-          <span class="hpbar__caption">HP</span>
-        </div>
-        <button type="button" class="hpbar__step" data-action="hp-inc" aria-label="Gain one hit point">+</button>
-      </div>
-
-      <div class="hpbar__side">
-        <p class="field field--narrow">
-          <label for="f-hp-temp">Temp</label>
-          <input id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number">
-        </p>
-        <p class="field field--narrow">
-          <label for="f-hp-amount">Amount</label>
-          <input id="f-hp-amount" type="number" inputmode="numeric" placeholder="0">
-        </p>
-        <button type="button" class="btn btn--danger btn--small" data-action="damage">Damage</button>
-        <button type="button" class="btn btn--good btn--small" data-action="heal">Heal</button>
-      </div>
-    </div>
+    <!-- Bottom tab bar. The thumb zone, freed up by folding HP into the Combat tab.
+         Hidden on a laptop, where every panel is shown at once. -->
+    <nav class="tabbar" id="tabbar" role="tablist" aria-label="Character sheet sections" hidden>
+      <button type="button" class="tab" id="tab-combat"    role="tab" aria-controls="panel-combat"    aria-selected="true"  tabindex="0">Combat</button>
+      <button type="button" class="tab" id="tab-abilities" role="tab" aria-controls="panel-abilities" aria-selected="false" tabindex="-1">Abilities</button>
+      <button type="button" class="tab" id="tab-spells"    role="tab" aria-controls="panel-spells"    aria-selected="false" tabindex="-1">Spells</button>
+      <button type="button" class="tab" id="tab-gear"      role="tab" aria-controls="panel-gear"      aria-selected="false" tabindex="-1">Gear</button>
+      <button type="button" class="tab" id="tab-character" role="tab" aria-controls="panel-character" aria-selected="false" tabindex="-1">Character</button>
+    </nav>
 
   </main>
 </div>
@@ -352,17 +387,20 @@
   </li>
 </template>
 
-<template id="tpl-ability">
+<template id="tpl-ability-score">
   <div class="ability">
     <span class="ability__name"></span>
     <output class="ability__mod"></output>
     <input class="ability__score" type="number" inputmode="numeric" data-type="number">
-    <label class="ability__save">
-      <input type="checkbox" class="ability__save-box">
-      <span class="ability__save-text">Save</span>
-      <output class="ability__save-total"></output>
-    </label>
   </div>
+</template>
+
+<template id="tpl-save">
+  <li class="save">
+    <span class="save__name"></span>
+    <input type="checkbox" class="save__prof">
+    <output class="save__total"></output>
+  </li>
 </template>
 
 <template id="tpl-skill">

@@ -61,14 +61,19 @@ export function invalidateRoster() {
 
 /* ------------------------------------------------------- static sections */
 
+/**
+ * Abilities and saves used to share one cell. They now live on different tabs
+ * (scores on Abilities, saves on Combat), so they are two independent renders —
+ * but both still write the same derived/toggle/bind keys, so rules.js and state.js
+ * never learn the layout moved.
+ */
 function renderAbilities(char) {
   const host = $('#abilities');
   host.replaceChildren();
 
   for (const ability of ABILITIES) {
-    const node = tpl('tpl-ability').cloneNode(true);
+    const node = tpl('tpl-ability-score').cloneNode(true);
     const scoreId = `f-ability-${ability.key}`;
-    const saveId = `f-save-${ability.key}`;
 
     $('.ability__name', node).textContent = ability.short;
 
@@ -81,14 +86,26 @@ function renderAbilities(char) {
     mod.dataset.derived = `mod.${ability.key}`;
     mod.setAttribute('for', scoreId);
 
-    const box = $('.ability__save-box', node);
-    box.id = saveId;
+    host.append(node);
+  }
+}
+
+function renderSaves(char) {
+  const host = $('#saves');
+  host.replaceChildren();
+
+  for (const ability of ABILITIES) {
+    const node = tpl('tpl-save').cloneNode(true);
+
+    $('.save__name', node).textContent = ability.label;
+
+    const box = $('.save__prof', node);
+    box.id = `f-save-${ability.key}`;
     box.dataset.toggle = 'saveProficiencies';
     box.dataset.value = ability.key;
     box.setAttribute('aria-label', `${ability.label} saving throw proficiency`);
 
-    $('.ability__save', node).setAttribute('for', saveId);
-    $('.ability__save-total', node).dataset.derived = `save.${ability.key}`;
+    $('.save__total', node).dataset.derived = `save.${ability.key}`;
 
     host.append(node);
   }
@@ -245,15 +262,50 @@ function renderRows(char, listName) {
   }
 }
 
+/* ---------------------------------------------------------------- tabs */
+
+const TAB_KEYS = ['combat', 'abilities', 'spells', 'gear', 'character'];
+let activeTabKey = 'combat';
+let renderedCharId = null;
+
+/** Show one panel, hide the rest. Desktop CSS overrides the `hidden` to show all. */
+export function activateTab(tabKey, { focus = false } = {}) {
+  activeTabKey = tabKey;
+  for (const key of TAB_KEYS) {
+    const tab = $(`#tab-${key}`);
+    const panel = $(`#panel-${key}`);
+    if (!tab || !panel) continue;
+    const on = key === tabKey;
+    tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    tab.tabIndex = on ? 0 : -1;
+    panel.hidden = !on;
+    if (on && focus) tab.focus();
+  }
+}
+
+/**
+ * Opening a different character drops you on the first tab; a structural re-render
+ * of the SAME character (adding a row, say) keeps you where you were, so editing a
+ * spell doesn't bounce you off the Spells tab. The last tab is not persisted.
+ */
+function syncActiveTab(char) {
+  if (char.id !== renderedCharId) {
+    renderedCharId = char.id;
+    activeTabKey = 'combat';
+  }
+  if (activeTabKey === 'spells' && !rules.isSpellcaster(char)) activeTabKey = 'combat';
+  activateTab(activeTabKey);
+}
+
 /* ---------------------------------------------------------- full rebuild */
 
 export function renderSheet(char) {
   const sheet = $('#sheet');
-  const hpbar = $('#hpbar');
+  const tabbar = $('#tabbar');
   const empty = $('#empty');
 
   sheet.hidden = !char;
-  hpbar.hidden = !char;
+  tabbar.hidden = !char;
   empty.hidden = Boolean(char);
   if (!char) {
     $('#topbar-name').textContent = '—';
@@ -265,6 +317,7 @@ export function renderSheet(char) {
   }
 
   renderAbilities(char);
+  renderSaves(char);
   renderSkills(char);
   renderConditions();
   renderHitDieOptions();
@@ -279,6 +332,7 @@ export function renderSheet(char) {
     else el.value = value === null || value === undefined ? '' : value;
   }
 
+  syncActiveTab(char);
   renderDerived(char);
 }
 
@@ -345,6 +399,9 @@ export function renderDerived(char) {
   const caster = rules.isSpellcaster(char);
   $('#spell-body').hidden = !caster;
   $('#card-spellcasting').classList.toggle('card--muted', !caster);
+  // The whole Spells tab disappears for a non-caster; leave it if we were on it.
+  $('#tab-spells').hidden = !caster;
+  if (!caster && activeTabKey === 'spells') activateTab('combat');
 
   $('#topbar-name').textContent = char.name || 'Unnamed';
   $('#topbar-sub').textContent =
