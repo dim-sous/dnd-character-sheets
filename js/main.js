@@ -8,10 +8,11 @@
 
 import * as rules from './rules.js';
 import * as state from './state.js';
-import { exportToFile, readImportFile } from './storage.js';
+import { STORAGE_KEY } from './constants.js';
+import { exportToFile, readImportFile, exportRaw } from './storage.js';
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips,
-  invalidateRoster, setSaved, showBanner, showUpdatePrompt, activateTab,
+  invalidateRoster, setSaved, showBanner, showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -153,6 +154,9 @@ const ACTIONS = {
   },
   'add-row': (el) => state.addRow(el.dataset.list),
   'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),
+
+  'download-corrupt': () => exportRaw(state.getCorruptRaw()),
+  'start-fresh': () => { state.startFresh(); showBanner(''); },
 };
 
 document.addEventListener('click', (event) => {
@@ -284,18 +288,33 @@ document.addEventListener('keydown', (event) => {
 /* -------------------------------------------------------------- startup */
 
 state.subscribe(render);
-state.onStatus((message, tone) => setSaved(tone === 'pending' ? '' : message, tone));
+// Show every save state, including 'Saving…'. A stuck 'Saving…' is the signal that writes
+// are failing (private mode / full storage), so it must not be hidden behind an empty string.
+state.onStatus((message, tone) => setSaved(message, tone));
 
-const loadError = state.init();
-if (loadError) showBanner(loadError);
-
+const startup = state.init();
 render('structural');
 setSaved('', 'idle');
+
+if (startup.corrupt) {
+  // Unreadable data — offer to download it before anything can overwrite it.
+  showRecovery();
+} else if (startup.error) {
+  showBanner(startup.error);
+} else if (!startup.writable) {
+  showBanner('This browser is not saving changes (private mode or full storage). Export a backup to keep your work.');
+}
 
 // Phones kill tabs without warning; pagehide is the reliable last call.
 window.addEventListener('pagehide', () => state.flush());
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') state.flush();
+});
+
+// Another tab saved the roster: adopt it when we have nothing unsaved, so open tabs
+// converge instead of the last one to write clobbering the rest.
+window.addEventListener('storage', (event) => {
+  if (event.key === STORAGE_KEY) state.reloadFromStorage();
 });
 
 // navigator.serviceWorker is undefined on an insecure origin, so this is automatically

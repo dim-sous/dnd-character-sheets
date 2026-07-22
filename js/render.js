@@ -430,6 +430,32 @@ export function showBanner(message) {
 }
 
 /**
+ * Saved data could not be read. Offer to download the raw bytes before discarding them —
+ * until the user chooses "Start fresh", state.js refuses to save over the original.
+ */
+export function showRecovery() {
+  const el = $('#banner');
+  el.hidden = false;
+  el.classList.remove('banner--info');
+  el.textContent = 'Your saved characters could not be read, so they have NOT been changed. '
+    + 'Download a copy, then start fresh.';
+
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.className = 'btn btn--small';
+  download.dataset.action = 'download-corrupt';
+  download.textContent = 'Download unreadable data';
+
+  const fresh = document.createElement('button');
+  fresh.type = 'button';
+  fresh.className = 'btn btn--small btn--danger';
+  fresh.dataset.action = 'start-fresh';
+  fresh.textContent = 'Start fresh';
+
+  el.append(download, fresh);
+}
+
+/**
  * Offer a reload once a new build has been installed by the service worker.
  *
  * Deliberately a prompt rather than an automatic reload: this app is read at a table
