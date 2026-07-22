@@ -117,9 +117,10 @@ each mutator has to remember.
 **Rendering is split three ways on purpose.** Rebuilding the sheet on every keystroke would
 reassign `.value` on the field being typed into and throw the caret to the end of the line.
 So `renderSheet()` runs only on structural changes (open a character, add or remove a row,
-import) and writes each input's value exactly once; after that, text fields flow one way
-only — DOM to state. `renderDerived()` runs on every change but refuses to write any input
-that is `document.activeElement`.
+import) and writes each input's value exactly once. After that, only the field that has the
+caret flows one way — DOM to state: `renderDerived()` runs on every change and writes every
+*other* bound input back from state, refusing just the one that is `document.activeElement`.
+That write-back is what lets the HP +/− buttons and long rest update the inputs at all.
 
 **There are no per-field event handlers.** Two delegated listeners read `data-bind`,
 `data-toggle` and `data-action` attributes, so adding a field to `index.html` needs no
@@ -134,8 +135,11 @@ node tools/run-tests.mjs
 ```
 
 It asserts every derived value — modifiers, proficiency bonus at each tier, saves, skills
-with proficiency and expertise, passive Perception, initiative, spell DC and attack, and
-the HP damage/healing arithmetic.
+with proficiency and expertise, passive Perception, initiative, spell DC and attack, the
+HP damage/healing arithmetic, and the long-rest hit-dice recovery. It also covers the
+data-loss-critical load path — the `hitDice` migration, `parseStored`, and
+`normalizeCharacter`'s coercion and clamping — plus the dot-path `getByPath`/`setByPath`
+and the `mergeCharacters` id-collision handling the store is built on.
 
 The assertions live in `tests.js`, imported by both the browser page and the Node runner.
 The identical suite running in either place — with no test framework — is only possible
@@ -159,15 +163,20 @@ Then Go Live (or `python3 -m http.server 8000`) and click through it, and run
 
 ## Deploying a change
 
-The service worker caches the app shell **cache-first**, so a deployed change will not
-appear on an installed phone until you bump the version:
+Push to `main`. The `deploy.yml` workflow runs `tools/stamp-sw.py`, which rewrites the
+service worker's `CACHE_VERSION` to a content hash of the precached files and regenerates
+the precache list, then publishes to GitHub Pages. **You do not bump the version by hand** —
+the hash changes on its own whenever a shipped file changes, and the repo copy deliberately
+stays at `v1` (both the stamp and the deploy rely on the committed copy being unstamped). To
+see what a deploy would stamp, without touching anything:
 
-```js
-// service-worker.js
-const CACHE_VERSION = 'v2';   // ← bump this on every deploy
+```bash
+python3 tools/stamp-sw.py --print
 ```
 
-If a change of yours stubbornly refuses to show up on a phone, this is why.
+The app still caches the shell **cache-first**, so a change reaches an installed phone only
+once the worker picks up the new build. If one stubbornly refuses to show up, that lag is
+why — reopening the app re-checks the worker, and it then offers a reload.
 
 ## What it deliberately does not do
 
