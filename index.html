@@ -254,15 +254,12 @@
 
               <div class="slots__head">
                 <h3 class="subhead">Spell Slots</h3>
-                <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
+                <div class="slots__actions">
+                  <button type="button" class="btn btn--small" id="btn-slot-setup" data-action="toggle-slot-setup">Edit slots</button>
+                  <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
+                </div>
               </div>
               <div class="slots" id="slots"></div>
-
-              <div class="list__head">
-                <h3 class="subhead">Spells</h3>
-                <button type="button" class="btn btn--small" data-action="add-row" data-list="spells">+ Add spell</button>
-              </div>
-              <ul class="rows" id="spells"></ul>
             </div>
           </section>
 
@@ -418,6 +415,7 @@
   <div class="slot">
     <span class="slot__level"></span>
     <div class="pips pips--slot"></div>
+    <output class="slot__count"></output>
     <label class="slot__total">
       <span class="visually-hidden">Total slots</span>
       <input type="number" inputmode="numeric" class="slot__total-input" data-type="number">
@@ -432,18 +430,6 @@
     <input type="text" data-bind-suffix="damage" placeholder="1d8+3 slashing" aria-label="Damage">
     <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
     <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
-  </li>
-</template>
-
-<template id="tpl-spell">
-  <li class="row row--spell">
-    <label class="row__prepared">
-      <input type="checkbox" data-bind-suffix="prepared" data-type="checkbox">
-      <span class="visually-hidden">Prepared</span>
-    </label>
-    <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
-    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="level" data-type="number" placeholder="0" aria-label="Spell level">
-    <button type="button" class="row__remove" data-action="remove-row" data-list="spells" aria-label="Remove spell">✕</button>
   </li>
 </template>
 

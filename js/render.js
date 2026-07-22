@@ -198,11 +198,25 @@ function paintSlotPipRow(row, char) {
     (i, n) => `Level ${level} slot ${i + 1} of ${n}`);
 }
 
+/**
+ * Transient view state, like the active tab: setup mode shows all nine levels with
+ * their editable totals; play mode shows only levels that have slots, with a
+ * remaining/total count instead. Never stored on the character — it is not
+ * character data, and persisting it would leak layout into every export.
+ */
+let slotSetupMode = false;
+
 function renderSlots(char) {
   const host = $('#slots');
   host.replaceChildren();
 
-  for (const level of SPELL_LEVELS) {
+  // Play mode hides levels with no slots (#9) — a level-5 wizard shouldn't scroll
+  // past six dead rows. Setup mode is where empty levels come back to be filled in.
+  const levels = slotSetupMode
+    ? SPELL_LEVELS
+    : SPELL_LEVELS.filter((level) => char.spellcasting.slots[level].total > 0);
+
+  for (const level of levels) {
     const node = tpl('tpl-slot-row').cloneNode(true);
     node.dataset.level = String(level);
     $('.slot__level', node).textContent = `Lv ${level}`;
@@ -217,9 +231,45 @@ function renderSlots(char) {
     total.setAttribute('aria-label', `Level ${level} total spell slots`);
     $('.slot__total', node).setAttribute('for', total.id);
 
+    // The third grid column is the count in play mode, the total input in setup
+    // mode. Both live in the template so the row shape never changes.
+    $('.slot__total', node).hidden = !slotSetupMode;
+    $('.slot__count', node).hidden = slotSetupMode;
+
     paintSlotPipRow(node, char);
 
     host.append(node);
+  }
+
+  // A brand-new caster has every total at 0, so the play-mode filter would show
+  // nothing and the card would look broken (#9). Point at setup mode instead.
+  if (levels.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'rows__empty';
+    empty.textContent = 'No spell slots yet. ';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn--small';
+    btn.dataset.action = 'toggle-slot-setup';
+    btn.textContent = 'Set up slots';
+    empty.append(btn);
+    host.append(empty);
+  }
+
+  const toggle = $('#btn-slot-setup');
+  if (toggle) toggle.textContent = slotSetupMode ? 'Done' : 'Edit slots';
+}
+
+/** Flip between play and setup mode, then rebuild the rows the flip changes. */
+export function toggleSlotSetup(char) {
+  slotSetupMode = !slotSetupMode;
+  renderSlots(char);
+  renderDerived(char);
+  // The empty-state "Set up slots" button destroys itself in the rebuild — don't
+  // strand focus on <body> (#27); land it in the first total input instead. When
+  // the header button invoked us it still exists and keeps focus, so leave it be.
+  if (slotSetupMode && (!document.activeElement || document.activeElement === document.body)) {
+    $('#slots .slot__total-input')?.focus();
   }
 }
 
@@ -235,7 +285,9 @@ export function renderSlotPips(char) {
 
 const ROW_TEMPLATE_IDS = {
   attacks: 'tpl-attack',
-  spells: 'tpl-spell',
+  // spells is deliberately absent: the inert spell list was hidden in #9. The FIELD
+  // stays in the model (constants/storage) so existing data keeps round-tripping
+  // through save/export/import, and the UI can come back for free.
   features: 'tpl-feature',
   inventory: 'tpl-inventory',
   hitDice: 'tpl-hitdie',
@@ -375,6 +427,9 @@ export function renderSheet(char) {
   renderSkills(char);
   renderConditions();
   renderStatusPips();
+  // Setup mode is transient, like the active tab: any full rebuild (opening a
+  // character, a structural change) drops back to play mode.
+  slotSetupMode = false;
   renderSlots(char);
   for (const listName of Object.keys(ROW_TEMPLATE_IDS)) renderRows(char, listName);
 
@@ -447,7 +502,12 @@ export function renderDerived(char) {
 
   for (const row of $$('#slots .slot')) {
     const level = row.dataset.level;
-    paintPips($('.pips--slot', row), char.spellcasting.slots[level].used);
+    const slot = char.spellcasting.slots[level];
+    // Inverted since #9: a filled pip is an AVAILABLE slot, draining like a battery.
+    // Slots are a resource running out — unlike death saves and exhaustion, which
+    // count a bad thing accumulating and stay fill-as-you-mark.
+    paintPips($('.pips--slot', row), slot.total - slot.used);
+    $('.slot__count', row).textContent = `${slot.total - slot.used}/${slot.total}`;
   }
 
   // The Spells tab is always reachable: it holds the "Spellcasting ability" select,

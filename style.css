@@ -514,6 +514,13 @@ input[type="checkbox"] {
 
 .slots { display: flex; flex-direction: column; gap: .4rem; }
 
+.slots__actions { display: flex; gap: .5rem; }
+
+.slot__count {
+  font-size: .85rem; font-weight: 600; color: var(--ink-soft);
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+
 .slot {
   display: grid;
   grid-template-columns: 3rem 1fr 4rem;
