@@ -653,3 +653,28 @@ export function showUpdatePrompt() {
   };
   paintBanner();
 }
+
+/**
+ * A dismissible data-durability nudge (#32): informational, actioned, and polite —
+ * it only takes an EMPTY slot, so it can never displace the update prompt or a
+ * pending notice, and a durable warning always outranks it. Non-sticky: hidden
+ * once behind a warning, it simply returns on a later visit. `kind` ('backup' |
+ * 'install') tags the banner so clearNudge can dismiss exactly its own.
+ */
+export function showNudge(kind, message, actions) {
+  if (durable || transient) return;
+  transient = { info: true, sticky: false, kind, message, actions };
+  paintBanner();
+}
+
+/**
+ * Dismiss a nudge — but ONLY if the painted transient is that nudge. An
+ * unconditional clear here would wipe whatever else holds the slot (the sticky
+ * update prompt, a notice), which is exactly the #33 class of bug.
+ */
+export function clearNudge(kind) {
+  if (transient && transient.kind === kind) {
+    transient = null;
+    paintBanner();
+  }
+}
