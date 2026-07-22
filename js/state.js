@@ -9,6 +9,7 @@
 
 import { ROW_TEMPLATES, newId, blankCharacter } from './constants.js';
 import { load, save, mergeCharacters } from './storage.js';
+import * as rules from './rules.js';
 
 const SAVE_DELAY_MS = 400;
 
@@ -186,11 +187,23 @@ export function setSlotsUsed(level, used) {
   emit('derived');
 }
 
-/** A long rest restores spell slots and nothing else — HP and hit dice stay manual. */
+/**
+ * A long rest applies the full 2024 recovery: HP to max, temp HP and death saves
+ * cleared, half the hit dice back (min 1), exhaustion down one, all spell slots reset.
+ * Every field stays hand-editable afterwards — this automates the common case, it does
+ * not take the ruling away from the player. Confirmed at the call site (main.js).
+ */
 export function longRest() {
   const char = getActive();
   if (!char) return;
+
+  char.hp.current = char.hp.max;
+  char.hp.temp = 0;
+  char.deathSaves = { successes: 0, failures: 0 };
+  char.hitDice = rules.restoreHitDice(char.hitDice);
+  char.exhaustion = Math.max(0, char.exhaustion - 1);
   for (const slot of Object.values(char.spellcasting.slots)) slot.used = 0;
+
   emit('derived');
 }
 

@@ -157,6 +157,42 @@ is('caps at max', rules.applyHealing({ max: 30, current: 28, temp: 0 }, 99).curr
 is('unbounded when max is 0', rules.applyHealing({ max: 0, current: 3, temp: 0 }, 5).current, 8);
 is('leaves temp alone', rules.applyHealing({ max: 30, current: 10, temp: 4 }, 5).temp, 4);
 
+/* ------------------------------------------------ restoreHitDice (long rest) */
+
+describe('restoreHitDice');
+{
+  // Half the total, rounded down, into a single pool.
+  is('total 4, empty → +2', rules.restoreHitDice([{ size: 'd8', total: 4, remaining: 0 }])[0].remaining, 2);
+  // Minimum 1 even when half rounds to 0.
+  is('total 1, empty → +1 (min 1)', rules.restoreHitDice([{ size: 'd8', total: 1, remaining: 0 }])[0].remaining, 1);
+  // Never exceeds a pool's total.
+  is('full pool stays full', rules.restoreHitDice([{ size: 'd10', total: 3, remaining: 3 }])[0].remaining, 3);
+  is('tops up but caps at total', rules.restoreHitDice([{ size: 'd12', total: 6, remaining: 5 }])[0].remaining, 6);
+
+  // Multiclass: recovered dice fill pools in order (player redistributes by hand).
+  const spread = rules.restoreHitDice([
+    { size: 'd10', total: 3, remaining: 0 },
+    { size: 'd6', total: 2, remaining: 0 },
+  ]);
+  is('sum 5 → recover 2 into first pool', spread[0].remaining, 2);
+  is('… nothing left for the second', spread[1].remaining, 0);
+
+  // A full first pool overflows the recovery into the next.
+  const overflow = rules.restoreHitDice([
+    { size: 'd8', total: 2, remaining: 2 },
+    { size: 'd6', total: 4, remaining: 0 },
+  ]);
+  is('full pool untouched', overflow[0].remaining, 2);
+  is('overflow lands in the next pool', overflow[1].remaining, 3);
+
+  // Pure — does not mutate the pools passed in.
+  is('does not mutate input', (() => {
+    const pools = [{ size: 'd8', total: 4, remaining: 1 }];
+    rules.restoreHitDice(pools);
+    return pools;
+  })(), [{ size: 'd8', total: 4, remaining: 1 }]);
+}
+
 /* -------------------------------------------------------- hitDice migration */
 
 describe('hitDice migration');
