@@ -48,8 +48,6 @@ export const CONDITIONS = [
 
 export const SPELL_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-export const HIT_DIE_SIZES = ['d6', 'd8', 'd10', 'd12'];
-
 export const MAX_EXHAUSTION = 6;
 
 /**

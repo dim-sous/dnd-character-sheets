@@ -171,8 +171,6 @@
                 <button type="button" class="btn btn--small" data-action="add-row" data-list="hitDice">+ Add</button>
               </div>
               <ul class="rows rows--tight" id="hitDice"></ul>
-              <!-- One shared datalist for every hit-die row's size input. -->
-              <datalist id="hit-dice"></datalist>
             </div>
 
             <div class="status__block">
@@ -468,7 +466,12 @@
 
 <template id="tpl-hitdie">
   <li class="row row--hitdie">
-    <input type="text" class="row__narrow" list="hit-dice" data-bind-suffix="size" placeholder="d8" aria-label="Hit die size" autocomplete="off">
+    <select class="row__narrow" data-bind-suffix="size" aria-label="Hit die size">
+      <option value="d6">d6</option>
+      <option value="d8">d8</option>
+      <option value="d10">d10</option>
+      <option value="d12">d12</option>
+    </select>
     <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="remaining" data-type="number" placeholder="0" aria-label="Hit dice remaining">
     <span class="row__of" aria-hidden="true">/</span>
     <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="total" data-type="number" placeholder="0" aria-label="Hit dice total">
