@@ -4,8 +4,11 @@ A design tool for the character sheet, not part of the sheet.
 
 It renders the app's components against live design tokens, lets you rearrange
 cards and the blocks inside them, and hands back CSS you can paste — or write
-straight over `style.css`. Nothing here ships: it lives in `tools/`, which
-`stamp-sw.py` already skips, so it is never precached and never deployed.
+straight over `style.css`. It is not part of the shipped app: it lives in `tools/`,
+which `stamp-sw.py` skips, so the service worker never precaches it and the installed
+PWA never sees it. It does ride along in the GitHub Pages upload — reachable at
+`/tools/bench/` — but nothing in the app links to it, and it keeps its own separate
+storage (`dnd-sheet-bench`).
 
 ---
 

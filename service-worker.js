@@ -7,9 +7,10 @@
  * no signal at all — which is the point, since the table is not always somewhere with
  * a usable connection.
  *
- * IMPORTANT: because this is cache-first, a deployed change will NOT appear on a phone
- * until CACHE_VERSION below is bumped. Bump it on every deploy. If a change of yours
- * stubbornly refuses to show up, this line is why.
+ * This is cache-first, so a deployed change reaches a phone only once the worker updates.
+ * CACHE_VERSION is NOT bumped by hand: tools/stamp-sw.py rewrites it to a content hash of
+ * the precached files at deploy time (see deploy.yml). The repo copy stays at 'v1' on
+ * purpose — the stamp and the deploy both rely on the committed copy being unstamped.
  *
  * Character data is never touched here. It lives in localStorage, which the service
  * worker cannot see and does not cache.
