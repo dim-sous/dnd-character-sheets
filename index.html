@@ -166,16 +166,13 @@
             <h2 class="card__title">Status</h2>
 
             <div class="status__block">
-              <h3 class="subhead">Hit Dice</h3>
-              <div class="inline-fields">
-                <p class="field field--narrow"><label for="f-hd-remaining">Remaining</label>
-                  <input id="f-hd-remaining" type="number" inputmode="numeric" data-bind="hitDice.remaining" data-type="number"></p>
-                <p class="field field--narrow"><label for="f-hd-total">Total</label>
-                  <input id="f-hd-total" type="number" inputmode="numeric" data-bind="hitDice.total" data-type="number"></p>
-                <p class="field field--narrow"><label for="f-hd-size">Die</label>
-                  <input id="f-hd-size" type="text" list="hit-dice" data-bind="hitDice.size" autocomplete="off">
-                  <datalist id="hit-dice"></datalist></p>
+              <div class="list__head">
+                <h3 class="subhead">Hit Dice</h3>
+                <button type="button" class="btn btn--small" data-action="add-row" data-list="hitDice">+ Add</button>
               </div>
+              <ul class="rows rows--tight" id="hitDice"></ul>
+              <!-- One shared datalist for every hit-die row's size input. -->
+              <datalist id="hit-dice"></datalist>
             </div>
 
             <div class="status__block">
@@ -466,6 +463,16 @@
     <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
     <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
     <button type="button" class="row__remove" data-action="remove-row" data-list="inventory" aria-label="Remove item">✕</button>
+  </li>
+</template>
+
+<template id="tpl-hitdie">
+  <li class="row row--hitdie">
+    <input type="text" class="row__narrow" list="hit-dice" data-bind-suffix="size" placeholder="d8" aria-label="Hit die size" autocomplete="off">
+    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="remaining" data-type="number" placeholder="0" aria-label="Hit dice remaining">
+    <span class="row__of" aria-hidden="true">/</span>
+    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="total" data-type="number" placeholder="0" aria-label="Hit dice total">
+    <button type="button" class="row__remove" data-action="remove-row" data-list="hitDice" aria-label="Remove hit dice pool">✕</button>
   </li>
 </template>
 

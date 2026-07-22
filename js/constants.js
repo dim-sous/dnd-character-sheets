@@ -5,7 +5,9 @@
  */
 
 export const STORAGE_KEY = 'dnd-character-sheets';
-export const SCHEMA_VERSION = 1;
+// Bumped to 2 when hitDice went from a single {size,total,remaining} object to a list
+// of pools (multiclass). normalizeCharacter migrates the old shape either way.
+export const SCHEMA_VERSION = 2;
 
 export const ABILITIES = [
   { key: 'str', short: 'STR', label: 'Strength' },
@@ -85,7 +87,8 @@ export function blankCharacter() {
     initiativeBonus: 0,
     speed: 30,
     hp: { max: 0, current: 0, temp: 0 },
-    hitDice: { size: 'd8', total: 3, remaining: 3 },
+    // A list of pools, one per class, so a multiclass build (e.g. 3d10 + 2d6) fits.
+    hitDice: [{ size: 'd8', total: 3, remaining: 3 }],
     deathSaves: { successes: 0, failures: 0 },
     conditions: [],
     exhaustion: 0,
@@ -111,4 +114,5 @@ export const ROW_TEMPLATES = {
   spells: () => ({ name: '', level: 0, prepared: false }),
   features: () => ({ name: '', text: '' }),
   inventory: () => ({ item: '', qty: 1, notes: '' }),
+  hitDice: () => ({ size: 'd8', total: 1, remaining: 1 }),
 };

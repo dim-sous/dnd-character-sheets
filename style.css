@@ -337,6 +337,7 @@ input[type="checkbox"] {
   gap: .5rem; margin-bottom: .5rem;
 }
 .list__head .card__title { margin: 0; border: 0; padding: 0; }
+.list__head .subhead { margin: 0; }
 
 /* auto-fit everywhere rather than a fixed column count: these cards sit in columns of
    very different widths depending on breakpoint, and a fixed count clips. */
@@ -525,6 +526,7 @@ input[type="checkbox"] {
 /* ------------------------------------------------------ repeatable rows */
 
 .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.rows--tight { gap: .4rem; }
 
 .rows__empty {
   padding: .7rem; text-align: center;
@@ -550,6 +552,9 @@ input[type="checkbox"] {
 .row > textarea { flex: 1 1 7rem; min-width: 0; }
 .row > textarea { flex-basis: 100%; }
 .row > .row__narrow { flex: 0 1 4.5rem; }
+
+.row--hitdie { align-items: center; }
+.row__of { flex: none; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 
 .row__prepared { flex: none; display: inline-flex; align-items: center; min-height: 40px; }
 

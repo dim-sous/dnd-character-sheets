@@ -230,6 +230,7 @@ const ROW_TEMPLATE_IDS = {
   spells: 'tpl-spell',
   features: 'tpl-feature',
   inventory: 'tpl-inventory',
+  hitDice: 'tpl-hitdie',
 };
 
 function renderRows(char, listName) {

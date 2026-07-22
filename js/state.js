@@ -18,6 +18,7 @@ const LIST_PATHS = {
   spells: 'spellcasting.spells',
   features: 'features',
   inventory: 'inventory',
+  hitDice: 'hitDice',
 };
 
 let characters = [];

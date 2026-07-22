@@ -9,6 +9,7 @@
  */
 import { blankCharacter } from './js/constants.js';
 import * as rules from './js/rules.js';
+import { normalizeCharacter } from './js/storage.js';
 
 const results = [];
 let group = '';
@@ -155,5 +156,33 @@ is('heals up to max', rules.applyHealing({ max: 30, current: 20, temp: 0 }, 5).c
 is('caps at max', rules.applyHealing({ max: 30, current: 28, temp: 0 }, 99).current, 30);
 is('unbounded when max is 0', rules.applyHealing({ max: 0, current: 3, temp: 0 }, 5).current, 8);
 is('leaves temp alone', rules.applyHealing({ max: 30, current: 10, temp: 4 }, 5).temp, 4);
+
+/* -------------------------------------------------------- hitDice migration */
+
+describe('hitDice migration');
+{
+  // Pre-v2 saves and old exported backups stored a single object; it must fold into a
+  // one-row list with the die preserved (issue #1's data-loss guard).
+  const migrated = normalizeCharacter({ hitDice: { size: 'd10', total: 3, remaining: 2 } });
+  is('old object → array', Array.isArray(migrated.hitDice), true);
+  is('old object → one row', migrated.hitDice.length, 1);
+  is('die preserved', migrated.hitDice[0], { size: 'd10', total: 3, remaining: 2 });
+
+  // The new multiclass shape passes straight through.
+  const multiclass = normalizeCharacter({
+    hitDice: [{ size: 'd10', total: 3, remaining: 3 }, { size: 'd6', total: 2, remaining: 1 }],
+  });
+  is('list keeps both pools', multiclass.hitDice.length, 2);
+  is('second pool preserved', multiclass.hitDice[1], { size: 'd6', total: 2, remaining: 1 });
+
+  // A garbage entry in the list is coerced to a template row, never dropped or crashed.
+  const messy = normalizeCharacter({ hitDice: [{ size: 'd12' }, 'nonsense'] });
+  is('partial row filled from template', messy.hitDice[0], { size: 'd12', total: 1, remaining: 1 });
+  is('garbage row → template row', messy.hitDice[1], { size: 'd8', total: 1, remaining: 1 });
+
+  // A record with no hitDice at all still gets the default one-row list.
+  const bare = normalizeCharacter({});
+  is('missing → default list', bare.hitDice, [{ size: 'd8', total: 3, remaining: 3 }]);
+}
 
 export { results };
