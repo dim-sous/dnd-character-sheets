@@ -267,15 +267,47 @@ function askImport(incomingCount, existingCount) {
 /* ------------------------------------------------------- mobile drawer */
 
 const scrim = $('#scrim');
+const sidebar = $('#sidebar');
+const mainEl = $('.main');
+// Below this width the sidebar is an off-canvas drawer; at/above it, a permanent column.
+const wide = window.matchMedia('(min-width: 900px)');
+let focusBeforeDrawer = null;
+
+/**
+ * Keep the accessibility tree honest about what is actually reachable:
+ *  - permanent-column layout (wide): nothing is inert.
+ *  - closed drawer: the off-canvas sidebar is inert, so Tab can't land on controls that
+ *    are slid out of sight behind the sheet.
+ *  - open drawer: the sheet behind the scrim is inert, so focus stays trapped in the drawer.
+ */
+function syncInert() {
+  if (wide.matches) {
+    sidebar.inert = false;
+    mainEl.inert = false;
+    return;
+  }
+  const open = document.body.classList.contains('drawer-open');
+  sidebar.inert = !open;
+  mainEl.inert = open;
+}
 
 function openDrawer() {
+  if (wide.matches) return; // nothing to open — the sidebar is always visible
+  focusBeforeDrawer = document.activeElement;
   document.body.classList.add('drawer-open');
   scrim.hidden = false;
+  syncInert();
+  $('#btn-menu-close').focus();
 }
 
 function closeDrawer() {
+  const wasOpen = document.body.classList.contains('drawer-open');
   document.body.classList.remove('drawer-open');
   scrim.hidden = true;
+  syncInert();
+  // Hand focus back to whatever opened the drawer (the menu button), never to <body>.
+  if (wasOpen && !wide.matches && focusBeforeDrawer?.isConnected) focusBeforeDrawer.focus();
+  focusBeforeDrawer = null;
 }
 
 $('#btn-menu').addEventListener('click', openDrawer);
@@ -284,6 +316,16 @@ scrim.addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeDrawer();
 });
+
+// Crossing the breakpoint (rotate/resize) must not strand a half-open drawer or a stray
+// inert flag — recompute from scratch.
+wide.addEventListener('change', () => {
+  if (wide.matches) { document.body.classList.remove('drawer-open'); scrim.hidden = true; }
+  syncInert();
+});
+
+// A phone starts with the closed drawer inert.
+syncInert();
 
 /* -------------------------------------------------------------- startup */
 
