@@ -12,7 +12,8 @@ import { STORAGE_KEY } from './constants.js';
 import { exportToFile, readImportFile, exportRaw } from './storage.js';
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips,
-  invalidateRoster, setSaved, showBanner, showUpdatePrompt, showRecovery, activateTab,
+  invalidateRoster, setSaved, showBanner, clearBanner, showNotice,
+  showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -93,9 +94,24 @@ function amountField() {
   return { el, value: Number.isFinite(n) ? Math.abs(n) : 0 };
 }
 
+/**
+ * iOS Safari and Firefox do NOT blur a focused <input> when you tap a <button>, so a
+ * tapped-into HP field stays document.activeElement — and renderDerived deliberately skips
+ * writing back the active element to protect the caret while typing. Net effect there: tap
+ * into an HP field, then tap +/-/Damage/Heal, and the number on screen stays STALE (Chromium
+ * blurs on tap, so it's already fine). Release the field first so the write-back repaints it.
+ * Scoped to the hp.* display inputs; a no-op when nothing (or the Amount scratch field) is
+ * focused. Typing is untouched — it never reaches these handlers.
+ */
+function blurActiveHpField() {
+  const el = document.activeElement;
+  if (el?.dataset?.bind?.startsWith('hp.')) el.blur();
+}
+
 function adjustHp(delta) {
   const char = state.getActive();
   if (!char) return;
+  blurActiveHpField();
   const next = char.hp.current + delta;
   const max = char.hp.max;
   state.updateActive('hp.current', Math.max(0, max > 0 ? Math.min(max, next) : next));
@@ -109,6 +125,7 @@ const ACTIONS = {
     const char = state.getActive();
     const { el, value } = amountField();
     if (!char || value === 0) return;
+    blurActiveHpField();
     state.updateActive('hp', rules.applyDamage(char.hp, value));
     el.value = '';
   },
@@ -117,6 +134,7 @@ const ACTIONS = {
     const char = state.getActive();
     const { el, value } = amountField();
     if (!char || value === 0) return;
+    blurActiveHpField();
     state.updateActive('hp', rules.applyHealing(char.hp, value));
     el.value = '';
   },
@@ -156,7 +174,7 @@ const ACTIONS = {
   'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),
 
   'download-corrupt': () => exportRaw(state.getCorruptRaw()),
-  'start-fresh': () => { state.startFresh(); showBanner(''); },
+  'start-fresh': () => { state.startFresh(); clearBanner('recovery'); },
 };
 
 document.addEventListener('click', (event) => {
@@ -227,7 +245,7 @@ $('#btn-delete').addEventListener('click', () => {
 $('#btn-export').addEventListener('click', () => {
   const characters = state.getCharacters();
   if (characters.length === 0) {
-    showBanner('Nothing to export yet.');
+    showNotice('Nothing to export yet.');
     return;
   }
   state.flush();
@@ -247,9 +265,9 @@ fileInput.addEventListener('change', async () => {
     const choice = await askImport(incoming.length, state.getCharacters().length);
     if (choice === 'replace') state.replaceAll(incoming);
     else if (choice === 'merge') state.merge(incoming);
-    if (choice !== 'cancel') showBanner('');
+    if (choice !== 'cancel') clearBanner('import');
   } catch (err) {
-    showBanner(err.message);
+    showBanner(err.message, 'import');
   }
 });
 
