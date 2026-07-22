@@ -127,13 +127,35 @@ JavaScript at all.
 
 ## Tests
 
-Open `tests.html` in the browser. It asserts every derived value — modifiers, proficiency
-bonus at each tier, saves, skills with proficiency and expertise, passive Perception,
-initiative, spell DC and attack, and the HP damage/healing arithmetic.
+Open `tests.html` in the browser, or run the same suite headless:
 
-The whole framework is about fifteen lines at the top of the file. That's only possible
-because `rules.js` is pure — which is the entire argument for keeping the arithmetic
-separate from the rendering.
+```bash
+node tools/run-tests.mjs
+```
+
+It asserts every derived value — modifiers, proficiency bonus at each tier, saves, skills
+with proficiency and expertise, passive Perception, initiative, spell DC and attack, and
+the HP damage/healing arithmetic.
+
+The assertions live in `tests.js`, imported by both the browser page and the Node runner.
+The identical suite running in either place — with no test framework — is only possible
+because `rules.js` is pure, which is the whole argument for keeping the arithmetic separate
+from the rendering. CI runs it on every pull request, so a broken calculation blocks the
+merge. (Node 22.7+ reads the app's ES modules with no `package.json`.)
+
+## Reviewing a pull request
+
+There is no hosted preview deployment. GitHub Pages serves a single origin, and
+`localStorage` is scoped to origin, not path — so a same-origin preview could read and
+overwrite your real characters. Review a PR locally instead; `localhost` is its own
+origin and cannot touch production data:
+
+```bash
+gh pr checkout 12        # by PR number
+```
+
+Then Go Live (or `python3 -m http.server 8000`) and click through it, and run
+`node tools/run-tests.mjs` to confirm the rules still hold.
 
 ## Deploying a change
 
