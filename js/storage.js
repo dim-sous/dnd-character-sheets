@@ -75,10 +75,6 @@ export function normalizeCharacter(raw) {
   char.saveProficiencies = strArray(raw.saveProficiencies);
   char.skillProficiencies = strArray(raw.skillProficiencies);
   char.skillExpertise = strArray(raw.skillExpertise);
-  char.proficiencyBonusOverride =
-    raw.proficiencyBonusOverride === null || raw.proficiencyBonusOverride === undefined || raw.proficiencyBonusOverride === ''
-      ? null
-      : num(raw.proficiencyBonusOverride, null);
 
   char.ac = num(raw.ac, base.ac);
   char.initiativeBonus = num(raw.initiativeBonus, base.initiativeBonus);

@@ -20,10 +20,7 @@ export function abilityMod(score) {
   return Math.floor((num(score, 10) - 10) / 2);
 }
 
-export function proficiencyBonus(level, override = null) {
-  if (override !== null && override !== undefined && override !== '') {
-    return num(override, 2);
-  }
+export function proficiencyBonus(level) {
   // Floor the level at 1 so a blank/0/negative Level still yields the +2 minimum, not +1.
   return 2 + Math.floor((Math.max(1, num(level, 1)) - 1) / 4);
 }
@@ -34,7 +31,7 @@ export function formatMod(n) {
 }
 
 export function characterPB(char) {
-  return proficiencyBonus(char.level, char.proficiencyBonusOverride);
+  return proficiencyBonus(char.level);
 }
 
 export function modFor(char, abilityKey) {
