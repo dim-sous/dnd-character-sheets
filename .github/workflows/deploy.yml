@@ -59,11 +59,10 @@ jobs:
       # pinned at 'v1' and quietly reintroduce the exact bug this workflow exists to fix.
       - name: Verify the worker was stamped
         run: |
-          if grep -q "^const CACHE_VERSION = 'v1';$" service-worker.js; then
-            echo "::error::service-worker.js is still at v1 — the stamp did not apply"
-            exit 1
-          fi
+          grep -qE "^const CACHE_VERSION = '[0-9a-f]{12}';$" service-worker.js \
+            || { echo "::error::service-worker.js was not stamped"; exit 1; }
           grep -m1 "^const CACHE_VERSION" service-worker.js
+
 
       - uses: actions/configure-pages@v5
 
