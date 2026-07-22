@@ -234,7 +234,7 @@ export function setSlotsUsed(level, used) {
 
 /**
  * A long rest applies the full 2024 recovery: HP to max, temp HP and death saves
- * cleared, half the hit dice back (min 1), exhaustion down one, all spell slots reset.
+ * cleared, all spent Hit Point Dice back, exhaustion down one, all spell slots reset.
  * Every field stays hand-editable afterwards — this automates the common case, it does
  * not take the ruling away from the player. Confirmed at the call site (main.js).
  */

@@ -161,29 +161,23 @@ is('leaves temp alone', rules.applyHealing({ max: 30, current: 10, temp: 4 }, 5)
 
 describe('restoreHitDice');
 {
-  // Half the total, rounded down, into a single pool.
-  is('total 4, empty → +2', rules.restoreHitDice([{ size: 'd8', total: 4, remaining: 0 }])[0].remaining, 2);
-  // Minimum 1 even when half rounds to 0.
-  is('total 1, empty → +1 (min 1)', rules.restoreHitDice([{ size: 'd8', total: 1, remaining: 0 }])[0].remaining, 1);
-  // Never exceeds a pool's total.
+  // 2024 long rest: every spent Hit Point Die comes back — each pool to its own total.
+  is('empty pool → full', rules.restoreHitDice([{ size: 'd8', total: 4, remaining: 0 }])[0].remaining, 4);
+  is('partial pool → full', rules.restoreHitDice([{ size: 'd10', total: 6, remaining: 5 }])[0].remaining, 6);
   is('full pool stays full', rules.restoreHitDice([{ size: 'd10', total: 3, remaining: 3 }])[0].remaining, 3);
-  is('tops up but caps at total', rules.restoreHitDice([{ size: 'd12', total: 6, remaining: 5 }])[0].remaining, 6);
+  is('total 1 → 1', rules.restoreHitDice([{ size: 'd8', total: 1, remaining: 0 }])[0].remaining, 1);
 
-  // Multiclass: recovered dice fill pools in order (player redistributes by hand).
-  const spread = rules.restoreHitDice([
+  // Multiclass: each pool is independently restored to its own total. No fill-in-order,
+  // no overflow, no redistribution — restore-all removed that whole question.
+  const multi = rules.restoreHitDice([
     { size: 'd10', total: 3, remaining: 0 },
-    { size: 'd6', total: 2, remaining: 0 },
+    { size: 'd6', total: 2, remaining: 1 },
   ]);
-  is('sum 5 → recover 2 into first pool', spread[0].remaining, 2);
-  is('… nothing left for the second', spread[1].remaining, 0);
+  is('first pool → full', multi[0].remaining, 3);
+  is('second pool → full', multi[1].remaining, 2);
 
-  // A full first pool overflows the recovery into the next.
-  const overflow = rules.restoreHitDice([
-    { size: 'd8', total: 2, remaining: 2 },
-    { size: 'd6', total: 4, remaining: 0 },
-  ]);
-  is('full pool untouched', overflow[0].remaining, 2);
-  is('overflow lands in the next pool', overflow[1].remaining, 3);
+  // The die size (and any other field) rides along untouched.
+  is('keeps the die size', rules.restoreHitDice([{ size: 'd12', total: 2, remaining: 0 }])[0].size, 'd12');
 
   // Pure — does not mutate the pools passed in.
   is('does not mutate input', (() => {
