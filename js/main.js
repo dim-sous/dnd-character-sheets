@@ -147,7 +147,7 @@ const ACTIONS = {
     // Destructive now that it touches HP and death saves — a mis-tap shouldn't wipe
     // what you were tracking, so gate it behind a confirm.
     const ok = confirm(
-      'Take a long rest? Restores HP to max, recovers half your hit dice, reduces '
+      'Take a long rest? Restores HP to max, recovers all your Hit Point Dice, reduces '
       + 'exhaustion by 1, clears temp HP and death saves, and resets spell slots.',
     );
     if (ok) state.longRest();
