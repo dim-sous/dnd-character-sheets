@@ -79,7 +79,6 @@ export function blankCharacter() {
     saveProficiencies: [],
     skillProficiencies: [],
     skillExpertise: [],
-    proficiencyBonusOverride: null,
 
     ac: 10,
     initiativeBonus: 0,
