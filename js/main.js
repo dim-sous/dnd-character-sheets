@@ -91,7 +91,9 @@ function pipTarget(current, index) {
 function amountField() {
   const el = $('#f-hp-amount');
   const n = Number(el.value);
-  return { el, value: Number.isFinite(n) ? Math.abs(n) : 0 };
+  // Round the scratch amount so the Damage/Heal buttons emit whole HP (a decimal like 3.5
+  // would otherwise leave fractional HP). Direct edits to the HP fields stay free-form.
+  return { el, value: Number.isFinite(n) ? Math.round(Math.abs(n)) : 0 };
 }
 
 /**
@@ -359,6 +361,14 @@ setSaved('', 'idle');
 if (startup.corrupt) {
   // Unreadable data — offer to download it before anything can overwrite it.
   showRecovery();
+} else if (startup.staleApp) {
+  // A backup saved by a newer build. It still loads, but this build may not show every field
+  // and would drop the ones it doesn't know about on the next save — so warn before an edit.
+  showBanner(
+    'These characters were saved by a newer version of this app. Some details may be hidden, '
+    + 'and editing here could drop them — reload to update the app before making changes.',
+    'stale',
+  );
 } else if (startup.error) {
   showBanner(startup.error);
 } else if (!startup.writable) {

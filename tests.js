@@ -7,7 +7,7 @@
  * result. That is the entire argument for keeping the arithmetic separate from the
  * rendering, and the reason the same file can run in either place with no test framework.
  */
-import { blankCharacter, MAX_EXHAUSTION } from './js/constants.js';
+import { blankCharacter, MAX_EXHAUSTION, SCHEMA_VERSION } from './js/constants.js';
 import * as rules from './js/rules.js';
 import { normalizeCharacter, parseStored, mergeCharacters } from './js/storage.js';
 // state.js is safe to import: its module scope has no side effects (it does not call
@@ -59,6 +59,8 @@ is('level 20 → +6', rules.proficiencyBonus(20), 6);
 is('override wins over level', rules.proficiencyBonus(3, 5), 5);
 is('null override is ignored', rules.proficiencyBonus(9, null), 4);
 is('empty-string override is ignored', rules.proficiencyBonus(9, ''), 4);
+is('blank/0 level floors at +2 (never +1)', rules.proficiencyBonus(0), 2);
+is('negative level floors at +2', rules.proficiencyBonus(-5), 2);
 
 /* ------------------------------------------------------------ formatMod */
 
@@ -162,6 +164,7 @@ is('heals up to max', rules.applyHealing({ max: 30, current: 20, temp: 0 }, 5).c
 is('caps at max', rules.applyHealing({ max: 30, current: 28, temp: 0 }, 99).current, 30);
 is('unbounded when max is 0', rules.applyHealing({ max: 0, current: 3, temp: 0 }, 5).current, 8);
 is('leaves temp alone', rules.applyHealing({ max: 30, current: 10, temp: 4 }, 5).temp, 4);
+is('never lowers a current already above max', rules.applyHealing({ max: 30, current: 35, temp: 0 }, 5).current, 35);
 
 /* ------------------------------------------------ restoreHitDice (long rest) */
 
@@ -324,6 +327,12 @@ is('slots always cover 1..9', Object.keys(normalizeCharacter({}).spellcasting.sl
 is('spellcasting ability passthrough', normalizeCharacter({ spellcasting: { ability: 'cha' } }).spellcasting.ability, 'cha');
 is('spellcasting ability default ""', normalizeCharacter({}).spellcasting.ability, '');
 is('spellcasting ability non-string → ""', normalizeCharacter({ spellcasting: { ability: 7 } }).spellcasting.ability, '');
+// A backup can carry more slots spent than exist (or a negative). Clamp on the way in to the
+// same [0, total] range state.js enforces at runtime, so an import can't paint phantom pips.
+is('slot used clamps down to total', normalizeCharacter({ spellcasting: { slots: { 1: { total: 3, used: 9 } } } }).spellcasting.slots[1], { total: 3, used: 3 });
+is('slot used clamps negative to 0', normalizeCharacter({ spellcasting: { slots: { 2: { total: 2, used: -4 } } } }).spellcasting.slots[2], { total: 2, used: 0 });
+is('slot used equal to total passes', normalizeCharacter({ spellcasting: { slots: { 4: { total: 2, used: 2 } } } }).spellcasting.slots[4], { total: 2, used: 2 });
+is('slot used within range passes', normalizeCharacter({ spellcasting: { slots: { 5: { total: 4, used: 1 } } } }).spellcasting.slots[5], { total: 4, used: 1 });
 
 /* -------------------------------------------- mergeCharacters (storage) */
 
@@ -346,6 +355,20 @@ is('empty array payload → empty, not corrupt', parseStored('[]').characters.le
 is('empty array → not corrupt', Boolean(parseStored('[]').corrupt), false);
 is('JSON number payload → corrupt', parseStored('42').corrupt === true, true);
 is('JSON null payload → corrupt', parseStored('null').corrupt === true, true);
+
+/* ------------------------------------ parseStored schema version (issue #31c) */
+
+describe('parseStored (schema version)');
+// A backup written by a NEWER build is loaded best-effort but flagged, so the app can warn
+// before an edit here silently drops fields this build doesn't understand.
+is('newer schemaVersion → flagged', parseStored(JSON.stringify({ schemaVersion: SCHEMA_VERSION + 1, characters: [{ name: 'A' }] })).fromNewerVersion, true);
+is('newer backup still loads best-effort', parseStored(JSON.stringify({ schemaVersion: SCHEMA_VERSION + 1, characters: [{ name: 'A' }] })).characters[0].name, 'A');
+is('newer backup is not corrupt', Boolean(parseStored(JSON.stringify({ schemaVersion: SCHEMA_VERSION + 1, characters: [] })).corrupt), false);
+is('current schemaVersion → not flagged', Boolean(parseStored(JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [] })).fromNewerVersion), false);
+is('older schemaVersion → not flagged', Boolean(parseStored(JSON.stringify({ schemaVersion: SCHEMA_VERSION - 1, characters: [] })).fromNewerVersion), false);
+is('missing schemaVersion → not flagged', Boolean(parseStored(JSON.stringify({ characters: [] })).fromNewerVersion), false);
+is('bare array (no version) → not flagged', Boolean(parseStored(JSON.stringify([{ name: 'X' }])).fromNewerVersion), false);
+is('garbage schemaVersion → not flagged', Boolean(parseStored(JSON.stringify({ schemaVersion: 'x', characters: [] })).fromNewerVersion), false);
 
 /* -------------------------------------------- rules boundary cases */
 

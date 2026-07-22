@@ -103,7 +103,13 @@ export function init() {
   activeId = characters.length > 0 ? characters[0].id : null;
   recoveryMode = Boolean(result.corrupt);
   corruptRaw = result.raw ?? null;
-  return { error: result.error, corrupt: recoveryMode, writable: canWrite() };
+  return {
+    error: result.error,
+    corrupt: recoveryMode,
+    writable: canWrite(),
+    // Loaded a backup from a newer build — some fields may be hidden and would be lost on save.
+    staleApp: Boolean(result.fromNewerVersion),
+  };
 }
 
 /** The raw unreadable text captured at load, for the recovery "download" action. */
