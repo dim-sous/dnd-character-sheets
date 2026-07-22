@@ -138,20 +138,12 @@ export function normalizeCharacter(raw) {
 }
 
 /**
- * Read the saved characters.
- *
- * On a parse failure we deliberately return an empty list WITHOUT writing anything back —
- * overwriting would destroy data the user could otherwise recover by hand from devtools.
+ * Turn stored text into characters. Pure (no localStorage), so both load() and the tests
+ * share it. A parse failure is reported as `corrupt` with the original text kept in `raw`,
+ * so the caller can back it up before anything overwrites it.
  */
-export function load() {
-  let text;
-  try {
-    text = localStorage.getItem(STORAGE_KEY);
-  } catch (err) {
-    return { characters: [], error: 'Storage is unavailable (private browsing?). Changes will not be saved.' };
-  }
+export function parseStored(text) {
   if (!text) return { characters: [], error: null };
-
   try {
     const parsed = JSON.parse(text);
     const list = Array.isArray(parsed) ? parsed : parsed?.characters;
@@ -160,8 +152,36 @@ export function load() {
   } catch (err) {
     return {
       characters: [],
-      error: 'Saved data could not be read and was left untouched. Import a backup, or check localStorage in devtools.',
+      corrupt: true,
+      raw: text,
+      error: 'Saved characters could not be read. They have NOT been changed — download a copy before starting fresh.',
     };
+  }
+}
+
+/**
+ * Read the saved characters. On a parse failure the recoverable text is handed back
+ * untouched (see parseStored) so the caller can refuse to overwrite it.
+ */
+export function load() {
+  let text;
+  try {
+    text = localStorage.getItem(STORAGE_KEY);
+  } catch (err) {
+    return { characters: [], error: 'Storage is unavailable (private browsing?). Changes will not be saved.' };
+  }
+  return parseStored(text);
+}
+
+/** Probe whether localStorage actually accepts writes — private mode / a full disk block it. */
+export function canWrite() {
+  const probe = `${STORAGE_KEY}::probe`;
+  try {
+    localStorage.setItem(probe, '1');
+    localStorage.removeItem(probe);
+    return true;
+  } catch (err) {
+    return false;
   }
 }
 
@@ -183,20 +203,29 @@ function today() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export function exportToFile(characters) {
-  const blob = new Blob(
-    [JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters }, null, 2)],
-    { type: 'application/json' },
-  );
+function downloadFile(text, filename) {
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `dnd-characters-${today()}.json`;
+  link.download = filename;
   document.body.append(link);
   link.click();
   link.remove();
   // Revoking immediately can cancel the download in some browsers; give it a beat.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function exportToFile(characters) {
+  downloadFile(
+    JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters }, null, 2),
+    `dnd-characters-${today()}.json`,
+  );
+}
+
+/** Download the raw, unreadable stored text so a corrupt save can be recovered by hand. */
+export function exportRaw(raw) {
+  downloadFile(raw ?? '', `dnd-characters-unreadable-${today()}.json`);
 }
 
 export function readImportFile(file) {

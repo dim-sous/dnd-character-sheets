@@ -8,7 +8,7 @@
  */
 
 import { ROW_TEMPLATES, newId, blankCharacter } from './constants.js';
-import { load, save, mergeCharacters } from './storage.js';
+import { load, save, mergeCharacters, canWrite } from './storage.js';
 import * as rules from './rules.js';
 
 const SAVE_DELAY_MS = 400;
@@ -25,6 +25,10 @@ const LIST_PATHS = {
 let characters = [];
 let activeId = null;
 let saveTimer = null;
+// Set when load() found unreadable data. While true we refuse to save, so the first
+// interaction can't overwrite characters the user might still recover.
+let recoveryMode = false;
+let corruptRaw = null;
 
 const listeners = new Set();
 const statusListeners = new Set();
@@ -59,26 +63,36 @@ function status(message, tone = 'info') {
   statusListeners.forEach((fn) => fn(message, tone));
 }
 
-function emit(type = 'derived') {
+/** Notify renderers without scheduling a save — used when adopting another tab's write. */
+function notify(type = 'derived') {
   listeners.forEach((fn) => fn(type));
+}
+
+function emit(type = 'derived') {
+  notify(type);
   scheduleSave();
 }
 
 function scheduleSave() {
+  if (recoveryMode) return; // never overwrite unreadable data until the user resolves it
   clearTimeout(saveTimer);
   status('Saving…', 'pending');
   saveTimer = setTimeout(() => {
+    // Null the timer before writing so flush()'s guard reflects reality and an idle,
+    // stale tab does not re-save its snapshot over another tab on the next lifecycle event.
+    saveTimer = null;
     const result = save(characters);
     status(result.ok ? 'Saved' : result.error, result.ok ? 'ok' : 'error');
   }, SAVE_DELAY_MS);
 }
 
-/** Force a write now — used before the tab goes away. */
+/** Force a write now — used before the tab goes away. Reports success/failure like the debounce. */
 export function flush() {
-  if (saveTimer === null) return;
+  if (recoveryMode || saveTimer === null) return;
   clearTimeout(saveTimer);
   saveTimer = null;
-  save(characters);
+  const result = save(characters);
+  status(result.ok ? 'Saved' : result.error, result.ok ? 'ok' : 'error');
 }
 
 /* --------------------------------------------------------------- lifecycle */
@@ -87,7 +101,38 @@ export function init() {
   const result = load();
   characters = result.characters;
   activeId = characters.length > 0 ? characters[0].id : null;
-  return result.error;
+  recoveryMode = Boolean(result.corrupt);
+  corruptRaw = result.raw ?? null;
+  return { error: result.error, corrupt: recoveryMode, writable: canWrite() };
+}
+
+/** The raw unreadable text captured at load, for the recovery "download" action. */
+export function getCorruptRaw() {
+  return corruptRaw;
+}
+
+/** Leave recovery mode: the user chose to discard the unreadable data and start fresh. */
+export function startFresh() {
+  recoveryMode = false;
+  corruptRaw = null;
+  scheduleSave();
+}
+
+/**
+ * Another tab wrote to storage. If we have no unsaved edits of our own (and are not in
+ * recovery), adopt its version so the two tabs converge instead of the last writer
+ * silently winning the whole roster. Never runs mid-edit — a pending save is local work
+ * we must not drop.
+ */
+export function reloadFromStorage() {
+  if (saveTimer !== null || recoveryMode) return;
+  const result = load();
+  if (result.corrupt || result.error) return;
+  characters = result.characters;
+  if (!characters.some((c) => c.id === activeId)) {
+    activeId = characters.length > 0 ? characters[0].id : null;
+  }
+  notify('structural');
 }
 
 /* ----------------------------------------------------------------- reading */

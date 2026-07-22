@@ -9,7 +9,7 @@
  */
 import { blankCharacter } from './js/constants.js';
 import * as rules from './js/rules.js';
-import { normalizeCharacter } from './js/storage.js';
+import { normalizeCharacter, parseStored } from './js/storage.js';
 
 const results = [];
 let group = '';
@@ -219,6 +219,32 @@ describe('hitDice migration');
   // A record with no hitDice at all still gets the default one-row list.
   const bare = normalizeCharacter({});
   is('missing → default list', bare.hitDice, [{ size: 'd8', total: 3, remaining: 3 }]);
+}
+
+/* ------------------------------------------------ parseStored (data safety) */
+
+describe('parseStored');
+{
+  // Unreadable data must be flagged corrupt, with the original text preserved so the app
+  // can back it up instead of silently overwriting it (issue #22).
+  const bad = parseStored('{ not valid json');
+  is('unparseable → corrupt flag', bad.corrupt === true, true);
+  is('unparseable → raw text preserved', bad.raw, '{ not valid json');
+  is('unparseable → no characters', bad.characters.length, 0);
+
+  // Valid JSON of the wrong shape is corrupt too, not silently treated as empty.
+  is('non-array payload → corrupt', parseStored('{"nope":1}').corrupt === true, true);
+
+  // Empty storage is a normal first run, not corruption.
+  const empty = parseStored('');
+  is('empty string → not corrupt', Boolean(empty.corrupt), false);
+  is('empty string → empty list', empty.characters.length, 0);
+
+  // A well-formed payload loads and normalizes.
+  const good = parseStored(JSON.stringify({ schemaVersion: 2, characters: [{ name: 'Aria' }] }));
+  is('valid → one character', good.characters.length, 1);
+  is('valid → not corrupt', Boolean(good.corrupt), false);
+  is('valid → normalized through', good.characters[0].name, 'Aria');
 }
 
 export { results };
