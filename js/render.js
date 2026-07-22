@@ -14,7 +14,7 @@
  */
 
 import {
-  ABILITIES, SKILLS, CONDITIONS, SPELL_LEVELS, MAX_EXHAUSTION, HIT_DIE_SIZES,
+  ABILITIES, SKILLS, CONDITIONS, SPELL_LEVELS, MAX_EXHAUSTION,
 } from './constants.js';
 import * as rules from './rules.js';
 import { getByPath, getListPath } from './state.js';
@@ -167,16 +167,6 @@ function renderPipRow(host, count, action, extra = {}) {
   }
 }
 
-/** Suggestions only — the field stays free text, since the app rules on nothing. */
-function renderHitDieOptions() {
-  const host = $('#hit-dice');
-  host.replaceChildren(...HIT_DIE_SIZES.map((size) => {
-    const option = document.createElement('option');
-    option.value = size;
-    return option;
-  }));
-}
-
 function renderStatusPips() {
   renderPipRow($('#death-successes'), 3, 'death-save', { kind: 'successes' });
   renderPipRow($('#death-failures'), 3, 'death-save', { kind: 'failures' });
@@ -321,7 +311,6 @@ export function renderSheet(char) {
   renderSaves(char);
   renderSkills(char);
   renderConditions();
-  renderHitDieOptions();
   renderStatusPips();
   renderSlots(char);
   for (const listName of Object.keys(ROW_TEMPLATE_IDS)) renderRows(char, listName);
