@@ -116,9 +116,14 @@ export function normalizeCharacter(raw) {
   const slots = {};
   for (const level of SPELL_LEVELS) {
     const rawSlot = raw.spellcasting?.slots?.[level] ?? raw.spellcasting?.slots?.[String(level)];
+    const total = num(rawSlot?.total, 0);
+    // Same invariant state.js keeps at runtime (setSlotsUsed, and the total-lowering clamp in
+    // updateActive): spent can't exceed the total or fall below zero. Without this an import
+    // could render more filled pips than exist — a state the pip UI has no way to clear, the
+    // same reason deathSaves and exhaustion are clamped above.
     slots[level] = {
-      total: num(rawSlot?.total, 0),
-      used: num(rawSlot?.used, 0),
+      total,
+      used: clamp(num(rawSlot?.used, 0), 0, total),
     };
   }
   char.spellcasting = {
@@ -141,6 +146,11 @@ export function normalizeCharacter(raw) {
  * Turn stored text into characters. Pure (no localStorage), so both load() and the tests
  * share it. A parse failure is reported as `corrupt` with the original text kept in `raw`,
  * so the caller can back it up before anything overwrites it.
+ *
+ * `fromNewerVersion` is set when the payload's schemaVersion is greater than this build's
+ * SCHEMA_VERSION: the data may carry fields this build doesn't understand and would drop on
+ * the next save, so the caller can warn before an edit silently discards them. We still load
+ * best-effort — the tracker stays usable — rather than refuse, which would only strand it.
  */
 export function parseStored(text) {
   if (!text) return { characters: [], error: null };
@@ -148,7 +158,13 @@ export function parseStored(text) {
     const parsed = JSON.parse(text);
     const list = Array.isArray(parsed) ? parsed : parsed?.characters;
     if (!Array.isArray(list)) throw new Error('no character array');
-    return { characters: list.map(normalizeCharacter), error: null };
+    // A bare array or a missing/garbage version is treated as "not newer" (null).
+    const storedVersion = Array.isArray(parsed) ? null : num(parsed?.schemaVersion, null);
+    return {
+      characters: list.map(normalizeCharacter),
+      fromNewerVersion: storedVersion !== null && storedVersion > SCHEMA_VERSION,
+      error: null,
+    };
   } catch (err) {
     return {
       characters: [],

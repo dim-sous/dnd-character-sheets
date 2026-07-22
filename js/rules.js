@@ -24,7 +24,8 @@ export function proficiencyBonus(level, override = null) {
   if (override !== null && override !== undefined && override !== '') {
     return num(override, 2);
   }
-  return 2 + Math.floor((num(level, 1) - 1) / 4);
+  // Floor the level at 1 so a blank/0/negative Level still yields the +2 minimum, not +1.
+  return 2 + Math.floor((Math.max(1, num(level, 1)) - 1) / 4);
 }
 
 /** "+3" / "−1" / "+0" — uses a real minus sign, not a hyphen. */
@@ -106,8 +107,12 @@ export function applyDamage(hp, amount) {
 export function applyHealing(hp, amount) {
   const heal = Math.max(0, num(amount));
   const max = num(hp.max);
-  const raw = num(hp.current) + heal;
-  return { ...hp, current: max > 0 ? Math.min(max, raw) : raw };
+  const current = num(hp.current);
+  const raw = current + heal;
+  const capped = max > 0 ? Math.min(max, raw) : raw;
+  // Healing only ever raises current — never lower it, even when a hand-edited
+  // current already sits above max.
+  return { ...hp, current: Math.max(current, capped) };
 }
 
 /**
