@@ -12,7 +12,8 @@ import { STORAGE_KEY } from './constants.js';
 import { exportToFile, readImportFile, exportRaw } from './storage.js';
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips,
-  invalidateRoster, setSaved, showBanner, showUpdatePrompt, showRecovery, activateTab,
+  invalidateRoster, setSaved, showBanner, clearBanner, showNotice,
+  showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -173,7 +174,7 @@ const ACTIONS = {
   'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),
 
   'download-corrupt': () => exportRaw(state.getCorruptRaw()),
-  'start-fresh': () => { state.startFresh(); showBanner(''); },
+  'start-fresh': () => { state.startFresh(); clearBanner('recovery'); },
 };
 
 document.addEventListener('click', (event) => {
@@ -244,7 +245,7 @@ $('#btn-delete').addEventListener('click', () => {
 $('#btn-export').addEventListener('click', () => {
   const characters = state.getCharacters();
   if (characters.length === 0) {
-    showBanner('Nothing to export yet.');
+    showNotice('Nothing to export yet.');
     return;
   }
   state.flush();
@@ -264,9 +265,9 @@ fileInput.addEventListener('change', async () => {
     const choice = await askImport(incoming.length, state.getCharacters().length);
     if (choice === 'replace') state.replaceAll(incoming);
     else if (choice === 'merge') state.merge(incoming);
-    if (choice !== 'cancel') showBanner('');
+    if (choice !== 'cancel') clearBanner('import');
   } catch (err) {
-    showBanner(err.message);
+    showBanner(err.message, 'import');
   }
 });
 

@@ -487,61 +487,134 @@ export function setSaved(message, tone) {
   el.dataset.tone = tone;
 }
 
-export function showBanner(message) {
+/*
+ * The #banner is one live region shared by two kinds of message that used to erase each
+ * other (#33): a successful import cleared a pending update prompt, and an update prompt
+ * overwrote a data-integrity warning — leaving the recovery buttons gone while state.js
+ * was still refusing to save, i.e. the user stranded.
+ *
+ *   DURABLE  warnings  — recovery, storage read-only/unavailable, a failed import, a
+ *            startup error. They reflect a condition that is still true, so they stay
+ *            until the flow that raised them clears its OWN message (clearBanner). A
+ *            transient notice never wipes one; a plain warning never replaces the critical
+ *            recovery prompt.
+ *   TRANSIENT notices  — "a new version is ready", "nothing to export". Informational;
+ *            shown only when no durable warning is up, so they can never hide a warning
+ *            and surface the moment a durable one is dismissed.
+ *
+ * Durable outranks transient. One element = one live region, so the aria-live/atomic
+ * semantics added in #44 are unchanged. `painted` skips re-announcing an unchanged banner
+ * when only the hidden slot moved (aria-atomic re-reads on any subtree write).
+ */
+let durable = null; // { key, critical, message, actions } | null
+let transient = null; // { info, sticky, message, actions } | null
+let painted = null; // the slot object currently in the DOM (identity guard)
+
+function bannerButtons(actions) {
+  return actions.map(({ action, label, danger }) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = danger ? 'btn btn--small btn--danger' : 'btn btn--small';
+    btn.dataset.action = action;
+    btn.textContent = label;
+    return btn;
+  });
+}
+
+function paintBanner() {
+  // A one-shot notice must not outlive the warning that hid it: once a durable warning is
+  // up, drop a non-sticky transient so it can't resurface (falsely) when the warning
+  // clears. The update prompt is sticky — it's still true until reload — so it survives to
+  // resurface. (Without this, dismissing a warning re-showed a stale "nothing to export".)
+  if (durable && transient && !transient.sticky) transient = null;
+
+  const next = durable || transient; // durable wins
+  if (next === painted) return; // visible content unchanged — don't re-announce
+  painted = next;
+
   const el = $('#banner');
-  el.hidden = !message;
-  el.classList.remove('banner--info');
-  el.textContent = message || '';
+  el.classList.toggle('banner--info', Boolean(next && next.info));
+  el.hidden = !next;
+  // One mutation, so the live region reads the sentence and its buttons as a single
+  // utterance rather than the sentence and then an orphaned button.
+  el.replaceChildren(...(next ? [next.message, ...bannerButtons(next.actions)] : []));
+}
+
+/* durable warnings ------------------------------------------------------- */
+
+/**
+ * Raise a durable warning (storage read-only, a failed import, a startup error). `key`
+ * tags the owner so that same flow can later clear exactly its own message; a falsy
+ * message clears this owner's warning. The critical recovery prompt is never replaced by
+ * a plain warning — it must be resolved through its own buttons.
+ *
+ * One durable slot: a later warning of a different key replaces the earlier one. The only
+ * overlap in practice is a session-long 'warning' (not-writable/startup) plus a failed
+ * 'import', and a lost not-writable warning is still echoed by the persistent #saved
+ * "Could not save…" status — so a keyed stack isn't worth the weight here.
+ */
+export function showBanner(message, key = 'warning') {
+  if (!message) { clearBanner(key); return; }
+  if (durable && durable.critical) return;
+  durable = { key, critical: false, message, actions: [] };
+  paintBanner();
+}
+
+/** Clear the durable warning, but only if this flow owns it (matched by key). */
+export function clearBanner(key) {
+  if (durable && durable.key === key) {
+    durable = null;
+    paintBanner();
+  }
 }
 
 /**
  * Saved data could not be read. Offer to download the raw bytes before discarding them —
  * until the user chooses "Start fresh", state.js refuses to save over the original.
+ * Critical: outranks everything and is cleared only by the start-fresh flow.
  */
 export function showRecovery() {
-  const el = $('#banner');
-  el.classList.remove('banner--info');
+  durable = {
+    key: 'recovery',
+    critical: true,
+    message:
+      'Your saved characters could not be read, so they have NOT been changed. '
+      + 'Download a copy, then start fresh.',
+    actions: [
+      { action: 'download-corrupt', label: 'Download unreadable data' },
+      { action: 'start-fresh', label: 'Start fresh', danger: true },
+    ],
+  };
+  paintBanner();
+}
 
-  const download = document.createElement('button');
-  download.type = 'button';
-  download.className = 'btn btn--small';
-  download.dataset.action = 'download-corrupt';
-  download.textContent = 'Download unreadable data';
+/* transient notices ------------------------------------------------------ */
 
-  const fresh = document.createElement('button');
-  fresh.type = 'button';
-  fresh.className = 'btn btn--small btn--danger';
-  fresh.dataset.action = 'start-fresh';
-  fresh.textContent = 'Start fresh';
-
-  // One mutation so the live region announces the message and its actions together,
-  // not the sentence first and then the buttons as a second, orphaned utterance.
-  el.hidden = false;
-  el.replaceChildren(
-    'Your saved characters could not be read, so they have NOT been changed. '
-    + 'Download a copy, then start fresh.',
-    download, fresh,
-  );
+/**
+ * A low-stakes, one-shot notice (e.g. "nothing to export"). Non-sticky: it never
+ * resurfaces once a warning has hidden it, and it refuses to overwrite a pending update
+ * prompt (a sticky transient), so a trivial notice can't discard the reload offer.
+ */
+export function showNotice(message) {
+  if (transient && transient.sticky) return;
+  transient = { info: false, sticky: false, message, actions: [] };
+  paintBanner();
 }
 
 /**
- * Offer a reload once a new build has been installed by the service worker.
- *
- * Deliberately a prompt rather than an automatic reload: this app is read at a table
- * mid-session, and yanking the page out from under someone who is typing into Notes to
- * apply a cosmetic change is a worse failure than showing a slightly old sheet.
+ * Offer a reload once the service worker has installed a new build. A prompt, not an
+ * auto-reload: this app is read at the table mid-session, and yanking the page out from
+ * under someone applying a cosmetic change is worse than showing a slightly old sheet.
+ * Transient but sticky: it waits behind a data-integrity warning and resurfaces once that
+ * warning is dismissed (the new build is still there), and a one-shot notice can't discard
+ * it — but it can never wipe a warning (was #33).
  */
 export function showUpdatePrompt() {
-  const el = $('#banner');
-  el.classList.add('banner--info');
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn--small';
-  button.dataset.action = 'reload-app';
-  button.textContent = 'Reload';
-
-  // Single mutation — the live region reads "A new version is ready. Reload" as one.
-  el.hidden = false;
-  el.replaceChildren('A new version is ready.', button);
+  transient = {
+    info: true,
+    sticky: true,
+    message: 'A new version is ready.',
+    actions: [{ action: 'reload-app', label: 'Reload' }],
+  };
+  paintBanner();
 }
