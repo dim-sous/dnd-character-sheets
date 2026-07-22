@@ -11,9 +11,13 @@ import * as state from './state.js';
 import { STORAGE_KEY } from './constants.js';
 import { exportToFile, readImportFile, exportRaw } from './storage.js';
 import {
+  shouldRemindBackup, shouldSuggestInstall, loadNudgeState,
+  recordFirstSeen, recordBackup, snoozeBackup, snoozeInstall,
+} from './nudges.js';
+import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleSlotSetup,
-  invalidateRoster, setSaved, showBanner, clearBanner, showNotice,
-  showUpdatePrompt, showRecovery, activateTab,
+  invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
+  clearNudge, showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -172,6 +176,31 @@ const ACTIONS = {
   },
 
   'reload-app': () => window.location.reload(),
+
+  // Data-durability nudges (#32). Each handler dismisses only its OWN banner —
+  // clearNudge is kind-guarded, so it can never wipe the update prompt (#33).
+  'nudge-backup-export': () => {
+    const characters = state.getCharacters();
+    if (!characters.length) {
+      // The roster was emptied after the nudge appeared — say so, exactly like
+      // the Export button would, instead of silently pretending a file was saved.
+      clearNudge('backup');
+      showNotice('Nothing to export yet.');
+      return;
+    }
+    state.flush();
+    exportToFile(characters);
+    recordBackup();
+    clearNudge('backup');
+  },
+  'nudge-backup-later': () => {
+    snoozeBackup();
+    clearNudge('backup');
+  },
+  'nudge-install-dismiss': () => {
+    snoozeInstall();
+    clearNudge('install');
+  },
   'long-rest': () => {
     // Destructive now that it touches HP and death saves — a mis-tap shouldn't wipe
     // what you were tracking, so gate it behind a confirm.
@@ -261,6 +290,8 @@ $('#btn-export').addEventListener('click', () => {
   }
   state.flush();
   exportToFile(characters);
+  recordBackup(); // every export resets the backup-reminder clock (#32)
+  clearNudge('backup'); // the reminder is satisfied; a pending update prompt is not touched
 });
 
 const fileInput = $('#file-import');
@@ -402,6 +433,48 @@ window.addEventListener('storage', (event) => {
 // and a denial is fine — Export stays the durable backup. Feature-detected, never throws.
 if (navigator.storage && typeof navigator.storage.persist === 'function') {
   navigator.storage.persist().catch(() => {});
+}
+
+// Data-durability nudges (#32): at most ONE per visit, decided at startup, only
+// when there are characters to lose. The iOS install nudge wins — installing is
+// the fix for the eviction the backup reminder merely mitigates. The decisions
+// are pure functions covered by tests.js; this block only gathers their inputs.
+{
+  const now = Date.now();
+  recordFirstSeen(now); // BEFORE loadNudgeState, so a re-stamped firstSeenAt is seen this visit
+  const meta = loadNudgeState();
+  const hasCharacters = state.getCharacters().length > 0;
+  // iPadOS reports itself as MacIntel; the touch-point check catches it anyway.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = navigator.standalone === true
+    || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+
+  if (shouldSuggestInstall(meta, now, isIOS, isStandalone, hasCharacters)) {
+    // Careful, learned the hard way in review: an installed Home-Screen app gets its
+    // OWN storage container — installing does NOT carry this tab's characters over.
+    // The honest instruction is backup → install → import, in that order.
+    showNudge(
+      'install',
+      'iOS can delete a browser tab’s saved characters after a week unused. For safe '
+      + 'keeping: download a backup, add this page to your Home Screen (in Safari: '
+      + 'Share → Add to Home Screen), then import the backup there — the installed '
+      + 'app starts empty.',
+      [
+        { action: 'nudge-backup-export', label: 'Download backup' },
+        { action: 'nudge-install-dismiss', label: 'Got it' },
+      ],
+    );
+  } else if (shouldRemindBackup(meta, now, hasCharacters)) {
+    showNudge(
+      'backup',
+      'It’s been a while since your last backup — download a copy of your characters.',
+      [
+        { action: 'nudge-backup-export', label: 'Download backup' },
+        { action: 'nudge-backup-later', label: 'Later' },
+      ],
+    );
+  }
 }
 
 // navigator.serviceWorker is undefined on an insecure origin, so this stays inert over a

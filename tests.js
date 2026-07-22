@@ -16,6 +16,9 @@ import { normalizeCharacter, parseStored, mergeCharacters } from './js/storage.j
 // when tests.html runs in a browser, overwrites the user's real roster under the shared
 // STORAGE_KEY. Cover only the pure surface. (Verified: import is side-effect-free.)
 import { getByPath, setByPath } from './js/state.js';
+// nudges.js: same rule — only the pure decision functions; the record/snooze helpers
+// write localStorage and stay untested here.
+import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from './js/nudges.js';
 
 const results = [];
 let group = '';
@@ -381,5 +384,55 @@ is('proficiencyBonus garbage level → +2', rules.proficiencyBonus('abc'), 2);
 is('initiative garbage bonus → dex mod only', rules.initiative({ abilities: { dex: 14 }, initiativeBonus: 'x' }), 2);
 is('formatMod large negative', rules.formatMod(-10), '−10');
 is('restoreHitDice garbage total → 0', rules.restoreHitDice([{ size: 'd8', total: 'x', remaining: 5 }])[0].remaining, 0);
+
+/* -------------------------------------------- backup & install nudges (#32) */
+
+describe('nudges');
+{
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = 100 * DAY; // fixed fake clock — the decisions take `now` as an input
+
+  is('no characters → no backup nudge', shouldRemindBackup({ firstSeenAt: 1 }, now, false), false);
+  is('empty meta (very first visit) → no nudge', shouldRemindBackup({}, now, true), false);
+  is('fresh device inside the cadence → no nudge', shouldRemindBackup({ firstSeenAt: now - DAY }, now, true), false);
+  is('never exported, quiet 15 days → nudge', shouldRemindBackup({ firstSeenAt: now - 15 * DAY }, now, true), true);
+  is('exactly at the cadence boundary → not yet', shouldRemindBackup({ firstSeenAt: now - 14 * DAY }, now, true), false);
+  is('recent export resets the clock', shouldRemindBackup({ firstSeenAt: now - 40 * DAY, lastBackupAt: now - DAY }, now, true), false);
+  is('stale export → nudge', shouldRemindBackup({ firstSeenAt: 1, lastBackupAt: now - 15 * DAY }, now, true), true);
+  is('active snooze wins over a stale export', shouldRemindBackup({ firstSeenAt: 1, lastBackupAt: now - 15 * DAY, backupSnoozedUntil: now + DAY }, now, true), false);
+  is('expired snooze → nudge returns', shouldRemindBackup({ firstSeenAt: 1, lastBackupAt: now - 15 * DAY, backupSnoozedUntil: now - 1 }, now, true), true);
+
+  // An anchor describes the past, so a future firstSeenAt from a skewed clock is
+  // IGNORED, not floored to now. A lone future anchor yields "no anchor yet" (the
+  // stateful recordFirstSeen re-stamps it on load); crucially it must not MASK a
+  // valid older lastBackupAt, and an extreme value must not mute the reminder.
+  is('lone future firstSeenAt → no valid anchor, no nudge', shouldRemindBackup({ firstSeenAt: now + 30 * DAY }, now, true), false);
+  is('future firstSeenAt does NOT mask a stale valid backup', shouldRemindBackup({ firstSeenAt: now + 30 * DAY, lastBackupAt: now - 15 * DAY }, now, true), true);
+  is('extreme future firstSeenAt is ignored, not muted', shouldRemindBackup({ firstSeenAt: 8.98e307, lastBackupAt: now - 15 * DAY }, now, true), true);
+  is('once the clock passes a future firstSeenAt it counts normally', shouldRemindBackup({ firstSeenAt: now + 30 * DAY }, now + 45 * DAY, true), true);
+
+  is('install: not iOS → no', shouldSuggestInstall({}, now, false, false, true), false);
+  is('install: already installed → no', shouldSuggestInstall({}, now, true, true, true), false);
+  is('install: no characters → no', shouldSuggestInstall({}, now, true, false, false), false);
+  is('install: iOS browser with characters → yes', shouldSuggestInstall({}, now, true, false, true), true);
+  is('install: active snooze → no', shouldSuggestInstall({ installSnoozedUntil: now + DAY }, now, true, false, true), false);
+  is('install: expired snooze → returns', shouldSuggestInstall({ installSnoozedUntil: now - 1 }, now, true, false, true), true);
+  // A snooze further out than its own cadence is a skewed-clock artifact — expired,
+  // not honored, so a bad clock can suppress the nudge by at most one cadence.
+  is('install: skewed-clock snooze (far future) → not muted', shouldSuggestInstall({ installSnoozedUntil: now + 5 * 365 * DAY }, now, true, false, true), true);
+  is('backup: skewed-clock snooze (far future) → not muted', shouldRemindBackup({ firstSeenAt: 1, lastBackupAt: now - 15 * DAY, backupSnoozedUntil: now + 5 * 365 * DAY }, now, true), true);
+  is('backup: snooze exactly one cadence out is honored', shouldRemindBackup({ firstSeenAt: 1, lastBackupAt: now - 15 * DAY, backupSnoozedUntil: now + 14 * DAY }, now, true), false);
+
+  // Hand-edited state is an input class, not an error (same bar as normalizeCharacter).
+  // A garbage timestamp must be DROPPED, not kept: kept, it would NaN-poison Math.max
+  // and permanently kill the reminder; dropped, recordFirstSeen can re-stamp it.
+  is('normalize: date-string timestamp is dropped', normalizeNudgeState({ firstSeenAt: '2026-01-01' }), {});
+  is('normalize: negative and zero are dropped', normalizeNudgeState({ lastBackupAt: -5, firstSeenAt: 0 }), {});
+  is('normalize: numeric string survives as a number', normalizeNudgeState({ firstSeenAt: '123' }), { firstSeenAt: 123 });
+  is('normalize: valid fields pass, unknown keys are dropped', normalizeNudgeState({ firstSeenAt: 7, junk: true }), { firstSeenAt: 7 });
+  is('normalize: null → {}', normalizeNudgeState(null), {});
+  is('normalize: array → {}', normalizeNudgeState([1, 2]), {});
+  is('poisoned meta no longer mutes a valid backup clock', shouldRemindBackup(normalizeNudgeState({ firstSeenAt: 'garbage', lastBackupAt: now - 15 * DAY }), now, true), true);
+}
 
 export { results };
