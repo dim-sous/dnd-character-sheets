@@ -7,9 +7,15 @@
  * result. That is the entire argument for keeping the arithmetic separate from the
  * rendering, and the reason the same file can run in either place with no test framework.
  */
-import { blankCharacter } from './js/constants.js';
+import { blankCharacter, MAX_EXHAUSTION } from './js/constants.js';
 import * as rules from './js/rules.js';
-import { normalizeCharacter, parseStored } from './js/storage.js';
+import { normalizeCharacter, parseStored, mergeCharacters } from './js/storage.js';
+// state.js is safe to import: its module scope has no side effects (it does not call
+// init/load/localStorage), and only its PURE exports getByPath/setByPath are used here.
+// DO NOT call state.js mutators from this suite — they end in a debounced save() that,
+// when tests.html runs in a browser, overwrites the user's real roster under the shared
+// STORAGE_KEY. Cover only the pure surface. (Verified: import is side-effect-free.)
+import { getByPath, setByPath } from './js/state.js';
 
 const results = [];
 let group = '';
@@ -240,5 +246,119 @@ describe('parseStored');
   is('valid → not corrupt', Boolean(good.corrupt), false);
   is('valid → normalized through', good.characters[0].name, 'Aria');
 }
+
+/* ------------------------------------------------ path get/set (state.js) */
+
+describe('getByPath & setByPath');
+is('shallow read', getByPath({ a: 1 }, 'a'), 1);
+is('nested read', getByPath({ hp: { current: 5 } }, 'hp.current'), 5);
+is('deep read on blank', getByPath(blankCharacter(), 'spellcasting.ability'), '');
+is('numeric-in-path slot read', getByPath(blankCharacter(), 'spellcasting.slots.3.total'), 0);
+is('missing leaf → undefined', getByPath({ a: {} }, 'a.b'), undefined);
+is('missing intermediate → undefined (no throw)', getByPath({ a: {} }, 'a.b.c'), undefined);
+is('null intermediate → undefined (no throw)', getByPath({ a: null }, 'a.b'), undefined);
+is('read a whole object key', getByPath({ hp: { current: 5 } }, 'hp'), { current: 5 });
+is('shallow write', (() => { const o = { a: 1 }; setByPath(o, 'a', 2); return o.a; })(), 2);
+is('nested write', (() => { const o = { hp: { current: 5 } }; setByPath(o, 'hp.current', 9); return o.hp.current; })(), 9);
+is('deep write into blank slot total', (() => { const c = blankCharacter(); setByPath(c, 'spellcasting.slots.3.total', 4); return c.spellcasting.slots[3].total; })(), 4);
+is('write leaves siblings alone', (() => { const c = blankCharacter(); setByPath(c, 'hp.current', 7); return c.hp; })(), { max: 0, current: 7, temp: 0 });
+is('write returns undefined', setByPath({ a: { b: 1 } }, 'a.b', 2), undefined);
+// Contract: paths must already exist. updateActive only ever writes blankCharacter paths,
+// so this never bites in production, but the throw is the documented behaviour.
+is('write to missing intermediate throws', (() => { try { setByPath({}, 'a.b', 1); return 'no-throw'; } catch (e) { return 'threw'; } })(), 'threw');
+
+/* ------------------------------------ normalizeCharacter clamp & coercion */
+
+describe('normalizeCharacter clamping');
+is('deathSaves.successes clamps high', normalizeCharacter({ deathSaves: { successes: 9 } }).deathSaves.successes, 3);
+is('deathSaves.failures clamps negative', normalizeCharacter({ deathSaves: { failures: -4 } }).deathSaves.failures, 0);
+is('deathSaves non-number → 0', normalizeCharacter({ deathSaves: { successes: 'x' } }).deathSaves.successes, 0);
+is('deathSaves missing → 0/0', normalizeCharacter({}).deathSaves, { successes: 0, failures: 0 });
+is('exhaustion clamps to MAX', normalizeCharacter({ exhaustion: 99 }).exhaustion, MAX_EXHAUSTION);
+is('exhaustion clamps negative', normalizeCharacter({ exhaustion: -3 }).exhaustion, 0);
+is('exhaustion in range passes', normalizeCharacter({ exhaustion: 4 }).exhaustion, 4);
+is('level from numeric string', normalizeCharacter({ level: '7' }).level, 7);
+is('level garbage → base 3', normalizeCharacter({ level: 'abc' }).level, 3);
+is('hp coercion mixed', normalizeCharacter({ hp: { max: '20', current: '15', temp: 'x' } }).hp, { max: 20, current: 15, temp: 0 });
+is('hp missing → 0/0/0', normalizeCharacter({}).hp, { max: 0, current: 0, temp: 0 });
+is('pbOverride null stays null', normalizeCharacter({ proficiencyBonusOverride: null }).proficiencyBonusOverride, null);
+is('pbOverride empty string → null', normalizeCharacter({ proficiencyBonusOverride: '' }).proficiencyBonusOverride, null);
+is('pbOverride missing → null', normalizeCharacter({}).proficiencyBonusOverride, null);
+is('pbOverride number stays', normalizeCharacter({ proficiencyBonusOverride: 5 }).proficiencyBonusOverride, 5);
+is('pbOverride garbage string → null', normalizeCharacter({ proficiencyBonusOverride: 'x' }).proficiencyBonusOverride, null);
+is('conditions filters non-strings', normalizeCharacter({ conditions: ['Prone', 5, null, 'Poisoned'] }).conditions, ['Prone', 'Poisoned']);
+is('conditions non-array → []', normalizeCharacter({ conditions: 'Prone' }).conditions, []);
+is('saveProficiencies filters non-strings', normalizeCharacter({ saveProficiencies: ['str', 3] }).saveProficiencies, ['str']);
+is('currency coercion + unknown key ignored', normalizeCharacter({ currency: { gp: '50', xx: 1 } }).currency, { cp: 0, sp: 0, ep: 0, gp: 50, pp: 0 });
+is('currency missing → zeros', normalizeCharacter({}).currency, { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 });
+is('abilities coercion', normalizeCharacter({ abilities: { str: '18' } }).abilities.str, 18);
+is('abilities unknown key dropped', Object.keys(normalizeCharacter({ abilities: { str: 18, zzz: 5 } }).abilities), ['str', 'dex', 'con', 'int', 'wis', 'cha']);
+is('abilities missing → all 10', normalizeCharacter({}).abilities, { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
+is('name non-string → empty', normalizeCharacter({ name: 42 }).name, '');
+is('name string passes', normalizeCharacter({ name: 'Aria' }).name, 'Aria');
+is('heroicInspiration truthy → true', normalizeCharacter({ heroicInspiration: 1 }).heroicInspiration, true);
+is('heroicInspiration missing → false', normalizeCharacter({}).heroicInspiration, false);
+is('ac coercion', normalizeCharacter({ ac: '16' }).ac, 16);
+is('speed garbage → base 30', normalizeCharacter({ speed: 'x' }).speed, 30);
+is('id string preserved', normalizeCharacter({ id: 'abc' }).id, 'abc');
+is('id missing → generated non-empty string', typeof normalizeCharacter({}).id === 'string' && normalizeCharacter({}).id.length > 0, true);
+
+/* -------------------------------------- normalizeCharacter row coercion */
+
+describe('normalizeCharacter rows');
+is('attack number → string coercion', normalizeCharacter({ attacks: [{ bonus: 5 }] }).attacks[0].bonus, '5');
+is('attack garbage row → template', normalizeCharacter({ attacks: ['nope'] }).attacks[0], { name: '', bonus: '', damage: '', notes: '' });
+is('attacks non-array → []', normalizeCharacter({ attacks: {} }).attacks, []);
+is('inventory qty coercion', normalizeCharacter({ inventory: [{ item: 'Rope', qty: '3' }] }).inventory[0].qty, 3);
+is('inventory qty garbage → template 1', normalizeCharacter({ inventory: [{ item: 'Rope', qty: 'x' }] }).inventory[0].qty, 1);
+is('spell prepared → boolean', normalizeCharacter({ spellcasting: { spells: [{ name: 'X', prepared: 1 }] } }).spellcasting.spells[0].prepared, true);
+is('spell level coercion', normalizeCharacter({ spellcasting: { spells: [{ level: '2' }] } }).spellcasting.spells[0].level, 2);
+
+/* ------------------------------------- normalizeCharacter spell slots */
+
+describe('normalizeCharacter slots');
+is('slot from string key', normalizeCharacter({ spellcasting: { slots: { '3': { total: 4, used: 1 } } } }).spellcasting.slots[3], { total: 4, used: 1 });
+is('slot from numeric key', normalizeCharacter({ spellcasting: { slots: { 3: { total: 2, used: 0 } } } }).spellcasting.slots[3], { total: 2, used: 0 });
+is('slot missing → 0/0', normalizeCharacter({}).spellcasting.slots[5], { total: 0, used: 0 });
+is('slots always cover 1..9', Object.keys(normalizeCharacter({}).spellcasting.slots), ['1', '2', '3', '4', '5', '6', '7', '8', '9']);
+is('spellcasting ability passthrough', normalizeCharacter({ spellcasting: { ability: 'cha' } }).spellcasting.ability, 'cha');
+is('spellcasting ability default ""', normalizeCharacter({}).spellcasting.ability, '');
+is('spellcasting ability non-string → ""', normalizeCharacter({ spellcasting: { ability: 7 } }).spellcasting.ability, '');
+
+/* -------------------------------------------- mergeCharacters (storage) */
+
+describe('mergeCharacters');
+is('no collision keeps both, order preserved', mergeCharacters([{ id: 'a' }], [{ id: 'b' }]).map((c) => c.id), ['a', 'b']);
+is('no collision length', mergeCharacters([{ id: 'a' }], [{ id: 'b' }]).length, 2);
+is('collision renumbers only the incoming dup', (() => { const r = mergeCharacters([{ id: 'a' }], [{ id: 'a', name: 'dup' }]); return r[0].id === 'a' && r[1].id !== 'a' && r[1].name === 'dup' && r.length === 2; })(), true);
+is('collision within the incoming batch', (() => { const r = mergeCharacters([], [{ id: 'x' }, { id: 'x' }]); return r.length === 2 && r[0].id === 'x' && r[1].id !== 'x' && r[0].id !== r[1].id; })(), true);
+is('empty incoming → existing unchanged', mergeCharacters([{ id: 'a' }], []).map((c) => c.id), ['a']);
+is('empty existing → incoming kept', mergeCharacters([], [{ id: 'a' }]).map((c) => c.id), ['a']);
+is('does not mutate the existing array', (() => { const ex = [{ id: 'a' }]; mergeCharacters(ex, [{ id: 'a' }]); return ex.length; })(), 1);
+
+/* --------------------------------------- parseStored (more shapes) */
+
+describe('parseStored (more shapes)');
+is('bare top-level array → characters', parseStored(JSON.stringify([{ name: 'X' }])).characters.length, 1);
+is('bare array → normalized name', parseStored(JSON.stringify([{ name: 'X' }])).characters[0].name, 'X');
+is('bare array → not corrupt', Boolean(parseStored(JSON.stringify([{ name: 'X' }])).corrupt), false);
+is('empty array payload → empty, not corrupt', parseStored('[]').characters.length, 0);
+is('empty array → not corrupt', Boolean(parseStored('[]').corrupt), false);
+is('JSON number payload → corrupt', parseStored('42').corrupt === true, true);
+is('JSON null payload → corrupt', parseStored('null').corrupt === true, true);
+
+/* -------------------------------------------- rules boundary cases */
+
+describe('rules boundaries');
+is('applyDamage negative amount → no change', rules.applyDamage({ max: 30, current: 20, temp: 5 }, -7), { max: 30, current: 20, temp: 5 });
+is('applyDamage garbage amount → no change', rules.applyDamage({ max: 30, current: 20, temp: 0 }, 'x').current, 20);
+is('applyDamage temp exactly equals dmg', rules.applyDamage({ max: 30, current: 20, temp: 7 }, 7), { max: 30, current: 20, temp: 0 });
+is('applyHealing negative → no change', rules.applyHealing({ max: 30, current: 20, temp: 0 }, -5).current, 20);
+is('applyHealing garbage → no change', rules.applyHealing({ max: 30, current: 20, temp: 0 }, 'x').current, 20);
+is('applyHealing does not mutate input', (() => { const hp = { max: 30, current: 10, temp: 0 }; rules.applyHealing(hp, 5); return hp; })(), { max: 30, current: 10, temp: 0 });
+is('proficiencyBonus garbage level → +2', rules.proficiencyBonus('abc'), 2);
+is('initiative garbage bonus → dex mod only', rules.initiative({ abilities: { dex: 14 }, initiativeBonus: 'x' }), 2);
+is('formatMod large negative', rules.formatMod(-10), '−10');
+is('restoreHitDice garbage total → 0', rules.restoreHitDice([{ size: 'd8', total: 'x', remaining: 5 }])[0].remaining, 0);
 
 export { results };
