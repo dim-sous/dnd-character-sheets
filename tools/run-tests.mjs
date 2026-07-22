@@ -21,6 +21,14 @@ for (const r of results) {
 const passed = results.filter((r) => r.ok).length;
 const failed = results.length - passed;
 
+// An empty suite is a failure, not a pass. If tests.js fails to load its assertions
+// (a bad import, a syntax slip, a renamed export) `results` is empty and every check
+// silently vanishes — "All 0 assertions passed" is exactly the green that must not ship.
+if (results.length === 0) {
+  console.error('No assertions ran — the test suite is empty or failed to load.');
+  process.exit(1);
+}
+
 if (failed > 0) {
   console.error(`\n${failed} of ${results.length} assertions FAILED.`);
   process.exit(1);
