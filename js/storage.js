@@ -75,6 +75,12 @@ export function normalizeCharacter(raw) {
   char.saveProficiencies = strArray(raw.saveProficiencies);
   char.skillProficiencies = strArray(raw.skillProficiencies);
   char.skillExpertise = strArray(raw.skillExpertise);
+  // Expertise implies proficiency (#5). An old save or hand-edited file may hold
+  // expertise without proficiency — promote rather than drop, honoring the stronger
+  // claim, the same way out-of-range pips are clamped at the door below.
+  for (const key of char.skillExpertise) {
+    if (!char.skillProficiencies.includes(key)) char.skillProficiencies.push(key);
+  }
 
   char.ac = num(raw.ac, base.ac);
   char.initiativeBonus = num(raw.initiativeBonus, base.initiativeBonus);
