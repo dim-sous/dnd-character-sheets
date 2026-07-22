@@ -1,0 +1,30 @@
+# Run the rules test suite on every pull request (and on main) so a broken derived-value
+# calculation blocks the merge instead of relying on someone remembering to open
+# tests.html. rules.js is pure — no DOM — so this needs Node and nothing else: no
+# browser, no npm install, no package.json.
+#
+# Node is pinned to 24 because the app's .js modules use ESM syntax with no package.json;
+# Node detects them as ES modules from 22.7 on, and pinning keeps that guaranteed.
+
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same PR branch makes an in-flight run pointless — cancel it.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run the rules suite
+        run: node tools/run-tests.mjs
