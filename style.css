@@ -350,35 +350,40 @@ input[type="checkbox"] {
 .inline-fields { display: flex; flex-wrap: wrap; gap: .6rem; }
 .inline-fields > .field { flex: 1 1 7rem; }
 
-.badge {
-  display: inline-block; min-width: 1.5rem; padding: 0 .35rem;
-  background: var(--parchment); border: 1px solid var(--line); border-radius: 999px;
-  font-family: var(--sans); font-size: .75rem; text-align: center;
-}
-
 /* ----------------------------------------------------------- abilities */
 
 /* Six abilities wrap to fit whatever column the card lands in. A fixed
    repeat(6, 1fr) clipped WIS and CHA straight out of the card at laptop width. */
-.abilities { display: grid; grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr)); gap: .5rem; }
+/* Block flow, NOT flex: WebKit cannot fragment flex containers when printing, so a
+   flex .abilities would make the six-group stack monolithic in Safari/iOS and slice
+   it at the raw column edge instead of breaking between groups. */
+.abilities { display: block; }
+.ability-group + .ability-group { margin-top: .6rem; }
 
-.ability {
-  display: flex; flex-direction: column; align-items: center; gap: .25rem;
-  padding: .5rem .3rem;
+/* One group per ability (#14): a header row with the score and modifier, its skills below. */
+.ability-row {
+  display: flex; align-items: center; gap: .6rem;
+  min-height: var(--tap);
+  padding: .3rem .5rem;
   background: var(--parchment);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
 }
-.ability__name {
-  font-size: .68rem; font-weight: 700; letter-spacing: .1em; color: var(--ink-faint);
+.ability-row__name {
+  flex: 1; margin: 0; /* h3: kill the UA heading margin inside the flex row */
+  font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-soft);
 }
-.ability__mod {
-  font-family: var(--serif); font-size: 1.65rem; font-weight: 600;
-  font-variant-numeric: tabular-nums; line-height: 1;
+.ability-row__score {
+  /* The global input[type="number"] rule wins width:100% on specificity; the cap
+     has to come from max-width, the same dodge the old ability tile used. */
+  width: 100%; max-width: 3.4rem;
+  font-size: .9rem; text-align: center;
 }
-.ability__score {
-  width: 100%; max-width: 3.4rem; min-height: 36px; padding: .15rem;
-  font-size: .9rem;
+.ability-row__mod {
+  min-width: 2.6rem; text-align: center;
+  font-family: var(--serif); font-size: 1.35rem; font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 /* Passive Perception sits under the ability grid on the Abilities tab. */
 .passive {
@@ -397,20 +402,21 @@ input[type="checkbox"] {
 
 /* -------------------------------------------------------------- skills */
 
-.skills__head, .skill {
+.skills__legend, .skill {
   display: grid;
   grid-template-columns: 1fr 2.4rem 2.4rem 2.6rem;
   align-items: center;
   gap: .3rem;
 }
-.skills__head {
-  padding: 0 .2rem .35rem;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: .62rem; font-weight: 700; letter-spacing: .08em;
+/* One compact legend per ability group, sharing the skill grid so it can never
+   misalign — and never scrolls far from the checkboxes it labels. */
+.skills__legend {
+  padding: .15rem .2rem 0;
+  font-size: .58rem; font-weight: 700; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-faint);
   text-align: center;
 }
-.skills__head > :first-child { text-align: left; }
+.skills__legend > :first-child { text-align: left; }
 
 .skills { list-style: none; margin: 0; padding: 0; }
 .skill { min-height: var(--tap); border-bottom: 1px solid var(--line-soft); padding: 0 .2rem; }
@@ -423,35 +429,9 @@ input[type="checkbox"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* --------------------------------------------------------------- saves */
-
-/* The six saving throws, moved to the Combat tab. Same grid shape as skills,
-   minus the expertise column. */
-.saves__head, .save {
-  display: grid;
-  grid-template-columns: 1fr 2.4rem 2.6rem;
-  align-items: center;
-  gap: .3rem;
-}
-.saves__head {
-  padding: 0 .2rem .35rem;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: .62rem; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--ink-faint);
-  text-align: center;
-}
-.saves__head > :first-child { text-align: left; }
-
-.saves { list-style: none; margin: 0; padding: 0; }
-.save { min-height: var(--tap); border-bottom: 1px solid var(--line-soft); padding: 0 .2rem; }
-.save:last-child { border-bottom: 0; }
-.save__name { font-size: .88rem; }
-.save__prof { justify-self: center; }
-.save__total {
-  justify-self: center;
-  font-family: var(--serif); font-size: 1.05rem; font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
+/* The saving throw is the first row of each ability group — same grid as the
+   skills below it, lightly emphasized as a different kind of row. */
+.skill--save .skill__name { font-weight: 600; }
 
 /* ---------------------------------------------------------------- pips */
 
@@ -502,6 +482,30 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 .chip__box { width: 18px; height: 18px; }
+
+/* The seams the #14 card merge created: sections that used to be separate cards. */
+.status__block { margin-top: .9rem; }
+.hp__work + .vitals { margin-top: .9rem; }
+
+/* Conditions disclosure inside the Combat card (#14): closed, the summary line
+   lists the active conditions. Print always shows exactly that line — full and
+   wrapped, never the chip grid — see the @media print block. */
+.conditions__summary {
+  display: flex; align-items: center; gap: .45rem;
+  min-height: var(--tap); cursor: pointer; list-style: none;
+}
+.conditions__summary::-webkit-details-marker { display: none; }
+/* A real element, aria-hidden in the markup, so the glyph can't leak into the
+   summary's accessible name the way CSS-generated content does. */
+.conditions__marker { display: inline-block; color: var(--ink-faint); transition: transform .12s; }
+details[open] > .conditions__summary .conditions__marker { transform: rotate(90deg); }
+.conditions__summary .subhead { margin: 0; }
+.conditions__active {
+  flex: 1; min-width: 0;
+  font-size: .78rem; color: var(--ink-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.conditions .chips { margin-top: .5rem; }
 
 /* ---------------------------------------------------------- spellcasting */
 
@@ -730,6 +734,20 @@ input[type="checkbox"] {
   .tabpanel[hidden] { display: contents !important; }
   .cards { display: block; column-count: 2; column-gap: 1rem; padding: 0; }
   .card { break-inside: avoid; box-shadow: none; margin-bottom: .6rem; border-color: #999; }
+  /* The merged #14 cards exceed a print column — break-inside:avoid on a card taller
+     than the column is defeated anyway and splits at an arbitrary row. Let those two
+     fragment deliberately, keeping each ability group / status block intact. */
+  .card--flow { break-inside: auto; }
+  .ability-group, .card--flow .status__block, .card--flow .vitals,
+  .card--flow .hp, .card--flow .hp__work, .card--flow .inline-fields { break-inside: avoid; }
+  /* Never strand a title at a column foot with its card body on the next column. */
+  .card--flow .card__title { break-after: avoid; }
+  /* Conditions print as the summary line only — full and wrapped, never the chip
+     grid — no matter whether the disclosure was left open on screen. Without this,
+     a closed details truncates the list to one ellipsized line and an open one
+     prints it twice. */
+  .conditions .chips { display: none !important; }
+  .conditions__active { white-space: normal; overflow: visible; text-overflow: clip; }
   /* Notes and feature text otherwise print only their visible rows and clip the rest.
      field-sizing grows the control to fit its content where supported (Chromium, recent
      Safari); where it isn't, the textarea prints at its natural height — no worse than

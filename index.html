@@ -77,9 +77,11 @@
         <!-- ===================================================== Combat -->
         <section class="tabpanel" id="panel-combat" role="tabpanel" aria-labelledby="tab-combat" tabindex="0">
 
-          <!-- hit points: absorbed from the old bottom bar -->
-          <section class="card">
-            <h2 class="card__title">Hit Points</h2>
+          <!-- hit points + combat stats + status + conditions, one card (#14): every host
+               inside is addressed by id or data-attribute, so relocating them changes
+               nothing in render.js. card--flow: print lets the tall card fragment. -->
+          <section class="card card--flow">
+            <h2 class="card__title">Combat</h2>
             <div class="hp">
               <button type="button" class="hp__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
               <div class="hp__readout">
@@ -99,11 +101,7 @@
               <button type="button" class="btn btn--danger btn--small" data-action="damage">Damage</button>
               <button type="button" class="btn btn--good btn--small" data-action="heal">Heal</button>
             </div>
-          </section>
 
-          <!-- combat stats: absorbed from the old vitals strip -->
-          <section class="card">
-            <h2 class="card__title">Combat</h2>
             <div class="vitals">
               <div class="vital">
                 <label class="vital__label" for="f-ac">AC</label>
@@ -138,35 +136,6 @@
                 <input id="f-init-bonus" type="number"
                        data-bind="initiativeBonus" data-type="number"></p>
             </div>
-          </section>
-
-          <!-- conditions: moved out of the old Status card -->
-          <section class="card">
-            <h2 class="card__title">Conditions</h2>
-            <div class="chips" id="conditions"></div>
-          </section>
-
-          <!-- saving throws: the save half split out of the old ability cell -->
-          <section class="card">
-            <h2 class="card__title">Saving Throws</h2>
-            <div class="saves__head" aria-hidden="true">
-              <span>Save</span><span>Prof</span><span>Total</span>
-            </div>
-            <ul class="saves" id="saves"></ul>
-          </section>
-
-          <!-- attacks -->
-          <section class="card">
-            <div class="list__head">
-              <h2 class="card__title">Attacks</h2>
-              <button type="button" class="btn btn--small" data-action="add-row" data-list="attacks">+ Add</button>
-            </div>
-            <ul class="rows" id="attacks"></ul>
-          </section>
-
-          <!-- status: hit dice, death saves, exhaustion (conditions moved above) -->
-          <section class="card">
-            <h2 class="card__title">Status</h2>
 
             <div class="status__block">
               <div class="list__head">
@@ -191,9 +160,34 @@
             </div>
 
             <div class="status__block">
-              <h3 class="subhead">Exhaustion <output class="badge" data-derived="exhaustion">0</output></h3>
+              <h3 class="subhead">Exhaustion</h3>
               <div class="pips pips--bad" id="exhaustion" role="group" aria-label="Exhaustion level"></div>
             </div>
+
+            <div class="status__block conditions">
+              <!-- The real heading lives OUTSIDE the summary, visually hidden: browsers
+                   strip heading semantics from <summary> descendants, which dropped
+                   Conditions from screen-reader heading navigation. The visible title
+                   inside the summary is a styled span. -->
+              <h3 class="subhead visually-hidden">Conditions</h3>
+              <details>
+                <summary class="conditions__summary">
+                  <span class="conditions__marker" aria-hidden="true">▸</span>
+                  <span class="subhead conditions__title">Conditions</span>
+                  <span class="conditions__active" data-derived="conditionsList">—</span>
+                </summary>
+                <div class="chips" id="conditions"></div>
+              </details>
+            </div>
+          </section>
+
+          <!-- attacks -->
+          <section class="card">
+            <div class="list__head">
+              <h2 class="card__title">Attacks</h2>
+              <button type="button" class="btn btn--small" data-action="add-row" data-list="attacks">+ Add</button>
+            </div>
+            <ul class="rows" id="attacks"></ul>
           </section>
 
         </section>
@@ -201,23 +195,16 @@
         <!-- ================================================== Abilities -->
         <section class="tabpanel" id="panel-abilities" role="tabpanel" aria-labelledby="tab-abilities" tabindex="0" hidden>
 
-          <!-- abilities: score half only -->
-          <section class="card">
-            <h2 class="card__title">Abilities</h2>
+          <!-- abilities + saves + skills, one card: each ability heads its own save
+               and skills (#14). card--flow: taller than a print column, so print
+               lets it fragment at group boundaries -->
+          <section class="card card--flow">
+            <h2 class="card__title">Abilities &amp; Skills</h2>
             <div class="abilities" id="abilities"></div>
             <div class="passive">
               <span class="passive__label">Passive Perception</span>
               <output class="passive__value" data-derived="passive">10</output>
             </div>
-          </section>
-
-          <!-- skills -->
-          <section class="card">
-            <h2 class="card__title">Skills</h2>
-            <div class="skills__head" aria-hidden="true">
-              <span>Skill</span><span>Prof</span><span>Exp</span><span>Total</span>
-            </div>
-            <ul class="skills" id="skills"></ul>
           </section>
 
         </section>
@@ -379,20 +366,27 @@
   </li>
 </template>
 
-<template id="tpl-ability-score">
-  <div class="ability">
-    <span class="ability__name"></span>
-    <output class="ability__mod"></output>
-    <input class="ability__score" type="number" inputmode="numeric" data-type="number">
-  </div>
-</template>
-
-<template id="tpl-save">
-  <li class="save">
-    <span class="save__name"></span>
-    <input type="checkbox" class="save__prof">
-    <output class="save__total"></output>
-  </li>
+<template id="tpl-ability-group">
+  <section class="ability-group">
+    <div class="ability-row">
+      <!-- A real heading: six jump targets inside a ~30-row card, matching the
+           h3-per-block pattern of the merged Combat card. -->
+      <h3 class="ability-row__name"></h3>
+      <input class="ability-row__score" type="number" inputmode="numeric" data-type="number">
+      <output class="ability-row__mod"></output>
+    </div>
+    <ul class="skills">
+      <li class="skills__legend" aria-hidden="true">
+        <span></span><span>Prof</span><span>Exp</span><span>Total</span>
+      </li>
+      <li class="skill skill--save">
+        <span class="skill__name">Saving Throw</span>
+        <input type="checkbox" class="skill__prof">
+        <span aria-hidden="true"></span>
+        <output class="skill__total"></output>
+      </li>
+    </ul>
+  </section>
 </template>
 
 <template id="tpl-skill">

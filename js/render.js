@@ -70,76 +70,62 @@ export function invalidateRoster() {
 /* ------------------------------------------------------- static sections */
 
 /**
- * Abilities and saves used to share one cell. They now live on different tabs
- * (scores on Abilities, saves on Combat), so they are two independent renders —
- * but both still write the same derived/toggle/bind keys, so rules.js and state.js
- * never learn the layout moved.
+ * One group per ability: score + modifier in the header row, then its saving
+ * throw and its skills in a shared grid beneath (#14). Everything still writes
+ * the same derived/toggle/bind keys, so rules.js and state.js never learn the
+ * layout moved.
  */
 function renderAbilities(char) {
   const host = $('#abilities');
   host.replaceChildren();
 
   for (const ability of ABILITIES) {
-    const node = tpl('tpl-ability-score').cloneNode(true);
+    const node = tpl('tpl-ability-group').cloneNode(true);
     const scoreId = `f-ability-${ability.key}`;
 
-    $('.ability__name', node).textContent = ability.short;
+    $('.ability-row__name', node).textContent = ability.label;
 
-    const score = $('.ability__score', node);
+    const score = $('.ability-row__score', node);
     score.id = scoreId;
     score.dataset.bind = `abilities.${ability.key}`;
     score.setAttribute('aria-label', `${ability.label} score`);
 
-    const mod = $('.ability__mod', node);
+    const mod = $('.ability-row__mod', node);
     mod.dataset.derived = `mod.${ability.key}`;
     mod.setAttribute('for', scoreId);
 
-    host.append(node);
-  }
-}
+    // The save row is part of the template; only its wiring is per-ability.
+    const save = $('.skill--save', node);
+    const saveBox = $('.skill__prof', save);
+    saveBox.dataset.toggle = 'saveProficiencies';
+    saveBox.dataset.value = ability.key;
+    saveBox.setAttribute('aria-label', `${ability.label} saving throw proficiency`);
+    $('.skill__total', save).dataset.derived = `save.${ability.key}`;
 
-function renderSaves(char) {
-  const host = $('#saves');
-  host.replaceChildren();
+    // Skills nest under the ability that drives them (#14). Every derived/toggle
+    // key is unchanged, so renderDerived and state.js never learn the layout moved.
+    const list = $('.skills', node);
+    for (const skill of SKILLS) {
+      if (skill.ability !== ability.key) continue;
+      const row = tpl('tpl-skill').cloneNode(true);
 
-  for (const ability of ABILITIES) {
-    const node = tpl('tpl-save').cloneNode(true);
+      // No "(STR)" suffix — the group header already names the ability.
+      $('.skill__name', row).textContent = skill.label;
 
-    $('.save__name', node).textContent = ability.label;
+      const prof = $('.skill__prof', row);
+      prof.dataset.toggle = 'skillProficiencies';
+      prof.dataset.value = skill.key;
+      prof.setAttribute('aria-label', `${skill.label} proficiency`);
 
-    const box = $('.save__prof', node);
-    box.id = `f-save-${ability.key}`;
-    box.dataset.toggle = 'saveProficiencies';
-    box.dataset.value = ability.key;
-    box.setAttribute('aria-label', `${ability.label} saving throw proficiency`);
+      const exp = $('.skill__exp', row);
+      exp.dataset.toggle = 'skillExpertise';
+      exp.dataset.value = skill.key;
+      exp.setAttribute('aria-label', `${skill.label} expertise`);
 
-    $('.save__total', node).dataset.derived = `save.${ability.key}`;
+      $('.skill__total', row).dataset.derived = `skill.${skill.key}`;
+      list.append(row);
+    }
 
-    host.append(node);
-  }
-}
-
-function renderSkills(char) {
-  const host = $('#skills');
-  host.replaceChildren();
-
-  for (const skill of SKILLS) {
-    const node = tpl('tpl-skill').cloneNode(true);
-    const ability = ABILITIES.find((a) => a.key === skill.ability);
-
-    $('.skill__name', node).textContent = `${skill.label} (${ability.short})`;
-
-    const prof = $('.skill__prof', node);
-    prof.dataset.toggle = 'skillProficiencies';
-    prof.dataset.value = skill.key;
-    prof.setAttribute('aria-label', `${skill.label} proficiency`);
-
-    const exp = $('.skill__exp', node);
-    exp.dataset.toggle = 'skillExpertise';
-    exp.dataset.value = skill.key;
-    exp.setAttribute('aria-label', `${skill.label} expertise`);
-
-    $('.skill__total', node).dataset.derived = `skill.${skill.key}`;
     host.append(node);
   }
 }
@@ -242,17 +228,11 @@ function renderSlots(char) {
   }
 
   // A brand-new caster has every total at 0, so the play-mode filter would show
-  // nothing and the card would look broken (#9). Point at setup mode instead.
+  // nothing and the card would look broken (#9). Point at the Edit slots button.
   if (levels.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'rows__empty';
-    empty.textContent = 'No spell slots yet. ';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn--small';
-    btn.dataset.action = 'toggle-slot-setup';
-    btn.textContent = 'Set up slots';
-    empty.append(btn);
+    empty.textContent = 'No spell slots yet — use “Edit slots” to set them up.';
     host.append(empty);
   }
 
@@ -265,12 +245,6 @@ export function toggleSlotSetup(char) {
   slotSetupMode = !slotSetupMode;
   renderSlots(char);
   renderDerived(char);
-  // The empty-state "Set up slots" button destroys itself in the rebuild — don't
-  // strand focus on <body> (#27); land it in the first total input instead. When
-  // the header button invoked us it still exists and keeps focus, so leave it be.
-  if (slotSetupMode && (!document.activeElement || document.activeElement === document.body)) {
-    $('#slots .slot__total-input')?.focus();
-  }
 }
 
 /**
@@ -423,8 +397,6 @@ export function renderSheet(char) {
   const focusToken = captureFocus();
 
   renderAbilities(char);
-  renderSaves(char);
-  renderSkills(char);
   renderConditions();
   renderStatusPips();
   // Setup mode is transient, like the active tab: any full rebuild (opening a
@@ -456,7 +428,10 @@ function derivedValue(char, key) {
     case 'pb': return rules.formatMod(rules.characterPB(char));
     case 'passive': return String(rules.passivePerception(char));
     case 'initiative': return rules.formatMod(rules.initiative(char));
-    case 'exhaustion': return String(char.exhaustion);
+    // The closed conditions disclosure still tells you what you're suffering — and
+    // print shows exactly this line (full and wrapped; the chip grid is print-hidden
+    // so the output doesn't depend on whether the disclosure was left open).
+    case 'conditionsList': return char.conditions.length ? char.conditions.join(', ') : '—';
     case 'spellDC': {
       const dc = rules.spellSaveDC(char);
       return dc === null ? '—' : String(dc);
