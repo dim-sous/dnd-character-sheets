@@ -178,5 +178,6 @@ The two behaviours it *does* encode, both overridable by hand:
 
 - Damage is taken from temporary hit points first, then real ones, and current HP floors
   at zero.
-- **Long rest** restores spell slots and nothing else — it deliberately leaves HP and hit
-  dice alone.
+- **Long rest** (behind a confirm) applies the full 2024 recovery: HP to max, temp HP and
+  death saves cleared, half your hit dice back (rounded down, minimum 1), exhaustion down
+  one, and all spell slots reset. Every field stays hand-editable — the DM rules, not the app.

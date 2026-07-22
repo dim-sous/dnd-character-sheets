@@ -109,3 +109,22 @@ export function applyHealing(hp, amount) {
   const raw = num(hp.current) + heal;
   return { ...hp, current: max > 0 ? Math.min(max, raw) : raw };
 }
+
+/**
+ * A long rest regains hit dice equal to half the total across every pool, rounded
+ * down, minimum 1. Which pool a multiclass character recovers into is their call, so
+ * the recovered dice just fill pools in order up to each pool's total — the player
+ * redistributes by hand afterwards. Returns new pools; does not mutate the input.
+ */
+export function restoreHitDice(pools) {
+  const totalDice = pools.reduce((sum, pool) => sum + num(pool.total), 0);
+  let toRecover = Math.max(1, Math.floor(totalDice / 2));
+  return pools.map((pool) => {
+    const total = num(pool.total);
+    const remaining = num(pool.remaining);
+    const room = Math.max(0, total - remaining);
+    const add = Math.min(room, toRecover);
+    toRecover -= add;
+    return { ...pool, remaining: remaining + add };
+  });
+}
