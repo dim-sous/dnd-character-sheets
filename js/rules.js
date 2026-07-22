@@ -51,9 +51,10 @@ export function skillTotal(char, skillKey) {
   const proficient = char.skillProficiencies.includes(skillKey);
   const expert = char.skillExpertise.includes(skillKey);
 
-  // Each toggle independently adds PB. Ticking expertise without proficiency is not
-  // legal by the rules, but this app does not police choices — the player is the
-  // authority, and the two toggles stay independent.
+  // Each toggle independently adds PB. Expertise-implies-proficiency (#5) is
+  // enforced at the doors — toggleInArray for taps, normalizeCharacter for imports —
+  // not here: the arithmetic stays permissive, so an illegal pair that somehow
+  // leaks in degrades to one PB instead of guessing.
   let total = modFor(char, skill.ability);
   if (proficient) total += pb;
   if (expert) total += pb;

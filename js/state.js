@@ -212,6 +212,18 @@ export function toggleInArray(path, value, on) {
   const index = list.indexOf(value);
   if (on && index === -1) list.push(value);
   if (!on && index !== -1) list.splice(index, 1);
+  // Expertise implies proficiency (#5) — the one rule the sheet enforces. Ticking
+  // expertise pulls proficiency on; unticking proficiency pulls expertise off.
+  // renderDerived re-syncs every [data-toggle] checkbox from state, so the second
+  // box follows the same tap with no render changes. The import-side twin lives in
+  // normalizeCharacter, which promotes expertise-without-proficiency at the door.
+  if (path === 'skillExpertise' && on && !char.skillProficiencies.includes(value)) {
+    char.skillProficiencies.push(value);
+  }
+  if (path === 'skillProficiencies' && !on) {
+    const expIndex = char.skillExpertise.indexOf(value);
+    if (expIndex !== -1) char.skillExpertise.splice(expIndex, 1);
+  }
   emit('derived');
 }
 

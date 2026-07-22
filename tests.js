@@ -100,8 +100,9 @@ describe('skillTotal');
   c.level = 5; // PB becomes +3
   is('same at L5 → +9', rules.skillTotal(c, 'athletics'), 9);
 
-  // Each toggle adds PB independently. Expertise without proficiency is not a legal
-  // build, but the app does not police choices, so it adds one PB and nothing more.
+  // The arithmetic stays permissive: expertise-implies-proficiency (#5) is enforced
+  // by toggleInArray and normalizeCharacter, not here. A pair that dodges both
+  // doors (hand-built state, as in this test) degrades to one PB, not two.
   const d = char({ level: 3, skillProficiencies: [], skillExpertise: ['stealth'] });
   is('expertise alone → one PB, not two', rules.skillTotal(d, 'stealth'), 2);
 
@@ -284,6 +285,11 @@ is('hp missing → 0/0/0', normalizeCharacter({}).hp, { max: 0, current: 0, temp
 is('conditions filters non-strings', normalizeCharacter({ conditions: ['Prone', 5, null, 'Poisoned'] }).conditions, ['Prone', 'Poisoned']);
 is('conditions non-array → []', normalizeCharacter({ conditions: 'Prone' }).conditions, []);
 is('saveProficiencies filters non-strings', normalizeCharacter({ saveProficiencies: ['str', 3] }).saveProficiencies, ['str']);
+is('expertise without proficiency is promoted', normalizeCharacter({ skillExpertise: ['stealth'] }).skillProficiencies, ['stealth']);
+is('promoted expertise is kept', normalizeCharacter({ skillExpertise: ['stealth'] }).skillExpertise, ['stealth']);
+is('promotion does not duplicate proficiency', normalizeCharacter({ skillProficiencies: ['stealth'], skillExpertise: ['stealth'] }).skillProficiencies, ['stealth']);
+is('promotion appends after existing proficiencies', normalizeCharacter({ skillProficiencies: ['athletics'], skillExpertise: ['stealth'] }).skillProficiencies, ['athletics', 'stealth']);
+is('promoted pair yields expert total (mod + 2×PB)', rules.skillTotal(normalizeCharacter({ level: 3, skillExpertise: ['stealth'] }), 'stealth'), 4);
 is('currency coercion + unknown key ignored', normalizeCharacter({ currency: { gp: '50', xx: 1 } }).currency, { cp: 0, sp: 0, ep: 0, gp: 50, pp: 0 });
 is('currency missing → zeros', normalizeCharacter({}).currency, { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 });
 is('abilities coercion', normalizeCharacter({ abilities: { str: '18' } }).abilities.str, 18);
