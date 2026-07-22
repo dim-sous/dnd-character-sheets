@@ -89,11 +89,16 @@ export function normalizeCharacter(raw) {
     current: num(raw.hp?.current, base.hp.current),
     temp: num(raw.hp?.temp, base.hp.temp),
   };
-  char.hitDice = {
-    size: str(raw.hitDice?.size, base.hitDice.size),
-    total: num(raw.hitDice?.total, base.hitDice.total),
-    remaining: num(raw.hitDice?.remaining, base.hitDice.remaining),
-  };
+  // hitDice grew from a single {size,total,remaining} object into a list of pools
+  // (multiclass). Fold the old shape into a one-row list so pre-v2 saves and older
+  // exported backups keep loading with their die preserved.
+  if (Array.isArray(raw.hitDice)) {
+    char.hitDice = normalizeRows('hitDice', raw.hitDice);
+  } else if (raw.hitDice && typeof raw.hitDice === 'object') {
+    char.hitDice = [normalizeRow('hitDice', raw.hitDice)];
+  } else {
+    char.hitDice = normalizeRows('hitDice', base.hitDice);
+  }
   // Clamped on the way in: there are only ever three death-save pips and six
   // exhaustion pips, so an out-of-range import would display a number the sheet
   // has no way to represent or undo.
