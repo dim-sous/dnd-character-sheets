@@ -11,7 +11,7 @@ import * as state from './state.js';
 import { exportToFile, readImportFile } from './storage.js';
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips,
-  invalidateRoster, setSaved, showBanner, showUpdatePrompt,
+  invalidateRoster, setSaved, showBanner, showUpdatePrompt, activateTab,
 } from './render.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -155,11 +155,43 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  const tabBtn = event.target.closest('[role="tab"]');
+  if (tabBtn) {
+    activateTab(tabBtn.id.replace('tab-', ''));
+    return;
+  }
+
   const rosterBtn = event.target.closest('.roster__btn');
   if (rosterBtn) {
     state.setActive(rosterBtn.dataset.id);
     closeDrawer();
   }
+});
+
+/* Roving-tabindex arrow navigation across the tab bar, per the ARIA tabs pattern.
+   The list is rebuilt from the visible tabs each press, so a hidden Spells tab is
+   skipped automatically. */
+const TAB_ORDER = ['combat', 'abilities', 'spells', 'gear', 'character'];
+document.addEventListener('keydown', (event) => {
+  const tab = event.target.closest('[role="tab"]');
+  if (!tab) return;
+
+  const tabs = TAB_ORDER
+    .map((key) => document.getElementById(`tab-${key}`))
+    .filter((el) => el && !el.hidden);
+  const i = tabs.indexOf(tab);
+  if (i === -1) return;
+
+  let next = null;
+  switch (event.key) {
+    case 'ArrowRight': case 'ArrowDown': next = tabs[(i + 1) % tabs.length]; break;
+    case 'ArrowLeft': case 'ArrowUp': next = tabs[(i - 1 + tabs.length) % tabs.length]; break;
+    case 'Home': next = tabs[0]; break;
+    case 'End': next = tabs[tabs.length - 1]; break;
+    default: return;
+  }
+  event.preventDefault();
+  activateTab(next.id.replace('tab-', ''), { focus: true });
 });
 
 /* ----------------------------------------------------- roster and files */
