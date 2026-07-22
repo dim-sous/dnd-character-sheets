@@ -40,6 +40,9 @@ export function renderRoster(characters, activeId) {
   rosterSignature = signature;
 
   const list = $('#roster');
+  // Selecting a character rebuilds this list, which would drop focus off the button the
+  // keyboard user just activated. Remember it and put focus back on its replacement.
+  const focusedId = document.activeElement?.closest?.('.roster__btn')?.dataset.id ?? null;
   list.replaceChildren();
 
   for (const char of characters) {
@@ -51,6 +54,11 @@ export function renderRoster(characters, activeId) {
     $('.roster__meta', item).textContent =
       [char.class, char.level ? `Level ${char.level}` : ''].filter(Boolean).join(' · ') || '—';
     list.append(item);
+  }
+
+  if (focusedId) {
+    const btn = $(`.roster__btn[data-id="${focusedId}"]`);
+    if (btn && !btn.closest('[inert]')) btn.focus();
   }
 }
 
@@ -153,7 +161,7 @@ function renderConditions() {
 /** Pips are one DOM node each, so a fat-fingered "999" must not build 999 buttons. */
 const MAX_PIPS = 20;
 
-function renderPipRow(host, count, action, extra = {}) {
+function renderPipRow(host, count, action, extra = {}, label = null) {
   host.replaceChildren();
   const capped = Math.min(Math.max(0, count), MAX_PIPS);
   for (let i = 0; i < capped; i += 1) {
@@ -163,14 +171,31 @@ function renderPipRow(host, count, action, extra = {}) {
     pip.dataset.action = action;
     pip.dataset.index = String(i);
     Object.assign(pip.dataset, extra);
+    // Without a name a screen reader hears only "button, pressed" for every pip. The
+    // label gives each one its position ("Success 2 of 3"); the container is a labelled
+    // role=group so the set reads as one control.
+    if (label) pip.setAttribute('aria-label', label(i, capped));
     host.append(pip);
   }
 }
 
 function renderStatusPips() {
-  renderPipRow($('#death-successes'), 3, 'death-save', { kind: 'successes' });
-  renderPipRow($('#death-failures'), 3, 'death-save', { kind: 'failures' });
-  renderPipRow($('#exhaustion'), MAX_EXHAUSTION, 'exhaustion');
+  renderPipRow($('#death-successes'), 3, 'death-save', { kind: 'successes' },
+    (i, n) => `Death save success ${i + 1} of ${n}`);
+  renderPipRow($('#death-failures'), 3, 'death-save', { kind: 'failures' },
+    (i, n) => `Death save failure ${i + 1} of ${n}`);
+  renderPipRow($('#exhaustion'), MAX_EXHAUSTION, 'exhaustion', {},
+    (i, n) => `Exhaustion level ${i + 1} of ${n}`);
+}
+
+/** One slot row's pips, named and grouped. Shared by the full build and the targeted rebuild. */
+function paintSlotPipRow(row, char) {
+  const level = row.dataset.level;
+  const host = $('.pips--slot', row);
+  host.setAttribute('role', 'group');
+  host.setAttribute('aria-label', `Level ${level} spell slots`);
+  renderPipRow(host, char.spellcasting.slots[level].total, 'slot-pip', { level },
+    (i, n) => `Level ${level} slot ${i + 1} of ${n}`);
 }
 
 function renderSlots(char) {
@@ -192,9 +217,7 @@ function renderSlots(char) {
     total.setAttribute('aria-label', `Level ${level} total spell slots`);
     $('.slot__total', node).setAttribute('for', total.id);
 
-    renderPipRow($('.pips--slot', node), char.spellcasting.slots[level].total, 'slot-pip', {
-      level: String(level),
-    });
+    paintSlotPipRow(node, char);
 
     host.append(node);
   }
@@ -205,12 +228,7 @@ function renderSlots(char) {
  * untouched. Cheap enough to run on every keystroke in a total field.
  */
 export function renderSlotPips(char) {
-  for (const row of $$('#slots .slot')) {
-    const level = row.dataset.level;
-    renderPipRow($('.pips--slot', row), char.spellcasting.slots[level].total, 'slot-pip', {
-      level,
-    });
-  }
+  for (const row of $$('#slots .slot')) paintSlotPipRow(row, char);
 }
 
 /* ------------------------------------------------------- repeatable rows */
@@ -287,6 +305,50 @@ function syncActiveTab(char) {
   activateTab(activeTabKey);
 }
 
+/* ------------------------------------------------------ focus across rebuilds */
+
+/**
+ * A structural render replaceChildren()s whole sections, so if focus was inside one it
+ * drops to <body> — stranding a keyboard or screen-reader user at the top of the page
+ * after removing a row or switching character. Capture enough to re-find the element,
+ * put focus back after the rebuild. Uses the delegated data-attributes that survive it.
+ */
+function captureFocus() {
+  const el = document.activeElement;
+  if (!el || el === document.body) return null;
+  if (el.dataset?.action === 'remove-row') {
+    return { by: 'remove', list: el.dataset.list, index: Number(el.dataset.index) };
+  }
+  if (el.id) return { by: 'id', id: el.id };
+  if (el.dataset?.bind) return { by: 'bind', bind: el.dataset.bind };
+  if (el.dataset?.toggle) return { by: 'toggle', toggle: el.dataset.toggle, value: el.dataset.value };
+  // Roster buttons live outside the sheet and are rebuilt by renderRoster, which restores
+  // their focus itself — nothing to capture here.
+  return null;
+}
+
+function restoreFocus(token) {
+  if (!token) return;
+  let next = null;
+  switch (token.by) {
+    case 'id': next = document.getElementById(token.id); break;
+    case 'bind': next = $(`[data-bind="${token.bind}"]`); break;
+    case 'toggle': next = $(`[data-toggle="${token.toggle}"][data-value="${token.value}"]`); break;
+    case 'remove': {
+      // The removed row is gone; fall to the one that slid into its place (or the last),
+      // and to that list's "+ Add" button when the list is now empty.
+      const host = document.getElementById(token.list);
+      const buttons = host ? $$('.row__remove', host) : [];
+      next = buttons[Math.min(token.index, buttons.length - 1)]
+        || (host && $(`[data-action="add-row"][data-list="${token.list}"]`));
+      break;
+    }
+    default: break;
+  }
+  // Never yank focus into a background that a modal/drawer has made inert.
+  if (next && typeof next.focus === 'function' && !next.closest('[inert]')) next.focus();
+}
+
 /* ---------------------------------------------------------- full rebuild */
 
 export function renderSheet(char) {
@@ -306,6 +368,8 @@ export function renderSheet(char) {
     return;
   }
 
+  const focusToken = captureFocus();
+
   renderAbilities(char);
   renderSaves(char);
   renderSkills(char);
@@ -323,6 +387,7 @@ export function renderSheet(char) {
 
   syncActiveTab(char);
   renderDerived(char);
+  restoreFocus(focusToken);
 }
 
 /* ------------------------------------------------------ derived readouts */
@@ -435,10 +500,7 @@ export function showBanner(message) {
  */
 export function showRecovery() {
   const el = $('#banner');
-  el.hidden = false;
   el.classList.remove('banner--info');
-  el.textContent = 'Your saved characters could not be read, so they have NOT been changed. '
-    + 'Download a copy, then start fresh.';
 
   const download = document.createElement('button');
   download.type = 'button';
@@ -452,7 +514,14 @@ export function showRecovery() {
   fresh.dataset.action = 'start-fresh';
   fresh.textContent = 'Start fresh';
 
-  el.append(download, fresh);
+  // One mutation so the live region announces the message and its actions together,
+  // not the sentence first and then the buttons as a second, orphaned utterance.
+  el.hidden = false;
+  el.replaceChildren(
+    'Your saved characters could not be read, so they have NOT been changed. '
+    + 'Download a copy, then start fresh.',
+    download, fresh,
+  );
 }
 
 /**
@@ -464,14 +533,15 @@ export function showRecovery() {
  */
 export function showUpdatePrompt() {
   const el = $('#banner');
-  el.hidden = false;
   el.classList.add('banner--info');
-  el.textContent = 'A new version is ready.';
 
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'btn btn--small';
   button.dataset.action = 'reload-app';
   button.textContent = 'Reload';
-  el.append(button);
+
+  // Single mutation — the live region reads "A new version is ready. Reload" as one.
+  el.hidden = false;
+  el.replaceChildren('A new version is ready.', button);
 }

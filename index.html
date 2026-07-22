@@ -56,7 +56,7 @@
       <span class="saved" id="saved" role="status" aria-live="polite"></span>
     </header>
 
-    <p class="banner" id="banner" hidden></p>
+    <p class="banner" id="banner" role="status" aria-live="polite" aria-atomic="true" hidden></p>
 
     <section class="empty" id="empty" hidden>
       <h2>No characters yet</h2>
@@ -132,7 +132,10 @@
             </div>
             <div class="inline-fields">
               <p class="field field--narrow"><label for="f-init-bonus">Init bonus</label>
-                <input id="f-init-bonus" type="number" inputmode="numeric"
+                <!-- Signed field: no inputmode="numeric". That keypad is digits-only on iOS,
+                     with no minus key, so a negative init bonus can't be typed on an iPhone.
+                     Plain type="number" shows the numbers-and-symbols keyboard, which has one. -->
+                <input id="f-init-bonus" type="number"
                        data-bind="initiativeBonus" data-type="number"></p>
             </div>
           </section>
@@ -178,18 +181,18 @@
               <div class="deathsaves">
                 <div class="deathsaves__row">
                   <span class="deathsaves__label">Successes</span>
-                  <div class="pips" id="death-successes"></div>
+                  <div class="pips" id="death-successes" role="group" aria-label="Death save successes"></div>
                 </div>
                 <div class="deathsaves__row">
                   <span class="deathsaves__label">Failures</span>
-                  <div class="pips pips--bad" id="death-failures"></div>
+                  <div class="pips pips--bad" id="death-failures" role="group" aria-label="Death save failures"></div>
                 </div>
               </div>
             </div>
 
             <div class="status__block">
               <h3 class="subhead">Exhaustion <output class="badge" data-derived="exhaustion">0</output></h3>
-              <div class="pips pips--bad" id="exhaustion"></div>
+              <div class="pips pips--bad" id="exhaustion" role="group" aria-label="Exhaustion level"></div>
             </div>
           </section>
 
