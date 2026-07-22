@@ -47,8 +47,10 @@ PRECACHE_SUFFIXES = (
 SKIP_DIRS = {".git", ".github", "tools", "backups", "node_modules"}
 
 # The worker cannot meaningfully precache itself: the browser fetches it out of band
-# and caching it is how you get a worker that can never update.
-SKIP_FILES = {"service-worker.js"}
+# and caching it is how you get a worker that can never update. The test page and its
+# suite are developer files that happen to sit at the repo root (so SKIP_DIRS can't catch
+# them) — precaching them onto every player's phone is pure dead weight.
+SKIP_FILES = {"service-worker.js", "tests.html", "tests.js"}
 
 # The bare directory URL is what a cold launch at the site root actually requests, and
 # it is a distinct cache entry from './index.html'. It has no file of its own to walk to,
