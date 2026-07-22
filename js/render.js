@@ -284,7 +284,6 @@ function syncActiveTab(char) {
     renderedCharId = char.id;
     activeTabKey = 'combat';
   }
-  if (activeTabKey === 'spells' && !rules.isSpellcaster(char)) activeTabKey = 'combat';
   activateTab(activeTabKey);
 }
 
@@ -386,12 +385,13 @@ export function renderDerived(char) {
     paintPips($('.pips--slot', row), char.spellcasting.slots[level].used);
   }
 
+  // The Spells tab is always reachable: it holds the "Spellcasting ability" select,
+  // which is the ONLY way to become a caster. Hiding the tab for non-casters made that
+  // control unreachable on mobile (#20). Instead, keep the tab and hide only the slots
+  // and spell list (#spell-body) until an ability is chosen.
   const caster = rules.isSpellcaster(char);
   $('#spell-body').hidden = !caster;
   $('#card-spellcasting').classList.toggle('card--muted', !caster);
-  // The whole Spells tab disappears for a non-caster; leave it if we were on it.
-  $('#tab-spells').hidden = !caster;
-  if (!caster && activeTabKey === 'spells') activateTab('combat');
 
   $('#topbar-name').textContent = char.name || 'Unnamed';
   $('#topbar-sub').textContent =
