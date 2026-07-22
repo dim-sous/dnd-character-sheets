@@ -11,7 +11,7 @@ import * as state from './state.js';
 import { STORAGE_KEY } from './constants.js';
 import { exportToFile, readImportFile, exportRaw } from './storage.js';
 import {
-  renderRoster, renderSheet, renderDerived, renderSlotPips,
+  renderRoster, renderSheet, renderDerived, renderSlotPips, toggleSlotSetup,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice,
   showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
@@ -159,7 +159,16 @@ const ACTIONS = {
     const char = state.getActive();
     if (!char) return;
     const level = el.dataset.level;
-    state.setSlotsUsed(level, pipTarget(char.spellcasting.slots[level].used, Number(el.dataset.index)));
+    const slot = char.spellcasting.slots[level];
+    // Pips show REMAINING slots (#9), so the tap maps through remaining and back:
+    // same fill-through-i helper as every other pip row, applied to the inverse.
+    const next = pipTarget(slot.total - slot.used, Number(el.dataset.index));
+    state.setSlotsUsed(level, slot.total - next);
+  },
+
+  'toggle-slot-setup': () => {
+    const char = state.getActive();
+    if (char) toggleSlotSetup(char);
   },
 
   'reload-app': () => window.location.reload(),
