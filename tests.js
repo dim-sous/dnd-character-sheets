@@ -25,7 +25,9 @@ import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
   moveCard, moveCardToTab, addTab, removeTab, renameTab, moveTab,
 } from './js/layout.js';
-import { CARD_REGISTRY, TAB_REGISTRY } from './js/layout-registry.js';
+import {
+  CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
+} from './js/layout-registry.js';
 
 const results = [];
 let group = '';
@@ -731,6 +733,42 @@ describe('addTab / removeTab / renameTab / moveTab');
   }
   is('a layout with a user tab survives normalize unchanged', normalizeLayout(added), added);
   is('a post-removal layout survives normalize unchanged', normalizeLayout(removedGear), removedGear);
+}
+
+/* ------------------------------------------ normalizeLayout: objects (#54 Phase 5) */
+
+describe('normalizeLayout: objects');
+{
+  const COMBAT_OBJS = OBJECT_ORDER.combat;
+  const JS_OBJS = COMBAT_OBJS.filter((id) => OBJECT_REGISTRY[id].cost === 'js');
+  const card = (layout, id) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === id);
+  const objIds = (layout) => card(layout, 'combat').objects.map((o) => o.componentId);
+  const objCount = (layout, id) => card(layout, 'combat').objects.filter((o) => o.componentId === id).length;
+
+  is('default combat carries all 13 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
+  is('default objects all visible', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.hidden === false), true);
+  is('a non-objectified card (attacks) has no objects field', 'objects' in card(DEFAULT_LAYOUT, 'attacks'), false);
+
+  // Reconcile: unknown dropped, duplicate collapsed, bare-string coerced, hidden preserved,
+  // and every registered object present exactly once (js hosts included — anti-crash).
+  const messy = normalizeLayout({
+    tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [
+      { componentId: 'ac', hidden: true },
+      { componentId: 'ghost-obj' },
+      { componentId: 'ac' },
+      'exhaustion',
+    ] }] }],
+  });
+  is('unknown object dropped', objIds(messy).includes('ghost-obj'), false);
+  is('duplicate object collapses to one', objCount(messy, 'ac'), 1);
+  is('kept object order honored (ac, exhaustion first)', objIds(messy).slice(0, 2), ['ac', 'exhaustion']);
+  is('hidden flag preserved', card(messy, 'combat').objects.find((o) => o.componentId === 'ac').hidden, true);
+  is('every registered object present exactly once', objIds(messy).slice().sort(), [...COMBAT_OBJS].sort());
+  is('js-host objects all present (anti-crash, one level down)',
+    JS_OBJS.every((id) => objCount(messy, id) === 1), true);
+
+  is('idempotent with objects', normalizeLayout(messy), messy);
+  is('JSON round-trips with objects', normalizeLayout(JSON.parse(JSON.stringify(messy))), messy);
 }
 
 export { results };

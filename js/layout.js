@@ -14,7 +14,9 @@
  * fields (colSpan, pinnedCol, objects…) without reshaping the store.
  */
 
-import { TAB_REGISTRY, CARD_REGISTRY, CARD_ORDER } from './layout-registry.js';
+import {
+  TAB_REGISTRY, CARD_REGISTRY, CARD_ORDER, OBJECT_REGISTRY, OBJECT_ORDER,
+} from './layout-registry.js';
 
 export const LAYOUT_SCHEMA_VERSION = 1;
 
@@ -27,6 +29,37 @@ function str(value, fallback = '') {
   return typeof value === 'string' ? value : fallback;
 }
 
+/**
+ * Normalize one card: `{ componentId }` plus, for a card that has registered objects (Phase 5
+ * — only `combat` so far), a reconciled `objects` list. Objects follow the same contract as
+ * cards one level down: drop unknown/duplicate/foreign-card ids, coerce `hidden`, append every
+ * missing registered object (exactly-once), so a `cost:'js'` object can never go missing.
+ */
+function normalizeCard(componentId, rawCard) {
+  const card = { componentId };
+  const order = OBJECT_ORDER[componentId];
+  if (!order) return card; // this card is not objectified
+
+  const seen = new Set();
+  const objects = [];
+  const rawObjects = rawCard && Array.isArray(rawCard.objects) ? rawCard.objects : [];
+  for (const rawObj of rawObjects) {
+    const oid = typeof rawObj === 'string' ? rawObj
+      : (rawObj && typeof rawObj === 'object' ? rawObj.componentId : null);
+    const reg = OBJECT_REGISTRY[oid];
+    if (!reg || reg.card !== componentId || seen.has(oid)) continue;
+    seen.add(oid);
+    objects.push({ componentId: oid, hidden: Boolean(rawObj && rawObj.hidden) });
+  }
+  for (const oid of order) {
+    if (seen.has(oid)) continue;
+    seen.add(oid);
+    objects.push({ componentId: oid, hidden: false });
+  }
+  card.objects = objects;
+  return card;
+}
+
 /** The current arrangement expressed as data: each tab in registry order holds its home cards. */
 function buildDefaultLayout() {
   return {
@@ -36,7 +69,7 @@ function buildDefaultLayout() {
       label: tab.label,
       cards: CARD_ORDER
         .filter((id) => CARD_REGISTRY[id].home === tab.id)
-        .map((componentId) => ({ componentId })),
+        .map((componentId) => normalizeCard(componentId, null)),
     })),
   };
 }
@@ -94,7 +127,7 @@ export function normalizeLayout(raw) {
         : (rawCard && typeof rawCard === 'object' ? rawCard.componentId : null);
       if (!CARD_REGISTRY[componentId] || seen.has(componentId)) continue;
       seen.add(componentId);
-      cards.push({ componentId });
+      cards.push(normalizeCard(componentId, rawCard));
     }
 
     const tab = { id, label, cards };
@@ -112,7 +145,7 @@ export function normalizeLayout(raw) {
     if (seen.has(componentId)) continue;
     seen.add(componentId);
     const tab = byId.get(CARD_REGISTRY[componentId].home) || tabs[0];
-    tab.cards.push({ componentId });
+    tab.cards.push(normalizeCard(componentId, null));
   }
 
   return { layoutSchemaVersion: LAYOUT_SCHEMA_VERSION, tabs };

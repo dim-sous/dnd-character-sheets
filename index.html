@@ -99,11 +99,12 @@
               <h2 class="card__title">Combat</h2>
               <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="combat" aria-pressed="false">Edit</button>
             </div>
-            <!-- Every box below is the same "tile": a label (shell) + a body that is
-                 either a value⇄input pair (authored, swaps on the card's Edit) or a
-                 live control (data-live). Uniform tiles in one grid = the #54 groundwork. -->
+            <!-- Every box below is a placeable "object" (#54 Phase 5): the tiles AND the
+                 status blocks are all children of one grid, each carrying data-object, so any
+                 one can be reordered or hidden within the card. A tile is a label (shell) +
+                 a body (value⇄input, or a live control). Status blocks span the full width. -->
             <div class="tiles">
-              <div class="tile tile--wide">
+              <div class="tile tile--wide" data-object="hp">
                 <span class="tile__label">Hit Points</span>
                 <div class="hp">
                   <button type="button" class="hp__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
@@ -118,7 +119,7 @@
                 </div>
               </div>
 
-              <div class="tile tile--wide">
+              <div class="tile tile--wide" data-object="adjust-hp">
                 <span class="tile__label">Adjust HP</span>
                 <div class="tile__body tile__body--actions">
                   <!-- Amount stays grouped with Damage/Heal: those actions read it imperatively. -->
@@ -129,7 +130,7 @@
                 </div>
               </div>
 
-              <div class="tile">
+              <div class="tile" data-object="temp-hp">
                 <span class="tile__label">Temp HP</span>
                 <div class="tile__body">
                   <label class="visually-hidden" for="f-hp-temp">Temporary hit points</label>
@@ -137,14 +138,14 @@
                 </div>
               </div>
 
-              <div class="tile">
+              <div class="tile" data-object="rest">
                 <span class="tile__label">Rest</span>
                 <div class="tile__body">
                   <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
                 </div>
               </div>
 
-              <div class="tile">
+              <div class="tile" data-object="ac">
                 <span class="tile__label">AC</span>
                 <div class="tile__body">
                   <output class="tile__value" data-derived="raw.ac">—</output>
@@ -152,14 +153,14 @@
                 </div>
               </div>
 
-              <div class="tile">
+              <div class="tile" data-object="initiative">
                 <span class="tile__label">Initiative</span>
                 <div class="tile__body">
                   <output class="tile__value" data-derived="initiative">+0</output>
                 </div>
               </div>
 
-              <div class="tile">
+              <div class="tile" data-object="speed">
                 <span class="tile__label">Speed</span>
                 <div class="tile__body">
                   <output class="tile__value" data-derived="raw.speed">—</output>
@@ -167,61 +168,64 @@
                 </div>
               </div>
 
-              <div class="tile">
+              <div class="tile" data-object="pb">
                 <span class="tile__label">Prof. Bonus</span>
                 <div class="tile__body">
                   <output class="tile__value" data-derived="pb">+2</output>
                 </div>
               </div>
 
-              <div class="tile">
+              <div class="tile" data-object="heroic">
                 <span class="tile__label">Heroic Insp.</span>
                 <div class="tile__body">
                   <input type="checkbox" class="toggle" id="f-heroic" data-bind="heroicInspiration" data-type="checkbox" data-live aria-label="Heroic Inspiration">
                 </div>
               </div>
-            </div>
-            <div class="status__block">
-              <div class="list__head">
-                <h3 class="subhead">Hit Point Dice</h3>
-                <button type="button" class="btn btn--small" data-action="add-row" data-list="hitDice">+ Add</button>
-              </div>
-              <ul class="rows rows--tight" id="hitDice"></ul>
-            </div>
 
-            <div class="status__block">
-              <h3 class="subhead">Death Saves</h3>
-              <div class="deathsaves">
-                <div class="deathsaves__row">
-                  <span class="deathsaves__label">Successes</span>
-                  <div class="pips" id="death-successes" role="group" aria-label="Death save successes"></div>
+              <!-- Status blocks are full-width objects inside the SAME grid (#54 Phase 5),
+                   so they reorder/hide alongside the tiles. Their hosts keep their ids. -->
+              <div class="status__block" data-object="hitdice">
+                <div class="list__head">
+                  <h3 class="subhead">Hit Point Dice</h3>
+                  <button type="button" class="btn btn--small" data-action="add-row" data-list="hitDice">+ Add</button>
                 </div>
-                <div class="deathsaves__row">
-                  <span class="deathsaves__label">Failures</span>
-                  <div class="pips pips--bad" id="death-failures" role="group" aria-label="Death save failures"></div>
+                <ul class="rows rows--tight" id="hitDice"></ul>
+              </div>
+
+              <div class="status__block" data-object="deathsaves">
+                <h3 class="subhead">Death Saves</h3>
+                <div class="deathsaves">
+                  <div class="deathsaves__row">
+                    <span class="deathsaves__label">Successes</span>
+                    <div class="pips" id="death-successes" role="group" aria-label="Death save successes"></div>
+                  </div>
+                  <div class="deathsaves__row">
+                    <span class="deathsaves__label">Failures</span>
+                    <div class="pips pips--bad" id="death-failures" role="group" aria-label="Death save failures"></div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div class="status__block">
-              <h3 class="subhead">Exhaustion</h3>
-              <div class="pips pips--bad" id="exhaustion" role="group" aria-label="Exhaustion level"></div>
-            </div>
+              <div class="status__block" data-object="exhaustion">
+                <h3 class="subhead">Exhaustion</h3>
+                <div class="pips pips--bad" id="exhaustion" role="group" aria-label="Exhaustion level"></div>
+              </div>
 
-            <div class="status__block conditions">
-              <!-- The real heading lives OUTSIDE the summary, visually hidden: browsers
-                   strip heading semantics from <summary> descendants, which dropped
-                   Conditions from screen-reader heading navigation. The visible title
-                   inside the summary is a styled span. -->
-              <h3 class="subhead visually-hidden">Conditions</h3>
-              <details>
-                <summary class="conditions__summary">
-                  <span class="conditions__marker" aria-hidden="true">▸</span>
-                  <span class="subhead conditions__title">Conditions</span>
-                  <span class="conditions__active" data-derived="conditionsList">—</span>
-                </summary>
-                <div class="chips" id="conditions"></div>
-              </details>
+              <div class="status__block conditions" data-object="conditions">
+                <!-- The real heading lives OUTSIDE the summary, visually hidden: browsers
+                     strip heading semantics from <summary> descendants, which dropped
+                     Conditions from screen-reader heading navigation. The visible title
+                     inside the summary is a styled span. -->
+                <h3 class="subhead visually-hidden">Conditions</h3>
+                <details>
+                  <summary class="conditions__summary">
+                    <span class="conditions__marker" aria-hidden="true">▸</span>
+                    <span class="subhead conditions__title">Conditions</span>
+                    <span class="conditions__active" data-derived="conditionsList">—</span>
+                  </summary>
+                  <div class="chips" id="conditions"></div>
+                </details>
+              </div>
             </div>
           </section>
 

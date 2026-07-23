@@ -95,6 +95,24 @@ function ensurePanel(id) {
 }
 
 /**
+ * Order a card's objects within their grid container and apply each one's hidden state (#54
+ * Phase 5). Relocation by identity, like cards: a hidden object keeps its render.js host in the
+ * DOM (present-but-hidden), so nothing dereferences null. No-op for a card without objects.
+ */
+function applyObjects(cardNode, card) {
+  if (!card.objects || !card.objects.length) return;
+  const first = cardNode.querySelector('[data-object]');
+  const container = first && first.parentElement; // the .tiles grid holding the objects
+  if (!container) return;
+  for (const obj of card.objects) {
+    const objNode = cardNode.querySelector(`[data-object="${obj.componentId}"]`);
+    if (!objNode) continue;
+    container.append(objNode); // reorder into config order
+    objNode.hidden = Boolean(obj.hidden);
+  }
+}
+
+/**
  * Build the sheet from the config by RELOCATING existing live nodes — never regenerating
  * markup — so every render.js host stays alive by identity and the data layer never learns.
  *
@@ -117,7 +135,7 @@ export function applyLayout() {
     for (const card of tab.cards) {
       const reg = CARD_REGISTRY[card.componentId];
       const node = reg && document.querySelector(reg.sel);
-      if (node) panel.append(node);
+      if (node) { panel.append(node); applyObjects(node, card); }
     }
   }
 

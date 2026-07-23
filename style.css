@@ -643,6 +643,10 @@ body.is-arranging [data-action="add-row"] { display: none; }
 
 /* The seams the #14 card merge created: sections that used to be separate cards. */
 .status__block { margin-top: .9rem; }
+/* Since #54 Phase 5 the status blocks live INSIDE the Combat tiles grid as full-width
+   objects (so they reorder/hide with the tiles). Span every column; the top margin + grid
+   gap together keep the ~.9rem section break they had as siblings. */
+.tiles > .status__block { grid-column: 1 / -1; margin-top: .5rem; }
 
 /* Conditions disclosure inside the Combat card (#14): closed, the summary line
    lists the active conditions. Print always shows exactly that line — full and

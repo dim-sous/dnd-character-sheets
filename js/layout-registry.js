@@ -55,3 +55,36 @@ export const CARD_REGISTRY = {
 export const CARD_ORDER = [
   'combat', 'attacks', 'abilities', 'spellcasting', 'inventory', 'features', 'identity', 'notes',
 ];
+
+/**
+ * Objects — the placeable units INSIDE a card (#54 Phase 5), one level below cards. Located by
+ * `data-object="<id>"`, the object analogue of `data-editcard`. `cost:'js'` objects contain a
+ * render.js host, so they may be hidden (host stays present-but-hidden) but never detached.
+ *
+ * Phase 5 objectifies only the Combat card (its 9 tiles + 4 status blocks); other cards stay
+ * whole. `cost:'js'` object hosts, for reference: hitdice→#hitDice, deathsaves→#death-successes
+ * /#death-failures, exhaustion→#exhaustion, conditions→#conditions.
+ */
+export const OBJECT_REGISTRY = {
+  hp: { card: 'combat', label: 'Hit Points', cost: 'markup' },
+  'adjust-hp': { card: 'combat', label: 'Adjust HP', cost: 'markup' },
+  'temp-hp': { card: 'combat', label: 'Temp HP', cost: 'markup' },
+  rest: { card: 'combat', label: 'Rest', cost: 'markup' },
+  ac: { card: 'combat', label: 'AC', cost: 'markup' },
+  initiative: { card: 'combat', label: 'Initiative', cost: 'markup' },
+  speed: { card: 'combat', label: 'Speed', cost: 'markup' },
+  pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup' },
+  heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup' },
+  hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js' },
+  deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js' },
+  exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js' },
+  conditions: { card: 'combat', label: 'Conditions', cost: 'js' },
+};
+
+/** Default object order per card (matches today's DOM). Only `combat` has objects this phase. */
+export const OBJECT_ORDER = {
+  combat: [
+    'hp', 'adjust-hp', 'temp-hp', 'rest', 'ac', 'initiative', 'speed', 'pb', 'heroic',
+    'hitdice', 'deathsaves', 'exhaustion', 'conditions',
+  ],
+};
