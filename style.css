@@ -379,7 +379,14 @@ input[type="checkbox"] {
      has to come from max-width, the same dodge the old ability tile used. */
   width: 100%; max-width: 3.4rem;
   font-size: .9rem; text-align: center;
+  display: none;
 }
+.abilities--editing .ability-row__score { display: inline-block; }
+.ability-row__score-display {
+  min-width: 3.4rem; text-align: center;
+  font-size: .9rem;
+}
+.abilities--editing .ability-row__score-display { display: none; }
 .ability-row__mod {
   min-width: 2.6rem; text-align: center;
   font-family: var(--serif); font-size: 1.35rem; font-weight: 600;
@@ -402,11 +409,17 @@ input[type="checkbox"] {
 
 /* -------------------------------------------------------------- skills */
 
+/* Collapsed by default: name / marker / total. "Edit" reveals prof/exp/misc to
+   change them — the marker is a real (not decorative) readout of the same state,
+   so the collapsed view stays fully accessible with the checkboxes hidden. */
 .skills__legend, .skill {
   display: grid;
-  grid-template-columns: 1fr 2.4rem 2.4rem 2.6rem;
+  grid-template-columns: 1fr 1.8rem 2.6rem;
   align-items: center;
   gap: .3rem;
+}
+.abilities--editing .skills__legend, .abilities--editing .skill {
+  grid-template-columns: 1fr 2.4rem 2.4rem 2.4rem 2.6rem;
 }
 /* One compact legend per ability group, sharing the skill grid so it can never
    misalign — and never scrolls far from the checkboxes it labels. */
@@ -422,7 +435,34 @@ input[type="checkbox"] {
 .skill { min-height: var(--tap); border-bottom: 1px solid var(--line-soft); padding: 0 .2rem; }
 .skill:last-child { border-bottom: 0; }
 .skill__name { font-size: .88rem; }
-.skill__prof, .skill__exp { justify-self: center; }
+
+.skill__prof, .skill__exp, .skill__bonus,
+.legend__prof, .legend__exp, .legend__bonus, .legend__total {
+  display: none;
+}
+.abilities--editing .skill__prof, .abilities--editing .skill__exp, .abilities--editing .skill__bonus,
+.abilities--editing .legend__prof, .abilities--editing .legend__exp, .abilities--editing .legend__bonus,
+.abilities--editing .legend__total {
+  display: inline-block;
+}
+.abilities--editing .skill__marker { display: none; }
+
+/* Init bonus / All-skills bonus are edit-only too — nothing to tap when the row
+   below is just a name, a marker and a total. */
+#panel-abilities .inline-fields { display: none; }
+#panel-abilities.abilities--editing .inline-fields { display: flex; }
+
+.skill__prof, .skill__exp, .skill__bonus { justify-self: center; }
+.skill__bonus {
+  /* input[type="number"] elsewhere sets width:100% — cap it to the column. */
+  width: 100%; max-width: 2.4rem;
+  font-size: .8rem;
+}
+.skill__marker {
+  justify-self: center;
+  font-size: .75rem; font-weight: 700;
+  color: var(--ink-faint);
+}
 .skill__total {
   justify-self: center;
   font-family: var(--serif); font-size: 1.05rem; font-weight: 600;

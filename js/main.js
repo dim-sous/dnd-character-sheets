@@ -16,6 +16,7 @@ import {
 } from './nudges.js';
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleSlotSetup,
+  toggleSkillsEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
   clearNudge, showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
@@ -173,6 +174,11 @@ const ACTIONS = {
   'toggle-slot-setup': () => {
     const char = state.getActive();
     if (char) toggleSlotSetup(char);
+  },
+
+  'toggle-skills-edit': () => {
+    const char = state.getActive();
+    if (char) toggleSkillsEdit(char);
   },
 
   'reload-app': () => window.location.reload(),

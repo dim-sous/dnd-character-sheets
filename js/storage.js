@@ -82,6 +82,18 @@ export function normalizeCharacter(raw) {
     if (!char.skillProficiencies.includes(key)) char.skillProficiencies.push(key);
   }
 
+  // #57: flat scalar, same idiom as ac/initiativeBonus/speed just below.
+  char.skillBonusAll = num(raw.skillBonusAll, base.skillBonusAll);
+
+  // #57: fixed key set, same idiom as `abilities` above and `currency` below —
+  // unknown keys dropped, missing keys default to 0.
+  char.skillBonuses = { ...base.skillBonuses };
+  if (raw.skillBonuses && typeof raw.skillBonuses === 'object') {
+    for (const key of Object.keys(base.skillBonuses)) {
+      char.skillBonuses[key] = num(raw.skillBonuses[key], base.skillBonuses[key]);
+    }
+  }
+
   char.ac = num(raw.ac, base.ac);
   char.initiativeBonus = num(raw.initiativeBonus, base.initiativeBonus);
   char.speed = num(raw.speed, base.speed);

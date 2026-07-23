@@ -128,15 +128,6 @@
                 </label>
               </div>
             </div>
-            <div class="inline-fields">
-              <p class="field field--narrow"><label for="f-init-bonus">Init bonus</label>
-                <!-- Signed field: no inputmode="numeric". That keypad is digits-only on iOS,
-                     with no minus key, so a negative init bonus can't be typed on an iPhone.
-                     Plain type="number" shows the numbers-and-symbols keyboard, which has one. -->
-                <input id="f-init-bonus" type="number"
-                       data-bind="initiativeBonus" data-type="number"></p>
-            </div>
-
             <div class="status__block">
               <div class="list__head">
                 <h3 class="subhead">Hit Point Dice</h3>
@@ -199,7 +190,23 @@
                and skills (#14). card--flow: taller than a print column, so print
                lets it fragment at group boundaries -->
           <section class="card card--flow">
-            <h2 class="card__title">Abilities &amp; Skills</h2>
+            <div class="list__head">
+              <h2 class="card__title">Abilities &amp; Skills</h2>
+              <button type="button" class="btn btn--small" id="btn-skills-edit" data-action="toggle-skills-edit">Edit</button>
+            </div>
+            <div class="inline-fields">
+              <p class="field field--narrow"><label for="f-init-bonus">Init bonus</label>
+                <!-- Signed field: no inputmode="numeric". That keypad is digits-only on iOS,
+                     with no minus key, so a negative init bonus can't be typed on an iPhone.
+                     Plain type="number" shows the numbers-and-symbols keyboard, which has one. -->
+                <input id="f-init-bonus" type="number"
+                       data-bind="initiativeBonus" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-skill-bonus-all">All-skills bonus</label>
+                <!-- Signed field: no inputmode="numeric" (see Init bonus above) — an item
+                     or similar can grant a negative modifier just as easily as a positive one. -->
+                <input id="f-skill-bonus-all" type="number"
+                       data-bind="skillBonusAll" data-type="number"></p>
+            </div>
             <div class="abilities" id="abilities"></div>
             <div class="passive">
               <span class="passive__label">Passive Perception</span>
@@ -373,16 +380,19 @@
            h3-per-block pattern of the merged Combat card. -->
       <h3 class="ability-row__name"></h3>
       <input class="ability-row__score" type="number" inputmode="numeric" data-type="number">
+      <output class="ability-row__score-display"></output>
       <output class="ability-row__mod"></output>
     </div>
     <ul class="skills">
       <li class="skills__legend" aria-hidden="true">
-        <span></span><span>Prof</span><span>Exp</span><span>Total</span>
+        <span></span><span class="legend__prof">Prof</span><span class="legend__exp">Exp</span><span class="legend__bonus">Misc</span><span class="skill__marker"></span><span class="legend__total">Total</span>
       </li>
       <li class="skill skill--save">
         <span class="skill__name">Saving Throw</span>
         <input type="checkbox" class="skill__prof">
-        <span aria-hidden="true"></span>
+        <span class="skill__exp" aria-hidden="true"></span>
+        <span class="skill__bonus" aria-hidden="true"></span>
+        <span class="skill__marker"></span>
         <output class="skill__total"></output>
       </li>
     </ul>
@@ -394,6 +404,10 @@
     <span class="skill__name"></span>
     <input type="checkbox" class="skill__prof">
     <input type="checkbox" class="skill__exp">
+    <!-- Signed field: no inputmode="numeric" (see Init bonus in Combat) — a misc
+         bonus can be negative, and iOS's numeric keypad has no minus key. -->
+    <input type="number" class="skill__bonus" data-type="number">
+    <span class="skill__marker"></span>
     <output class="skill__total"></output>
   </li>
 </template>

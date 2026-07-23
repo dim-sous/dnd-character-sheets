@@ -79,6 +79,12 @@ export function blankCharacter() {
     saveProficiencies: [],
     skillProficiencies: [],
     skillExpertise: [],
+    // #57: hand-computed extras layered on top of mod + prof/expertise — a flat
+    // bonus to every skill (e.g. a magic item) and a per-skill bonus (e.g. half PB
+    // for Jack of All Trades, an ability mod for Primal Order). Plain numbers the
+    // player retypes by hand when they change, same as every other stored field here.
+    skillBonusAll: 0,
+    skillBonuses: Object.fromEntries(SKILLS.map((s) => [s.key, 0])),
 
     ac: 10,
     initiativeBonus: 0,
