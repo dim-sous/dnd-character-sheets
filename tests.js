@@ -19,6 +19,12 @@ import { getByPath, setByPath } from './js/state.js';
 // nudges.js: same rule — only the pure decision functions; the record/snooze helpers
 // write localStorage and stay untested here.
 import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from './js/nudges.js';
+// layout.js is pure/DOM-free (the browser-only half is layout-view.js, never imported
+// here), so its reconciliation is covered exactly like normalizeCharacter above.
+import {
+  normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
+} from './js/layout.js';
+import { CARD_REGISTRY, TAB_REGISTRY } from './js/layout-registry.js';
 
 const results = [];
 let group = '';
@@ -485,6 +491,94 @@ describe('nudges');
   is('normalize: null → {}', normalizeNudgeState(null), {});
   is('normalize: array → {}', normalizeNudgeState([1, 2]), {});
   is('poisoned meta no longer mutes a valid backup clock', shouldRemindBackup(normalizeNudgeState({ firstSeenAt: 'garbage', lastBackupAt: now - 15 * DAY }), now, true), true);
+}
+
+/* ---------------------------------------------------- normalizeLayout (#54) */
+
+describe('normalizeLayout');
+{
+  const CARD_IDS = Object.keys(CARD_REGISTRY);
+  const TAB_IDS = TAB_REGISTRY.map((t) => t.id);
+  const JS_CARDS = CARD_IDS.filter((id) => CARD_REGISTRY[id].cost === 'js');
+
+  // Every componentId across a layout, flattened in placement order.
+  const placed = (layout) => layout.tabs.flatMap((tab) => tab.cards.map((c) => c.componentId));
+  const count = (arr, x) => arr.filter((v) => v === x).length;
+
+  // Corrupt / empty inputs all reconstruct the default — a layout is never unrecoverable.
+  is('null → DEFAULT_LAYOUT', normalizeLayout(null), DEFAULT_LAYOUT);
+  is('undefined → DEFAULT_LAYOUT', normalizeLayout(undefined), DEFAULT_LAYOUT);
+  is('number → DEFAULT_LAYOUT', normalizeLayout(42), DEFAULT_LAYOUT);
+  is('string → DEFAULT_LAYOUT', normalizeLayout('garbage'), DEFAULT_LAYOUT);
+  is('object with junk tabs → DEFAULT_LAYOUT', normalizeLayout({ tabs: 'nope' }), DEFAULT_LAYOUT);
+  is('empty array → DEFAULT_LAYOUT', normalizeLayout({ tabs: [] }), DEFAULT_LAYOUT);
+
+  // The default is already normal.
+  is('DEFAULT_LAYOUT is stamped v1', DEFAULT_LAYOUT.layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+  is('idempotent on default', normalizeLayout(DEFAULT_LAYOUT), DEFAULT_LAYOUT);
+
+  // Full coverage: all 5 tabs and all 8 cards, each card exactly once, whatever the input.
+  const fromEmpty = normalizeLayout({ tabs: [] });
+  is('empty input restores all tabs', tabIds(fromEmpty), TAB_IDS);
+  is('empty input places every card once', placed(fromEmpty).sort(), [...CARD_IDS].sort());
+
+  // Anti-crash guarantee: an input that names every tab but places NO cards must still end
+  // with every cost:'js' host card present exactly once (else render.js dereferences null).
+  const noCards = normalizeLayout({ tabs: TAB_IDS.map((id) => ({ id, cards: [] })) });
+  is('js host cards all present when input omits every card',
+    JS_CARDS.every((id) => count(placed(noCards), id) === 1), true);
+  is('omitted cards land at their home tab',
+    cardsOf(noCards, 'combat'), CARD_IDS.filter((id) => CARD_REGISTRY[id].home === 'combat'));
+
+  // Idempotence + JSON round-trip on a non-trivial (reordered, partial) layout.
+  const partial = {
+    layoutSchemaVersion: 1,
+    tabs: [
+      { id: 'gear', label: 'Loot', cards: [{ componentId: 'features' }] },
+      { id: 'combat', cards: [{ componentId: 'attacks' }, { componentId: 'combat' }] },
+    ],
+  };
+  const norm = normalizeLayout(partial);
+  is('partial: kept tab order honored, missing tabs appended',
+    tabIds(norm), ['gear', 'combat', 'abilities', 'spells', 'character']);
+  is('partial: custom tab label preserved', norm.tabs[0].label, 'Loot');
+  is('partial: within-tab card order honored (attacks before combat)',
+    cardsOf(norm, 'combat'), ['attacks', 'combat']);
+  is('partial: every card still present exactly once',
+    placed(norm).slice().sort(), [...CARD_IDS].sort());
+  is('idempotent on a partial layout', normalizeLayout(norm), norm);
+  is('JSON round-trips unchanged', normalizeLayout(JSON.parse(JSON.stringify(norm))), norm);
+
+  // Stale / unknown references are dropped without throwing.
+  const stale = normalizeLayout({
+    tabs: [
+      { id: 'combat', cards: [{ componentId: 'combat' }, { componentId: 'ghost-card' }] },
+      { id: 'nonsense-tab', cards: [{ componentId: 'attacks' }] },
+    ],
+  });
+  is('unknown componentId dropped', placed(stale).includes('ghost-card'), false);
+  is('unknown tab id dropped', tabIds(stale).includes('nonsense-tab'), false);
+  is('a card orphaned by a dropped tab is re-homed once', count(placed(stale), 'attacks'), 1);
+
+  // A duplicated card collapses to a single placement (keep first).
+  const dup = normalizeLayout({
+    tabs: [
+      { id: 'combat', cards: [{ componentId: 'combat' }, { componentId: 'combat' }] },
+      { id: 'gear', cards: [{ componentId: 'combat' }] },
+    ],
+  });
+  is('duplicate componentId collapses to one', count(placed(dup), 'combat'), 1);
+
+  // Bare-string card entries (hand-edited) are tolerated.
+  const strings = normalizeLayout({ tabs: [{ id: 'combat', cards: ['attacks', 'combat'] }] });
+  is('string card entries coerced to { componentId }',
+    cardsOf(strings, 'combat'), ['attacks', 'combat']);
+
+  // Version handling: an old/absent version normalizes forward to the current stamp.
+  is('absent version stamped forward',
+    normalizeLayout({ tabs: [] }).layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+  is('old version stamped forward',
+    normalizeLayout({ layoutSchemaVersion: 0, tabs: [] }).layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
 }
 
 export { results };

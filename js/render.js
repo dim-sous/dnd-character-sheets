@@ -18,6 +18,7 @@ import {
 } from './constants.js';
 import * as rules from './rules.js';
 import { getByPath, getListPath } from './state.js';
+import { getTabIds } from './layout-view.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -357,14 +358,15 @@ function renderRows(char, listName) {
 
 /* ---------------------------------------------------------------- tabs */
 
-const TAB_KEYS = ['combat', 'abilities', 'spells', 'gear', 'character'];
-let activeTabKey = 'combat';
+// The tab set is config-derived now (#54): getTabIds() reads it from the layout, so the
+// old hardcoded TAB_KEYS literal is gone and tab CRUD later has one source of truth.
+let activeTabKey = getTabIds()[0];
 let renderedCharId = null;
 
 /** Show one panel, hide the rest. Desktop CSS overrides the `hidden` to show all. */
 export function activateTab(tabKey, { focus = false } = {}) {
   activeTabKey = tabKey;
-  for (const key of TAB_KEYS) {
+  for (const key of getTabIds()) {
     const tab = $(`#tab-${key}`);
     const panel = $(`#panel-${key}`);
     if (!tab || !panel) continue;
@@ -384,7 +386,7 @@ export function activateTab(tabKey, { focus = false } = {}) {
 function syncActiveTab(char) {
   if (char.id !== renderedCharId) {
     renderedCharId = char.id;
-    activeTabKey = 'combat';
+    activeTabKey = getTabIds()[0]; // opening a character lands on the first tab
   }
   activateTab(activeTabKey);
 }

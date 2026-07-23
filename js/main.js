@@ -19,6 +19,7 @@ import {
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
   clearNudge, showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
+import { loadLayout, applyLayout, getTabIds } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -239,14 +240,13 @@ document.addEventListener('click', (event) => {
 });
 
 /* Roving-tabindex arrow navigation across the tab bar, per the ARIA tabs pattern.
-   The list is rebuilt from the visible tabs each press, so a hidden Spells tab is
-   skipped automatically. */
-const TAB_ORDER = ['combat', 'abilities', 'spells', 'gear', 'character'];
+   The order comes from the layout config (getTabIds), and the list is rebuilt from the
+   visible tabs each press, so a hidden Spells tab is skipped automatically. */
 document.addEventListener('keydown', (event) => {
   const tab = event.target.closest('[role="tab"]');
   if (!tab) return;
 
-  const tabs = TAB_ORDER
+  const tabs = getTabIds()
     .map((key) => document.getElementById(`tab-${key}`))
     .filter((el) => el && !el.hidden);
   const i = tabs.indexOf(tab);
@@ -393,6 +393,12 @@ state.subscribe(render);
 // Show every save state, including 'Saving…'. A stuck 'Saving…' is the signal that writes
 // are failing (private mode / full storage), so it must not be hidden behind an empty string.
 state.onStatus((message, tone) => setSaved(message, tone));
+
+// Build the sheet from the saved layout (#54) BEFORE the first render: load the per-device
+// layout, then relocate the existing card nodes into their tabs. renderSheet's tab sync
+// then reads the same config via getTabIds(). Phase 1 reproduces today exactly.
+loadLayout();
+applyLayout();
 
 const startup = state.init();
 render('structural');
