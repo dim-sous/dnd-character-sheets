@@ -19,6 +19,16 @@ import { getByPath, setByPath } from './js/state.js';
 // nudges.js: same rule — only the pure decision functions; the record/snooze helpers
 // write localStorage and stay untested here.
 import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from './js/nudges.js';
+// layout.js is pure/DOM-free (the browser-only half is layout-view.js, never imported
+// here), so its reconciliation is covered exactly like normalizeCharacter above.
+import {
+  normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
+  moveCard, moveCardToTab, renameCard, addTab, removeTab, renameTab, moveTab,
+  moveObject, toggleObjectHidden, setObjectSpan, cycleSpan, renameObject,
+} from './js/layout.js';
+import {
+  CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER, OBJECT_SPANS,
+} from './js/layout-registry.js';
 
 const results = [];
 let group = '';
@@ -485,6 +495,428 @@ describe('nudges');
   is('normalize: null → {}', normalizeNudgeState(null), {});
   is('normalize: array → {}', normalizeNudgeState([1, 2]), {});
   is('poisoned meta no longer mutes a valid backup clock', shouldRemindBackup(normalizeNudgeState({ firstSeenAt: 'garbage', lastBackupAt: now - 15 * DAY }), now, true), true);
+}
+
+/* ---------------------------------------------------- normalizeLayout (#54) */
+
+describe('normalizeLayout');
+{
+  const CARD_IDS = Object.keys(CARD_REGISTRY);
+  const TAB_IDS = TAB_REGISTRY.map((t) => t.id);
+  const JS_CARDS = CARD_IDS.filter((id) => CARD_REGISTRY[id].cost === 'js');
+
+  // Every componentId across a layout, flattened in placement order.
+  const placed = (layout) => layout.tabs.flatMap((tab) => tab.cards.map((c) => c.componentId));
+  const count = (arr, x) => arr.filter((v) => v === x).length;
+
+  // Corrupt / empty inputs all reconstruct the default — a layout is never unrecoverable.
+  is('null → DEFAULT_LAYOUT', normalizeLayout(null), DEFAULT_LAYOUT);
+  is('undefined → DEFAULT_LAYOUT', normalizeLayout(undefined), DEFAULT_LAYOUT);
+  is('number → DEFAULT_LAYOUT', normalizeLayout(42), DEFAULT_LAYOUT);
+  is('string → DEFAULT_LAYOUT', normalizeLayout('garbage'), DEFAULT_LAYOUT);
+  is('object with junk tabs → DEFAULT_LAYOUT', normalizeLayout({ tabs: 'nope' }), DEFAULT_LAYOUT);
+  is('empty array → DEFAULT_LAYOUT', normalizeLayout({ tabs: [] }), DEFAULT_LAYOUT);
+
+  // The default is already normal.
+  is('DEFAULT_LAYOUT is stamped v1', DEFAULT_LAYOUT.layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+  is('idempotent on default', normalizeLayout(DEFAULT_LAYOUT), DEFAULT_LAYOUT);
+
+  // Full coverage: all 5 tabs and all 8 cards, each card exactly once, whatever the input.
+  const fromEmpty = normalizeLayout({ tabs: [] });
+  is('empty input restores all tabs', tabIds(fromEmpty), TAB_IDS);
+  is('empty input places every card once', placed(fromEmpty).sort(), [...CARD_IDS].sort());
+
+  // Anti-crash guarantee: an input that names every tab but places NO cards must still end
+  // with every cost:'js' host card present exactly once (else render.js dereferences null).
+  const noCards = normalizeLayout({ tabs: TAB_IDS.map((id) => ({ id, cards: [] })) });
+  is('js host cards all present when input omits every card',
+    JS_CARDS.every((id) => count(placed(noCards), id) === 1), true);
+  is('omitted cards land at their home tab',
+    cardsOf(noCards, 'combat'), CARD_IDS.filter((id) => CARD_REGISTRY[id].home === 'combat'));
+
+  // Idempotence + JSON round-trip on a non-trivial (reordered, partial) layout.
+  const partial = {
+    layoutSchemaVersion: 1,
+    tabs: [
+      { id: 'gear', label: 'Loot', cards: [{ componentId: 'features' }] },
+      { id: 'combat', cards: [{ componentId: 'attacks' }, { componentId: 'combat' }] },
+    ],
+  };
+  const norm = normalizeLayout(partial);
+  is('partial: only the input tabs are kept (missing NOT restored)',
+    tabIds(norm), ['gear', 'combat']);
+  is('partial: custom tab label preserved', norm.tabs[0].label, 'Loot');
+  is('partial: within-tab card order honored (attacks before combat)',
+    cardsOf(norm, 'combat'), ['attacks', 'combat']);
+  is('partial: every card still present exactly once',
+    placed(norm).slice().sort(), [...CARD_IDS].sort());
+  is('idempotent on a partial layout', normalizeLayout(norm), norm);
+  is('JSON round-trips unchanged', normalizeLayout(JSON.parse(JSON.stringify(norm))), norm);
+
+  // Unknown COMPONENT ids are dropped; a non-registry TAB id is now KEPT (a user-created
+  // tab — Tab CRUD, #54). Either way every card still lands exactly once.
+  const stale = normalizeLayout({
+    tabs: [
+      { id: 'combat', cards: [{ componentId: 'combat' }, { componentId: 'ghost-card' }] },
+      { id: 'my-tab', label: 'My Tab', cards: [{ componentId: 'attacks' }] },
+    ],
+  });
+  is('unknown componentId dropped', placed(stale).includes('ghost-card'), false);
+  is('user-created tab id is kept', tabIds(stale).includes('my-tab'), true);
+  is('user tab keeps its card', cardsOf(stale, 'my-tab'), ['attacks']);
+  is('every card still placed exactly once (with a user tab)',
+    placed(stale).slice().sort(), [...CARD_IDS].sort());
+
+  // Tab-set is input-driven now, never registry-whitelisted or floor-restored above 1.
+  {
+    const oneTab = normalizeLayout({ tabs: [{ id: 'combat', cards: [{ componentId: 'combat' }] }] });
+    is('a single-tab layout stays single-tab (no phantom tabs)', tabIds(oneTab), ['combat']);
+    is('every card re-homes onto the surviving tab',
+      placed(oneTab).slice().sort(), [...CARD_IDS].sort());
+    is('js hosts still all present on the lone tab',
+      JS_CARDS.every((id) => count(placed(oneTab), id) === 1), true);
+
+    is('tabs with no usable id → DEFAULT',
+      normalizeLayout({ tabs: [{ label: 'x' }, { id: '' }] }), DEFAULT_LAYOUT);
+
+    const noGear = normalizeLayout({ tabs: [{ id: 'combat', cards: [] }, { id: 'spells', cards: [] }] });
+    is('a card whose home tab is gone re-homes to the first tab',
+      cardsOf(noGear, 'combat').includes('inventory'), true);
+  }
+
+  // A duplicated card collapses to a single placement (keep first).
+  const dup = normalizeLayout({
+    tabs: [
+      { id: 'combat', cards: [{ componentId: 'combat' }, { componentId: 'combat' }] },
+      { id: 'gear', cards: [{ componentId: 'combat' }] },
+    ],
+  });
+  is('duplicate componentId collapses to one', count(placed(dup), 'combat'), 1);
+
+  // Bare-string card entries (hand-edited) are tolerated and coerced, in order (the rest of
+  // the single tab's cards are the re-homed remainder).
+  const strings = normalizeLayout({ tabs: [{ id: 'combat', cards: ['attacks', 'combat'] }] });
+  is('string card entries coerced to { componentId }',
+    cardsOf(strings, 'combat').slice(0, 2), ['attacks', 'combat']);
+
+  // Version handling: an old/absent version normalizes forward to the current stamp.
+  is('absent version stamped forward',
+    normalizeLayout({ tabs: [] }).layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+  is('old version stamped forward',
+    normalizeLayout({ layoutSchemaVersion: 0, tabs: [] }).layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+}
+
+/* ----------------------------------------------------- moveCard / resetTabCards (#54) */
+
+describe('moveCard');
+{
+  const cardsIn = (layout, tabId) => cardsOf(layout, tabId);
+
+  // gear holds [inventory, features] by default.
+  is('move down: inventory (0) → 1', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, 1), 'gear'),
+    ['features', 'inventory']);
+  is('move up: features (1) → 0', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 1, 0), 'gear'),
+    ['features', 'inventory']);
+
+  // Clamps to a no-op at both ends (the ↑/↓ buttons call this with fromIndex ± 1).
+  is('move up past top is a no-op', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, -1), 'gear'),
+    ['inventory', 'features']);
+  is('move down past bottom is a no-op', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 1, 2), 'gear'),
+    ['inventory', 'features']);
+
+  // Out-of-range fromIndex and unknown tab are no-ops.
+  is('out-of-range fromIndex → unchanged', moveCard(DEFAULT_LAYOUT, 'gear', 9, 0), DEFAULT_LAYOUT);
+  is('unknown tab → unchanged', moveCard(DEFAULT_LAYOUT, 'nope', 0, 1), DEFAULT_LAYOUT);
+
+  // Other tabs are untouched by a move.
+  is('combat tab unchanged when gear moves',
+    cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, 1), 'combat'), ['combat', 'attacks']);
+
+  // Immutability: the input layout is never mutated.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    moveCard(DEFAULT_LAYOUT, 'gear', 0, 1);
+    is('input layout not mutated', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+
+  // A moved layout is still normal (idempotent under normalizeLayout).
+  {
+    const moved = moveCard(DEFAULT_LAYOUT, 'combat', 0, 1);
+    is('moved layout survives normalize unchanged', normalizeLayout(moved), moved);
+  }
+}
+
+describe('moveCardToTab');
+{
+  const CARD_IDS = Object.keys(CARD_REGISTRY);
+  const placed = (layout) => layout.tabs.flatMap((tab) => tab.cards.map((c) => c.componentId));
+
+  // Send attacks (Combat) → Spells; it leaves the source and lands at the destination end.
+  const moved = moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'spells');
+  is('card removed from source tab', cardsOf(moved, 'combat'), ['combat']);
+  is('card appended to destination end', cardsOf(moved, 'spells'), ['spellcasting', 'attacks']);
+  is('other tabs untouched', cardsOf(moved, 'gear'), ['inventory', 'features']);
+
+  // Invariant: still exactly one of every card after a cross-tab move.
+  is('every card still placed exactly once', placed(moved).slice().sort(), [...CARD_IDS].sort());
+
+  // No-ops: same tab, unknown card, unknown destination.
+  is('same-tab target is a no-op', moveCardToTab(DEFAULT_LAYOUT, 'combat', 'combat'), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', moveCardToTab(DEFAULT_LAYOUT, 'ghost', 'spells'), DEFAULT_LAYOUT);
+  is('unknown destination is a no-op', moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'nope'), DEFAULT_LAYOUT);
+
+  // Immutability + a moved layout is still normal.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'spells');
+    is('input layout not mutated', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+  is('moved-across-tabs layout survives normalize unchanged', normalizeLayout(moved), moved);
+
+  // A card can be moved off its home tab and the tab left empty without a re-home.
+  const empties = moveCardToTab(DEFAULT_LAYOUT, 'abilities', 'combat');
+  is('source tab may be left empty', cardsOf(empties, 'abilities'), []);
+  is('empty-source layout still normal (no phantom re-home)', normalizeLayout(empties), empties);
+
+  // Moving the objectified Combat card carries its objects along (no silent reset).
+  const tweaked = renameCard(moveObject(DEFAULT_LAYOUT, 'combat', 0, 5), 'combat', 'War');
+  const combatMoved = moveCardToTab(tweaked, 'combat', 'character');
+  const combatCard = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
+  is('moved card keeps its objects', combatCard(combatMoved).objects.length, 13);
+  is('moved card keeps its reordered object state',
+    combatCard(combatMoved).objects.map((o) => o.componentId), combatCard(tweaked).objects.map((o) => o.componentId));
+  is('moved card keeps its custom label', combatCard(combatMoved).label, 'War');
+}
+
+describe('renameCard (#54)');
+{
+  const card = (layout, id) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === id);
+
+  is('default card has no label (uses registry default)', 'label' in card(DEFAULT_LAYOUT, 'combat'), false);
+  is('renameCard sets a custom label', card(renameCard(DEFAULT_LAYOUT, 'combat', 'Fight!'), 'combat').label, 'Fight!');
+  is('renameCard trims the label', card(renameCard(DEFAULT_LAYOUT, 'combat', '  Fight  '), 'combat').label, 'Fight');
+  is('blank label clears the override', 'label' in card(renameCard(renameCard(DEFAULT_LAYOUT, 'combat', 'X'), 'combat', '  '), 'combat'), false);
+  is('only the named card changes', 'label' in card(renameCard(DEFAULT_LAYOUT, 'combat', 'X'), 'attacks'), false);
+  is('unknown card is a no-op', renameCard(DEFAULT_LAYOUT, 'ghost', 'X'), DEFAULT_LAYOUT);
+  is('a custom label survives normalize', card(normalizeLayout(renameCard(DEFAULT_LAYOUT, 'notes', 'Log')), 'notes').label, 'Log');
+  is('a renamed layout survives normalize unchanged',
+    normalizeLayout(renameCard(DEFAULT_LAYOUT, 'combat', 'Fight')), renameCard(DEFAULT_LAYOUT, 'combat', 'Fight'));
+
+  // Reconcile coerces a non-string / empty label away, never storing an empty override.
+  const junk = normalizeLayout({ tabs: [{ id: 'character', cards: [{ componentId: 'notes', label: '   ' }] }] });
+  is('a whitespace-only stored label is dropped', 'label' in card(junk, 'notes'), false);
+
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    renameCard(DEFAULT_LAYOUT, 'combat', 'X');
+    is('renameCard never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+}
+
+/* ------------------------------------------------- tab CRUD (#54 Phase 4b) */
+
+describe('addTab / removeTab / renameTab / moveTab');
+{
+  const CARD_IDS = Object.keys(CARD_REGISTRY);
+  const placed = (layout) => layout.tabs.flatMap((tab) => tab.cards.map((c) => c.componentId));
+
+  // addTab appends an empty tab; duplicate id is a no-op.
+  const added = addTab(DEFAULT_LAYOUT, 'notes2', 'Session Notes');
+  is('addTab appends the tab', tabIds(added), ['combat', 'abilities', 'spells', 'gear', 'character', 'notes2']);
+  is('new tab is empty', cardsOf(added, 'notes2'), []);
+  is('new tab carries its label', added.tabs[5].label, 'Session Notes');
+  is('addTab with an existing id is a no-op', addTab(DEFAULT_LAYOUT, 'combat', 'x'), DEFAULT_LAYOUT);
+  is('addTab with a blank id is a no-op', addTab(DEFAULT_LAYOUT, '', 'x'), DEFAULT_LAYOUT);
+
+  // removeTab: its cards move to the first REMAINING tab; last tab can't be removed.
+  const removedGear = removeTab(DEFAULT_LAYOUT, 'gear'); // gear held [inventory, features]
+  is('removeTab drops the tab', tabIds(removedGear).includes('gear'), false);
+  is('its cards move to the first remaining tab (combat)',
+    cardsOf(removedGear, 'combat'), ['combat', 'attacks', 'inventory', 'features']);
+  is('every card still placed exactly once after removal',
+    placed(removedGear).slice().sort(), [...CARD_IDS].sort());
+
+  // Removing the first tab sends its cards to the new first tab.
+  const removedCombat = removeTab(DEFAULT_LAYOUT, 'combat');
+  is('removing the first tab: cards go to the new first (abilities)',
+    cardsOf(removedCombat, 'abilities').slice(0, 2), ['abilities', 'combat']);
+
+  is('unknown tab removal is a no-op', removeTab(DEFAULT_LAYOUT, 'nope'), DEFAULT_LAYOUT);
+  {
+    const one = { layoutSchemaVersion: 1, tabs: [{ id: 'only', label: 'Only', cards: [] }] };
+    is('cannot remove the last tab', removeTab(one, 'only'), one);
+  }
+
+  // renameTab; blank keeps the current label.
+  is('renameTab sets the label', renameTab(DEFAULT_LAYOUT, 'combat', 'Fight').tabs[0].label, 'Fight');
+  is('renameTab blank keeps current', renameTab(DEFAULT_LAYOUT, 'combat', '   ').tabs[0].label, 'Combat');
+
+  // moveTab reorders by ±1, clamped.
+  is('moveTab down', tabIds(moveTab(DEFAULT_LAYOUT, 'combat', 1)),
+    ['abilities', 'combat', 'spells', 'gear', 'character']);
+  is('moveTab up', tabIds(moveTab(DEFAULT_LAYOUT, 'abilities', -1)),
+    ['abilities', 'combat', 'spells', 'gear', 'character']);
+  is('moveTab past the top is a no-op', moveTab(DEFAULT_LAYOUT, 'combat', -1), DEFAULT_LAYOUT);
+  is('moveTab past the bottom is a no-op', moveTab(DEFAULT_LAYOUT, 'character', 1), DEFAULT_LAYOUT);
+
+  // Immutability + still-normal after each op.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    addTab(DEFAULT_LAYOUT, 'z', 'Z'); removeTab(DEFAULT_LAYOUT, 'gear');
+    renameTab(DEFAULT_LAYOUT, 'combat', 'X'); moveTab(DEFAULT_LAYOUT, 'combat', 1);
+    is('tab mutators never mutate the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+  is('a layout with a user tab survives normalize unchanged', normalizeLayout(added), added);
+  is('a post-removal layout survives normalize unchanged', normalizeLayout(removedGear), removedGear);
+}
+
+/* ------------------------------------------ normalizeLayout: objects (#54 Phase 5) */
+
+describe('normalizeLayout: objects');
+{
+  const COMBAT_OBJS = OBJECT_ORDER.combat;
+  const JS_OBJS = COMBAT_OBJS.filter((id) => OBJECT_REGISTRY[id].cost === 'js');
+  const card = (layout, id) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === id);
+  const objIds = (layout) => card(layout, 'combat').objects.map((o) => o.componentId);
+  const objCount = (layout, id) => card(layout, 'combat').objects.filter((o) => o.componentId === id).length;
+
+  const objSpan = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id).span;
+
+  is('default combat carries all 13 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
+  is('default objects all visible', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.hidden === false), true);
+  is('a non-objectified card (attacks) has no objects field', 'objects' in card(DEFAULT_LAYOUT, 'attacks'), false);
+
+  // Span (#54 Phase 6): every object carries its registry default span; the small vitals are 1×,
+  // HP/Adjust-HP and the status blocks are full-width — reproducing today's layout.
+  is('default span comes from the registry', objSpan(DEFAULT_LAYOUT, 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
+  is('a small vital defaults to 1×', objSpan(DEFAULT_LAYOUT, 'ac'), 1);
+  is('a status block defaults to full', objSpan(DEFAULT_LAYOUT, 'exhaustion'), 'full');
+  is('every default span is a valid span', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => OBJECT_SPANS.includes(o.span)), true);
+
+  // Reconcile: unknown dropped, duplicate collapsed, bare-string coerced, hidden preserved,
+  // and every registered object present exactly once (js hosts included — anti-crash).
+  const messy = normalizeLayout({
+    tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [
+      { componentId: 'ac', hidden: true, span: 2 },
+      { componentId: 'ghost-obj' },
+      { componentId: 'ac' },
+      { componentId: 'temp-hp', span: 'huge' },
+      'exhaustion',
+    ] }] }],
+  });
+  is('unknown object dropped', objIds(messy).includes('ghost-obj'), false);
+  is('duplicate object collapses to one', objCount(messy, 'ac'), 1);
+  is('kept object order honored (ac, temp-hp, exhaustion first)', objIds(messy).slice(0, 3), ['ac', 'temp-hp', 'exhaustion']);
+  is('hidden flag preserved', card(messy, 'combat').objects.find((o) => o.componentId === 'ac').hidden, true);
+  is('valid span preserved', objSpan(messy, 'ac'), 2);
+  is('invalid span coerced to registry default', objSpan(messy, 'temp-hp'), OBJECT_REGISTRY['temp-hp'].defaultSpan);
+
+  // Object label (#54): custom title reconciled like the card's; default objects carry none.
+  is('default object has no label', 'label' in card(DEFAULT_LAYOUT, 'combat').objects[0], false);
+  const labelled = normalizeLayout({
+    tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [
+      { componentId: 'ac', label: '  Armor  ' },
+      { componentId: 'speed', label: '   ' },
+    ] }] }],
+  });
+  const obj = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id);
+  is('custom object label preserved (trimmed)', obj(labelled, 'ac').label, 'Armor');
+  is('whitespace-only object label dropped', 'label' in obj(labelled, 'speed'), false);
+  is('every registered object present exactly once', objIds(messy).slice().sort(), [...COMBAT_OBJS].sort());
+  is('js-host objects all present (anti-crash, one level down)',
+    JS_OBJS.every((id) => objCount(messy, id) === 1), true);
+
+  is('idempotent with objects', normalizeLayout(messy), messy);
+  is('JSON round-trips with objects', normalizeLayout(JSON.parse(JSON.stringify(messy))), messy);
+}
+
+describe('moveObject / toggleObjectHidden');
+{
+  const combat = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
+  const objIds = (layout) => combat(layout).objects.map((o) => o.componentId);
+  const hiddenOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).hidden;
+
+  // hp is index 0, adjust-hp index 1 in the default order.
+  is('move down: hp (0) → 1', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 0, 1)).slice(0, 2), ['adjust-hp', 'hp']);
+  is('move up: adjust-hp (1) → 0', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 1, 0)).slice(0, 2), ['adjust-hp', 'hp']);
+  is('clamp at top is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 0, -1), DEFAULT_LAYOUT);
+  is('clamp at bottom is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 12, 13), DEFAULT_LAYOUT);
+  is('out-of-range fromIndex is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 99, 0), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', moveObject(DEFAULT_LAYOUT, 'attacks', 0, 1), DEFAULT_LAYOUT);
+  is('a moved-objects layout survives normalize unchanged',
+    normalizeLayout(moveObject(DEFAULT_LAYOUT, 'combat', 0, 5)), moveObject(DEFAULT_LAYOUT, 'combat', 0, 5));
+
+  // toggleObjectHidden flips exactly one, twice returns to start, unknown is a no-op.
+  is('hidden starts false', hiddenOf(DEFAULT_LAYOUT, 'exhaustion'), false);
+  const hid = toggleObjectHidden(DEFAULT_LAYOUT, 'combat', 'exhaustion');
+  is('toggle hides it', hiddenOf(hid, 'exhaustion'), true);
+  is('only that object is affected', hiddenOf(hid, 'hp'), false);
+  is('toggle twice restores', toggleObjectHidden(hid, 'combat', 'exhaustion'), DEFAULT_LAYOUT);
+  is('unknown object toggle is a no-op', toggleObjectHidden(DEFAULT_LAYOUT, 'combat', 'ghost'), DEFAULT_LAYOUT);
+  is('a hidden JS-host object survives normalize (present-but-hidden)',
+    hiddenOf(normalizeLayout(hid), 'exhaustion'), true);
+
+  // Immutability.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    moveObject(DEFAULT_LAYOUT, 'combat', 0, 3);
+    toggleObjectHidden(DEFAULT_LAYOUT, 'combat', 'ac');
+    is('object mutators never mutate the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+}
+
+describe('setObjectSpan / cycleSpan (#54 Phase 6)');
+{
+  const combat = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
+  const spanOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).span;
+
+  // cycleSpan steps 1 → 2 → full → 1, and tolerates a junk input by re-entering the cycle.
+  is('cycle 1 → 2', cycleSpan(1), 2);
+  is('cycle 2 → full', cycleSpan(2), 'full');
+  is('cycle full → 1', cycleSpan('full'), 1);
+  is('cycle covers every span exactly once', [1, cycleSpan(1), cycleSpan(cycleSpan(1))].sort(), [...OBJECT_SPANS].sort());
+  is('cycle of a junk value lands on a valid span', OBJECT_SPANS.includes(cycleSpan('junk')), true);
+
+  // setObjectSpan sets one object's width, coerces junk to the registry default, no-ops elsewhere.
+  is('sets a valid span', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full'), 'ac'), 'full');
+  is('only that object changes', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full'), 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
+  is('junk span coerced to registry default', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'wat'), 'ac'), OBJECT_REGISTRY.ac.defaultSpan);
+  is('unknown object is a no-op', setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ghost', 2), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', setObjectSpan(DEFAULT_LAYOUT, 'attacks', 'ac', 2), DEFAULT_LAYOUT);
+  is('a resized layout survives normalize unchanged',
+    normalizeLayout(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 2)), setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 2));
+
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full');
+    is('setObjectSpan never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+}
+
+describe('renameObject (#54)');
+{
+  const obj = (layout, id) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat')
+    .objects.find((o) => o.componentId === id);
+
+  is('renameObject sets a custom label', obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor'), 'ac').label, 'Armor');
+  is('renameObject trims the label', obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', '  Armor  '), 'ac').label, 'Armor');
+  is('blank label clears the override',
+    'label' in obj(renameObject(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X'), 'combat', 'ac', ' '), 'ac'), false);
+  is('only the named object changes', 'label' in obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X'), 'speed'), false);
+  is('rename keeps hidden + span intact', (() => {
+    const o = obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor'), 'ac');
+    return o.hidden === false && o.span === OBJECT_REGISTRY.ac.defaultSpan;
+  })(), true);
+  is('unknown object is a no-op', renameObject(DEFAULT_LAYOUT, 'combat', 'ghost', 'X'), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', renameObject(DEFAULT_LAYOUT, 'attacks', 'ac', 'X'), DEFAULT_LAYOUT);
+  is('a renamed-object layout survives normalize unchanged',
+    normalizeLayout(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor')), renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor'));
+
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X');
+    is('renameObject never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
 }
 
 export { results };

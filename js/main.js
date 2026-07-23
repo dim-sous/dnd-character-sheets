@@ -15,11 +15,16 @@ import {
   recordFirstSeen, recordBackup, snoozeBackup, snoozeInstall,
 } from './nudges.js';
 import {
-  renderRoster, renderSheet, renderDerived, renderSlotPips, toggleSlotSetup,
-  toggleSkillsEdit,
+  renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
-  clearNudge, showUpdatePrompt, showRecovery, activateTab,
+  clearNudge, showUpdatePrompt, showRecovery, activateTab, reactivateTab, clearCardEdits,
 } from './render.js';
+import {
+  loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
+  toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
+  tabAdd, tabRemove, tabRename, tabMove, reorderObject, toggleObject, resizeObject,
+  renameCardTitle, renameObjectLabel, dropCard, dropObject,
+} from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -86,11 +91,70 @@ document.addEventListener('change', (event) => {
   applyField(el);
 });
 
+// Cross-tab card move (#54): the arrange-mode "Move to…" select. A <select> fires `change`,
+// not click, so it can't ride the delegated ACTIONS map. The view stays on the current tab
+// (the card just leaves it); sendCardToTab announces the destination and re-homes focus.
+document.addEventListener('change', (event) => {
+  const sel = event.target.closest && event.target.closest('.card__movetab');
+  if (!sel || !sel.value) return;
+  const id = cardIdOf(sel);
+  const dest = sel.value;
+  sel.value = ''; // snap back to the "Move to…" placeholder
+  if (id) sendCardToTab(id, dest);
+});
+
+// Tab rename (#54): the tab-list rename field commits on `change` (blur/Enter). Reflect the
+// final label back — a blank entry reverts to the current name.
+document.addEventListener('change', (event) => {
+  const input = event.target.closest && event.target.closest('.tabrow__name');
+  if (!input) return;
+  const tabId = tabIdOf(input);
+  if (!tabId) return;
+  tabRename(tabId, input.value);
+  reactivateTab();
+  const tab = getLayout().tabs.find((t) => t.id === tabId);
+  if (tab) input.value = tab.label;
+});
+
+// Card rename (#54): the arrange-mode title field commits on `change` (blur/Enter). renameCardTitle
+// re-applies the layout (repainting the title) and refreshes the field — a blank reverts to the
+// registry default.
+document.addEventListener('change', (event) => {
+  const input = event.target.closest && event.target.closest('.card__rename');
+  if (!input) return;
+  const id = cardIdOf(input);
+  if (id) renameCardTitle(id, input.value);
+});
+
+// Object (tile) rename (#54): the arrange-mode label field on each object commits on `change`.
+document.addEventListener('change', (event) => {
+  const input = event.target.closest && event.target.closest('.obj-rename');
+  if (!input) return;
+  const cardId = cardIdOf(input);
+  const objectId = objIdOf(input);
+  if (cardId && objectId) renameObjectLabel(cardId, objectId, input.value);
+});
+
 /* -------------------------------------------------------------- actions */
 
 /** Clicking pip i fills through i; clicking the last filled pip clears it. */
 function pipTarget(current, index) {
   return current === index + 1 ? index : index + 1;
+}
+
+/** The componentId of the card an arrange control lives in (its `data-editcard`). */
+function cardIdOf(el) {
+  return el.closest('[data-editcard]')?.dataset.editcard;
+}
+
+/** The tab id a tab-list control belongs to (its row's `data-tab`). */
+function tabIdOf(el) {
+  return el.closest('.tabrow')?.dataset.tab;
+}
+
+/** The object id an object control lives in (its `data-object`). */
+function objIdOf(el) {
+  return el.closest('[data-object]')?.dataset.object;
 }
 
 function amountField() {
@@ -171,14 +235,48 @@ const ACTIONS = {
     state.setSlotsUsed(level, slot.total - next);
   },
 
-  'toggle-slot-setup': () => {
+  'toggle-card-edit': (el) => {
     const char = state.getActive();
-    if (char) toggleSlotSetup(char);
+    if (char) toggleCardEdit(char, el.dataset.card);
   },
 
-  'toggle-skills-edit': () => {
-    const char = state.getActive();
-    if (char) toggleSkillsEdit(char);
+  // Layout arrange mode (#54): a display preference under its own key, distinct from the
+  // per-card CONTENT edit above. Entering it drops any open content edit so they never overlap.
+  'arrange-toggle': () => {
+    if (toggleArrange()) clearCardEdits(state.getActive());
+  },
+  'move-card-up': (el) => reorderCard(cardIdOf(el), -1),
+  'move-card-down': (el) => reorderCard(cardIdOf(el), 1),
+
+  // Object controls (#54 Phase 5): reorder/hide the tiles & status blocks within a card.
+  'move-object-up': (el) => reorderObject(cardIdOf(el), objIdOf(el), -1),
+  'move-object-down': (el) => reorderObject(cardIdOf(el), objIdOf(el), 1),
+  'resize-object': (el) => resizeObject(cardIdOf(el), objIdOf(el)),
+  'toggle-object-hide': (el) => toggleObject(cardIdOf(el), objIdOf(el)),
+
+  'arrange-reset': () => { resetLayout(); activateTab(getTabIds()[0]); },
+  'arrange-set-default': () => saveDefault(),
+
+  // Tab CRUD (#54 Phase 4b). Each tab-set change re-applies the active tab (which tolerates
+  // the active one having been removed). Removing a non-empty tab confirms first.
+  'tab-add': () => { tabAdd(); reactivateTab(); },
+  'tab-up': (el) => { tabMove(tabIdOf(el), -1); reactivateTab(); },
+  'tab-down': (el) => { tabMove(tabIdOf(el), 1); reactivateTab(); },
+  'tab-remove': (el) => {
+    const tabId = tabIdOf(el);
+    const layout = getLayout();
+    const tab = layout.tabs.find((t) => t.id === tabId);
+    if (!tab || layout.tabs.length <= 1) return; // last tab can't go (button is disabled too)
+    if (tab.cards.length) {
+      const dest = layout.tabs.find((t) => t.id !== tabId);
+      const n = tab.cards.length;
+      const ok = confirm(
+        `Remove the “${tab.label}” tab? Its ${n} card${n === 1 ? '' : 's'} will move to “${dest.label}”.`,
+      );
+      if (!ok) return;
+    }
+    tabRemove(tabId);
+    reactivateTab();
   },
 
   'reload-app': () => window.location.reload(),
@@ -245,14 +343,13 @@ document.addEventListener('click', (event) => {
 });
 
 /* Roving-tabindex arrow navigation across the tab bar, per the ARIA tabs pattern.
-   The list is rebuilt from the visible tabs each press, so a hidden Spells tab is
-   skipped automatically. */
-const TAB_ORDER = ['combat', 'abilities', 'spells', 'gear', 'character'];
+   The order comes from the layout config (getTabIds), and the list is rebuilt from the
+   visible tabs each press, so a hidden Spells tab is skipped automatically. */
 document.addEventListener('keydown', (event) => {
   const tab = event.target.closest('[role="tab"]');
   if (!tab) return;
 
-  const tabs = TAB_ORDER
+  const tabs = getTabIds()
     .map((key) => document.getElementById(`tab-${key}`))
     .filter((el) => el && !el.hidden);
   const i = tabs.indexOf(tab);
@@ -269,6 +366,120 @@ document.addEventListener('keydown', (event) => {
   event.preventDefault();
   activateTab(next.id.replace('tab-', ''), { focus: true });
 });
+
+/* Arrange mode (#54): Escape leaves it (but not mid-edit in a field); arrow keys reorder
+   while a card's ↑/↓ BUTTON is focused (the buttons already move on Enter/Space — this is a
+   keyboard nicety). Scoped to the buttons, never the "Move to…" select, whose own arrow-key
+   option navigation must not be hijacked. */
+document.addEventListener('keydown', (event) => {
+  const inField = event.target.closest && event.target.closest('input, select, textarea');
+  if (event.key === 'Escape' && isArranging() && !inField) { toggleArrange(); return; }
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  const action = event.target.dataset && event.target.dataset.action;
+  const delta = event.key === 'ArrowUp' ? -1 : 1;
+  if (action === 'move-card-up' || action === 'move-card-down') {
+    const id = cardIdOf(event.target);
+    if (id) { event.preventDefault(); reorderCard(id, delta); }
+  } else if (action === 'move-object-up' || action === 'move-object-down') {
+    const cardId = cardIdOf(event.target);
+    const objectId = objIdOf(event.target);
+    if (cardId && objectId) { event.preventDefault(); reorderObject(cardId, objectId, delta); }
+  }
+});
+
+/* Drag-and-drop reorder (#54 Phase 7): mouse-only, initiated from the ⠿ grips injected in arrange
+   mode. Native HTML5 drag; the ↑/↓ buttons stay the touch/keyboard path. Constrained to the
+   dragged item's own container — a card within its tab, an object within its card (cross-tab stays
+   the "Move to…" select) — so a drop only ever reorders siblings. */
+let drag = null;
+
+function clearDropMarks() {
+  for (const el of document.querySelectorAll('.drop-before, .drop-after')) {
+    el.classList.remove('drop-before', 'drop-after');
+  }
+}
+
+function endDrag() {
+  if (drag && drag.node) drag.node.classList.remove('is-dragging');
+  clearDropMarks();
+  drag = null;
+}
+
+/** Siblings of the dragged item in its container (excludes the dragged one itself). */
+function dragSiblings() {
+  return [...drag.container.children].filter(
+    (c) => c.dataset && c.dataset[drag.attr] != null && c.dataset[drag.attr] !== drag.id,
+  );
+}
+
+/** The sibling to insert before (null → end), from the pointer position within the container. */
+function insertionRef(x, y) {
+  for (const item of dragSiblings()) {
+    const r = item.getBoundingClientRect();
+    // Cards are a vertical list (compare against the vertical midpoint); objects flow inline in a
+    // grid (a point is "after" an object if below it, or within its row and past its center).
+    const after = drag.attr === 'editcard'
+      ? y > r.top + r.height / 2
+      : (y > r.bottom) || (y >= r.top && x > r.left + r.width / 2);
+    if (!after) return item;
+  }
+  return null;
+}
+
+document.addEventListener('dragstart', (event) => {
+  const grip = event.target.closest && event.target.closest('.drag-grip');
+  if (!grip || !isArranging()) return;
+  const objNode = grip.closest('[data-object]');
+  const cardNode = grip.closest('[data-editcard]');
+  if (objNode) {
+    drag = {
+      kind: 'object', attr: 'object', id: objNode.dataset.object,
+      cardId: cardNode && cardNode.dataset.editcard, container: objNode.parentElement, node: objNode,
+    };
+  } else if (cardNode) {
+    drag = {
+      kind: 'card', attr: 'editcard', id: cardNode.dataset.editcard,
+      container: cardNode.parentElement, node: cardNode,
+    };
+  } else {
+    return;
+  }
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', drag.id); // Firefox won't start a drag without data
+  try { event.dataTransfer.setDragImage(drag.node, 12, 12); } catch { /* not every engine */ }
+  drag.node.classList.add('is-dragging');
+});
+
+document.addEventListener('dragover', (event) => {
+  if (!drag) return;
+  const over = event.target.closest && event.target.closest(`[data-${drag.attr}]`);
+  if (!over || over.parentElement !== drag.container) return; // same container only
+  event.preventDefault(); // allow the drop
+  event.dataTransfer.dropEffect = 'move';
+  const ref = insertionRef(event.clientX, event.clientY);
+  clearDropMarks();
+  if (ref) {
+    ref.classList.add('drop-before');
+  } else {
+    const sibs = dragSiblings();
+    if (sibs.length) sibs[sibs.length - 1].classList.add('drop-after');
+  }
+});
+
+document.addEventListener('drop', (event) => {
+  if (!drag) return;
+  const over = event.target.closest && event.target.closest(`[data-${drag.attr}]`);
+  if (over && over.parentElement === drag.container) {
+    event.preventDefault();
+    const ref = insertionRef(event.clientX, event.clientY);
+    const beforeId = ref ? ref.dataset[drag.attr] : null;
+    if (drag.kind === 'object') dropObject(drag.cardId, drag.id, beforeId);
+    else dropCard(drag.id, beforeId);
+  }
+  endDrag();
+});
+
+document.addEventListener('dragend', endDrag);
 
 /* ----------------------------------------------------- roster and files */
 
@@ -400,6 +611,12 @@ state.subscribe(render);
 // are failing (private mode / full storage), so it must not be hidden behind an empty string.
 state.onStatus((message, tone) => setSaved(message, tone));
 
+// Build the sheet from the saved layout (#54) BEFORE the first render: load the per-device
+// layout, then relocate the existing card nodes into their tabs. renderSheet's tab sync
+// then reads the same config via getTabIds(). Phase 1 reproduces today exactly.
+loadLayout();
+applyLayout();
+
 const startup = state.init();
 render('structural');
 setSaved('', 'idle');
@@ -421,10 +638,11 @@ if (startup.corrupt) {
   showBanner('This browser is not saving changes (private mode or full storage). Export a backup to keep your work.');
 }
 
-// Phones kill tabs without warning; pagehide is the reliable last call.
-window.addEventListener('pagehide', () => state.flush());
+// Phones kill tabs without warning; pagehide is the reliable last call. Flush the layout on
+// its own key alongside the character store (both have independent debounced writes).
+window.addEventListener('pagehide', () => { state.flush(); flushLayout(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') state.flush();
+  if (document.visibilityState === 'hidden') { state.flush(); flushLayout(); }
 });
 
 // Another tab saved the roster: adopt it when we have nothing unsaved, so open tabs
