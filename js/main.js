@@ -17,11 +17,11 @@ import {
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
-  clearNudge, showUpdatePrompt, showRecovery, activateTab, getActiveTab, clearCardEdits,
+  clearNudge, showUpdatePrompt, showRecovery, activateTab, clearCardEdits,
 } from './render.js';
 import {
   loadLayout, applyLayout, getTabIds, flushLayout,
-  toggleArrange, isArranging, reorderCard, resetTab,
+  toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -87,6 +87,18 @@ document.addEventListener('change', (event) => {
   const el = event.target;
   if (!el.dataset || el.dataset.structural !== 'true') return;
   applyField(el);
+});
+
+// Cross-tab card move (#54): the arrange-mode "Move to…" select. A <select> fires `change`,
+// not click, so it can't ride the delegated ACTIONS map. The view stays on the current tab
+// (the card just leaves it); sendCardToTab announces the destination and re-homes focus.
+document.addEventListener('change', (event) => {
+  const sel = event.target.closest && event.target.closest('.card__movetab');
+  if (!sel || !sel.value) return;
+  const id = cardIdOf(sel);
+  const dest = sel.value;
+  sel.value = ''; // snap back to the "Move to…" placeholder
+  if (id) sendCardToTab(id, dest);
 });
 
 /* -------------------------------------------------------------- actions */
@@ -191,7 +203,7 @@ const ACTIONS = {
   },
   'move-card-up': (el) => reorderCard(cardIdOf(el), -1),
   'move-card-down': (el) => reorderCard(cardIdOf(el), 1),
-  'arrange-reset-tab': () => resetTab(getActiveTab()),
+  'arrange-reset': () => { resetLayout(); activateTab(getTabIds()[0]); },
 
   'reload-app': () => window.location.reload(),
 

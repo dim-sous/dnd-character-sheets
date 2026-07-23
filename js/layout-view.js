@@ -8,7 +8,7 @@
  */
 
 import {
-  DEFAULT_LAYOUT, normalizeLayout, moveCard, resetTabCards,
+  DEFAULT_LAYOUT, normalizeLayout, moveCard, moveCardToTab,
 } from './layout.js';
 import { CARD_REGISTRY } from './layout-registry.js';
 
@@ -119,20 +119,44 @@ function cardPosition(componentId) {
   return null;
 }
 
-function moveButton(action, label) {
+function moveButton(action) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'icon-btn';
   btn.dataset.action = action;
   btn.textContent = action === 'move-card-up' ? '↑' : '↓';
-  btn.setAttribute('aria-label', label);
   return btn;
 }
 
 /**
- * Inject (or refresh) each card's ↑/↓ reorder controls into its `.list__head`. Reuses an
- * existing group so button identity — and the focus on it — survives a reorder. Disables the
- * first card's ↑ and the last card's ↓ (also signals the bounds; a lone card disables both).
+ * The "Move to…" select: a disabled placeholder plus every tab. Identical for every card and
+ * never rebuilt — choosing the card's current tab is simply a no-op (sendCardToTab guards it),
+ * so option lists never need per-card pruning.
+ */
+function moveTabSelect(label) {
+  const sel = document.createElement('select');
+  sel.className = 'card__movetab';
+  sel.setAttribute('aria-label', `Move ${label} to another tab`);
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Move to…';
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  sel.append(placeholder);
+  for (const tab of currentLayout.tabs) {
+    const opt = document.createElement('option');
+    opt.value = tab.id;
+    opt.textContent = tab.label;
+    sel.append(opt);
+  }
+  return sel;
+}
+
+/**
+ * Inject (or refresh) each card's arrange controls into its `.list__head`: ↑/↓ reorder plus a
+ * "Move to…" cross-tab select. Reuses an existing group so a control's identity — and the
+ * focus on it — survives a refresh. Disables the first card's ↑ and the last card's ↓ (also
+ * signals the bounds; a lone card disables both).
  */
 function renderArrangeControls() {
   for (const card of document.querySelectorAll('[data-editcard]')) {
@@ -146,7 +170,7 @@ function renderArrangeControls() {
     if (!group) {
       group = document.createElement('div');
       group.className = 'card__move';
-      group.append(moveButton('move-card-up', ''), moveButton('move-card-down', ''));
+      group.append(moveButton('move-card-up'), moveButton('move-card-down'), moveTabSelect(label));
       head.append(group);
     }
     const [up, down] = group.querySelectorAll('button');
@@ -197,13 +221,51 @@ export function reorderCard(componentId, delta) {
   restoreMoveFocus(componentId, delta);
 }
 
-/** Reset one tab's card order to the default. */
-export function resetTab(tabId) {
-  currentLayout = resetTabCards(currentLayout, tabId);
+/**
+ * The card left the current tab, so its own control is gone from view. Keep focus in place:
+ * land on the card that slid into the vacated slot (or the new last card), else — the tab is
+ * now empty — the arrange toolbar's Done.
+ */
+function restoreFocusAfterLeave(sourceTabId, vacatedIndex) {
+  const tab = currentLayout.tabs.find((t) => t.id === sourceTabId);
+  const remaining = tab ? tab.cards : [];
+  if (remaining.length) {
+    const next = remaining[Math.min(vacatedIndex, remaining.length - 1)];
+    const card = document.querySelector(`[data-editcard="${next.componentId}"]`);
+    const ctrl = card && (card.querySelector('.card__movetab') || card.querySelector('.card__move button'));
+    if (ctrl) { ctrl.focus(); return; }
+  }
+  document.querySelector('#arrange-bar [data-action="arrange-toggle"]')?.focus();
+}
+
+/**
+ * Send a card to another tab (appended to its end). The view stays on the current tab — the
+ * card simply leaves it (the announcement says where it went). Returns the destination tab id,
+ * or null when there was nothing to do.
+ */
+export function sendCardToTab(componentId, toTabId) {
+  const pos = cardPosition(componentId);
+  if (!pos || pos.tabId === toTabId) return null;
+  const { tabId: sourceTabId, index: vacatedIndex } = pos;
+
+  currentLayout = moveCardToTab(currentLayout, componentId, toTabId);
+  saveLayout();
+  applyLayout(); // relocates the card node into the (currently hidden) destination panel
+  renderArrangeControls();
+  const label = (CARD_REGISTRY[componentId] && CARD_REGISTRY[componentId].label) || componentId;
+  const dest = currentLayout.tabs.find((t) => t.id === toTabId);
+  announce(`Moved ${label} to the ${dest ? dest.label : toTabId} tab.`);
+  restoreFocusAfterLeave(sourceTabId, vacatedIndex);
+  return toTabId;
+}
+
+/** Reset the whole layout to its default (correct regardless of any cross-tab moves). */
+export function resetLayout() {
+  currentLayout = normalizeLayout(null); // a fresh default — never the shared DEFAULT_LAYOUT object
   saveLayout();
   applyLayout();
   if (arranging) renderArrangeControls();
-  announce('Tab layout reset to its default order.');
+  announce('Layout reset to its default.');
 }
 
 function setArranging(on) {

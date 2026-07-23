@@ -390,11 +390,6 @@ export function activateTab(tabKey, { focus = false } = {}) {
   }
 }
 
-/** The currently-shown tab id — the layout "Reset this tab" acts on it. */
-export function getActiveTab() {
-  return activeTabKey;
-}
-
 /**
  * Opening a different character drops you on the first tab; a structural re-render
  * of the SAME character (adding a row, say) keeps you where you were, so editing a

@@ -158,19 +158,25 @@ export function moveCard(layout, tabId, fromIndex, toIndex) {
 }
 
 /**
- * Reset one tab's card order to the default (its home cards in registry order), returning a
- * NEW layout. Backs "Reset this tab". Other tabs are untouched. In this phase a tab only ever
- * holds its own home cards, so restoring them by home+CARD_ORDER is exactly the default.
+ * Move a card to a different tab, appended to that tab's end, returning a NEW layout. The
+ * user reorders it into place afterward with ↑/↓. No-op (returns the input) for an unknown
+ * card, an unknown destination, or a same-tab target. Because the card is removed from its
+ * source and added to exactly one destination, the "every card placed exactly once"
+ * invariant is preserved — a card can live on any tab, not just its home (normalizeLayout
+ * only re-homes cards that are placed nowhere).
  */
-export function resetTabCards(layout, tabId) {
+export function moveCardToTab(layout, componentId, toTabId) {
+  const from = layout.tabs.find((tab) => tab.cards.some((c) => c.componentId === componentId));
+  const dest = layout.tabs.find((tab) => tab.id === toTabId);
+  if (!from || !dest || from.id === toTabId) return layout;
   return {
     ...layout,
     tabs: layout.tabs.map((tab) => {
-      if (tab.id !== tabId) return tab;
-      const cards = CARD_ORDER
-        .filter((id) => CARD_REGISTRY[id].home === tabId)
-        .map((componentId) => ({ componentId }));
-      return { ...tab, cards };
+      if (tab.id === from.id) {
+        return { ...tab, cards: tab.cards.filter((c) => c.componentId !== componentId) };
+      }
+      if (tab.id === toTabId) return { ...tab, cards: [...tab.cards, { componentId }] };
+      return tab;
     }),
   };
 }

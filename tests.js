@@ -23,7 +23,7 @@ import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from '.
 // here), so its reconciliation is covered exactly like normalizeCharacter above.
 import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
-  moveCard, resetTabCards,
+  moveCard, moveCardToTab,
 } from './js/layout.js';
 import { CARD_REGISTRY, TAB_REGISTRY } from './js/layout-registry.js';
 
@@ -622,15 +622,37 @@ describe('moveCard');
   }
 }
 
-describe('resetTabCards');
+describe('moveCardToTab');
 {
-  const moved = moveCard(DEFAULT_LAYOUT, 'gear', 0, 1); // [features, inventory]
-  is('reset restores default order', cardsOf(resetTabCards(moved, 'gear'), 'gear'),
-    ['inventory', 'features']);
-  is('reset leaves other tabs alone', cardsOf(resetTabCards(moved, 'gear'), 'combat'),
-    ['combat', 'attacks']);
-  is('reset of an already-default tab is a no-op', resetTabCards(DEFAULT_LAYOUT, 'combat'),
-    DEFAULT_LAYOUT);
+  const CARD_IDS = Object.keys(CARD_REGISTRY);
+  const placed = (layout) => layout.tabs.flatMap((tab) => tab.cards.map((c) => c.componentId));
+
+  // Send attacks (Combat) → Spells; it leaves the source and lands at the destination end.
+  const moved = moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'spells');
+  is('card removed from source tab', cardsOf(moved, 'combat'), ['combat']);
+  is('card appended to destination end', cardsOf(moved, 'spells'), ['spellcasting', 'attacks']);
+  is('other tabs untouched', cardsOf(moved, 'gear'), ['inventory', 'features']);
+
+  // Invariant: still exactly one of every card after a cross-tab move.
+  is('every card still placed exactly once', placed(moved).slice().sort(), [...CARD_IDS].sort());
+
+  // No-ops: same tab, unknown card, unknown destination.
+  is('same-tab target is a no-op', moveCardToTab(DEFAULT_LAYOUT, 'combat', 'combat'), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', moveCardToTab(DEFAULT_LAYOUT, 'ghost', 'spells'), DEFAULT_LAYOUT);
+  is('unknown destination is a no-op', moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'nope'), DEFAULT_LAYOUT);
+
+  // Immutability + a moved layout is still normal.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'spells');
+    is('input layout not mutated', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+  is('moved-across-tabs layout survives normalize unchanged', normalizeLayout(moved), moved);
+
+  // A card can be moved off its home tab and the tab left empty without a re-home.
+  const empties = moveCardToTab(DEFAULT_LAYOUT, 'abilities', 'combat');
+  is('source tab may be left empty', cardsOf(empties, 'abilities'), []);
+  is('empty-source layout still normal (no phantom re-home)', normalizeLayout(empties), empties);
 }
 
 export { results };

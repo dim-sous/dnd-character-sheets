@@ -402,6 +402,12 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
   border: 1px solid var(--line); border-radius: 8px;
 }
 .card__move .icon-btn:disabled { opacity: .3; cursor: default; }
+.card__movetab {
+  min-height: 34px; max-width: 9rem;
+  padding: 0 .4rem; font-size: .78rem;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px;
+}
 
 /* The arrange toolbar: hidden except in arrange mode (no `hidden` attr — it would collide
    with the global [hidden] kill-switch; a plain display swap is safe). */
