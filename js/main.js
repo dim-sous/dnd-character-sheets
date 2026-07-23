@@ -17,11 +17,12 @@ import {
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
-  clearNudge, showUpdatePrompt, showRecovery, activateTab, clearCardEdits,
+  clearNudge, showUpdatePrompt, showRecovery, activateTab, reactivateTab, clearCardEdits,
 } from './render.js';
 import {
-  loadLayout, applyLayout, getTabIds, flushLayout,
+  loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout,
+  tabAdd, tabRemove, tabRename, tabMove,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -101,6 +102,19 @@ document.addEventListener('change', (event) => {
   if (id) sendCardToTab(id, dest);
 });
 
+// Tab rename (#54): the tab-list rename field commits on `change` (blur/Enter). Reflect the
+// final label back — a blank entry reverts to the current name.
+document.addEventListener('change', (event) => {
+  const input = event.target.closest && event.target.closest('.tabrow__name');
+  if (!input) return;
+  const tabId = tabIdOf(input);
+  if (!tabId) return;
+  tabRename(tabId, input.value);
+  reactivateTab();
+  const tab = getLayout().tabs.find((t) => t.id === tabId);
+  if (tab) input.value = tab.label;
+});
+
 /* -------------------------------------------------------------- actions */
 
 /** Clicking pip i fills through i; clicking the last filled pip clears it. */
@@ -111,6 +125,11 @@ function pipTarget(current, index) {
 /** The componentId of the card an arrange control lives in (its `data-editcard`). */
 function cardIdOf(el) {
   return el.closest('[data-editcard]')?.dataset.editcard;
+}
+
+/** The tab id a tab-list control belongs to (its row's `data-tab`). */
+function tabIdOf(el) {
+  return el.closest('.tabrow')?.dataset.tab;
 }
 
 function amountField() {
@@ -205,6 +224,28 @@ const ACTIONS = {
   'move-card-down': (el) => reorderCard(cardIdOf(el), 1),
   'arrange-reset': () => { resetLayout(); activateTab(getTabIds()[0]); },
 
+  // Tab CRUD (#54 Phase 4b). Each tab-set change re-applies the active tab (which tolerates
+  // the active one having been removed). Removing a non-empty tab confirms first.
+  'tab-add': () => { tabAdd(); reactivateTab(); },
+  'tab-up': (el) => { tabMove(tabIdOf(el), -1); reactivateTab(); },
+  'tab-down': (el) => { tabMove(tabIdOf(el), 1); reactivateTab(); },
+  'tab-remove': (el) => {
+    const tabId = tabIdOf(el);
+    const layout = getLayout();
+    const tab = layout.tabs.find((t) => t.id === tabId);
+    if (!tab || layout.tabs.length <= 1) return; // last tab can't go (button is disabled too)
+    if (tab.cards.length) {
+      const dest = layout.tabs.find((t) => t.id !== tabId);
+      const n = tab.cards.length;
+      const ok = confirm(
+        `Remove the “${tab.label}” tab? Its ${n} card${n === 1 ? '' : 's'} will move to “${dest.label}”.`,
+      );
+      if (!ok) return;
+    }
+    tabRemove(tabId);
+    reactivateTab();
+  },
+
   'reload-app': () => window.location.reload(),
 
   // Data-durability nudges (#32). Each handler dismisses only its OWN banner —
@@ -293,13 +334,16 @@ document.addEventListener('keydown', (event) => {
   activateTab(next.id.replace('tab-', ''), { focus: true });
 });
 
-/* Arrange mode (#54): Escape leaves it; arrow keys reorder while a card's ↑/↓ group is
-   focused (the buttons already move on Enter/Space — this is the keyboard-nav nicety). */
+/* Arrange mode (#54): Escape leaves it (but not mid-edit in a field); arrow keys reorder
+   while a card's ↑/↓ BUTTON is focused (the buttons already move on Enter/Space — this is a
+   keyboard nicety). Scoped to the buttons, never the "Move to…" select, whose own arrow-key
+   option navigation must not be hijacked. */
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && isArranging()) { toggleArrange(); return; }
+  const inField = event.target.closest && event.target.closest('input, select, textarea');
+  if (event.key === 'Escape' && isArranging() && !inField) { toggleArrange(); return; }
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-  const inMoveGroup = event.target.closest && event.target.closest('.card__move');
-  if (!inMoveGroup) return;
+  const action = event.target.dataset && event.target.dataset.action;
+  if (action !== 'move-card-up' && action !== 'move-card-down') return;
   const id = cardIdOf(event.target);
   if (!id) return;
   event.preventDefault();

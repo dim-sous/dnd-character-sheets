@@ -23,7 +23,7 @@ import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from '.
 // here), so its reconciliation is covered exactly like normalizeCharacter above.
 import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
-  moveCard, moveCardToTab,
+  moveCard, moveCardToTab, addTab, removeTab, renameTab, moveTab,
 } from './js/layout.js';
 import { CARD_REGISTRY, TAB_REGISTRY } from './js/layout-registry.js';
 
@@ -674,6 +674,63 @@ describe('moveCardToTab');
   const empties = moveCardToTab(DEFAULT_LAYOUT, 'abilities', 'combat');
   is('source tab may be left empty', cardsOf(empties, 'abilities'), []);
   is('empty-source layout still normal (no phantom re-home)', normalizeLayout(empties), empties);
+}
+
+/* ------------------------------------------------- tab CRUD (#54 Phase 4b) */
+
+describe('addTab / removeTab / renameTab / moveTab');
+{
+  const CARD_IDS = Object.keys(CARD_REGISTRY);
+  const placed = (layout) => layout.tabs.flatMap((tab) => tab.cards.map((c) => c.componentId));
+
+  // addTab appends an empty tab; duplicate id is a no-op.
+  const added = addTab(DEFAULT_LAYOUT, 'notes2', 'Session Notes');
+  is('addTab appends the tab', tabIds(added), ['combat', 'abilities', 'spells', 'gear', 'character', 'notes2']);
+  is('new tab is empty', cardsOf(added, 'notes2'), []);
+  is('new tab carries its label', added.tabs[5].label, 'Session Notes');
+  is('addTab with an existing id is a no-op', addTab(DEFAULT_LAYOUT, 'combat', 'x'), DEFAULT_LAYOUT);
+  is('addTab with a blank id is a no-op', addTab(DEFAULT_LAYOUT, '', 'x'), DEFAULT_LAYOUT);
+
+  // removeTab: its cards move to the first REMAINING tab; last tab can't be removed.
+  const removedGear = removeTab(DEFAULT_LAYOUT, 'gear'); // gear held [inventory, features]
+  is('removeTab drops the tab', tabIds(removedGear).includes('gear'), false);
+  is('its cards move to the first remaining tab (combat)',
+    cardsOf(removedGear, 'combat'), ['combat', 'attacks', 'inventory', 'features']);
+  is('every card still placed exactly once after removal',
+    placed(removedGear).slice().sort(), [...CARD_IDS].sort());
+
+  // Removing the first tab sends its cards to the new first tab.
+  const removedCombat = removeTab(DEFAULT_LAYOUT, 'combat');
+  is('removing the first tab: cards go to the new first (abilities)',
+    cardsOf(removedCombat, 'abilities').slice(0, 2), ['abilities', 'combat']);
+
+  is('unknown tab removal is a no-op', removeTab(DEFAULT_LAYOUT, 'nope'), DEFAULT_LAYOUT);
+  {
+    const one = { layoutSchemaVersion: 1, tabs: [{ id: 'only', label: 'Only', cards: [] }] };
+    is('cannot remove the last tab', removeTab(one, 'only'), one);
+  }
+
+  // renameTab; blank keeps the current label.
+  is('renameTab sets the label', renameTab(DEFAULT_LAYOUT, 'combat', 'Fight').tabs[0].label, 'Fight');
+  is('renameTab blank keeps current', renameTab(DEFAULT_LAYOUT, 'combat', '   ').tabs[0].label, 'Combat');
+
+  // moveTab reorders by ±1, clamped.
+  is('moveTab down', tabIds(moveTab(DEFAULT_LAYOUT, 'combat', 1)),
+    ['abilities', 'combat', 'spells', 'gear', 'character']);
+  is('moveTab up', tabIds(moveTab(DEFAULT_LAYOUT, 'abilities', -1)),
+    ['abilities', 'combat', 'spells', 'gear', 'character']);
+  is('moveTab past the top is a no-op', moveTab(DEFAULT_LAYOUT, 'combat', -1), DEFAULT_LAYOUT);
+  is('moveTab past the bottom is a no-op', moveTab(DEFAULT_LAYOUT, 'character', 1), DEFAULT_LAYOUT);
+
+  // Immutability + still-normal after each op.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    addTab(DEFAULT_LAYOUT, 'z', 'Z'); removeTab(DEFAULT_LAYOUT, 'gear');
+    renameTab(DEFAULT_LAYOUT, 'combat', 'X'); moveTab(DEFAULT_LAYOUT, 'combat', 1);
+    is('tab mutators never mutate the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+  is('a layout with a user tab survives normalize unchanged', normalizeLayout(added), added);
+  is('a post-removal layout survives normalize unchanged', normalizeLayout(removedGear), removedGear);
 }
 
 export { results };

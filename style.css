@@ -422,6 +422,22 @@ body.is-arranging .arrange-bar {
 .arrange-bar__label { flex: 1; min-width: 8rem; font-size: .8rem; color: var(--ink-soft); }
 .arrange-bar__actions { display: flex; gap: .5rem; margin-left: auto; }
 
+/* The dedicated tab-editing list — its own full-width row within the arrange bar. */
+.tablist-edit { flex-basis: 100%; }
+.tablist-edit__rows { list-style: none; margin: 0 0 .4rem; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.tabrow { display: flex; align-items: center; gap: .3rem; }
+.tabrow__name {
+  flex: 1; min-width: 0; min-height: 34px;
+  padding: 0 .5rem; font-size: .85rem;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.tabrow .icon-btn {
+  width: 34px; height: 34px; flex: none; font-size: 1rem;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.tabrow .icon-btn:disabled { opacity: .3; cursor: default; }
+
 /* Arrange mode forces the phone-like single-tab view at EVERY width, so cards are reordered
    on one clean vertical list (on a laptop the panels otherwise merge into multi-column). The
    compound `body.is-arranging` selectors outrank the ≥900px rules on specificity alone. */

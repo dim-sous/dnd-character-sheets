@@ -9,8 +9,10 @@
 
 import {
   DEFAULT_LAYOUT, normalizeLayout, moveCard, moveCardToTab,
+  addTab, removeTab, renameTab, moveTab,
 } from './layout.js';
 import { CARD_REGISTRY } from './layout-registry.js';
+import { newId } from './constants.js';
 
 const LAYOUT_KEY = 'dnd-character-sheets:layout';
 
@@ -189,13 +191,12 @@ function moveButton(action) {
 }
 
 /**
- * The "Move to…" select: a disabled placeholder plus every tab. Identical for every card and
- * never rebuilt — choosing the card's current tab is simply a no-op (sendCardToTab guards it),
- * so option lists never need per-card pruning.
+ * (Re)populate a card's "Move to…" select with the CURRENT tab set. Called on every render,
+ * so it never goes stale after a tab is added, removed, renamed, or reordered (#54 Phase 4).
+ * Choosing the card's own tab is a no-op (sendCardToTab guards it), so no per-card pruning.
  */
-function moveTabSelect(label) {
-  const sel = document.createElement('select');
-  sel.className = 'card__movetab';
+function fillTabOptions(sel, label) {
+  sel.replaceChildren();
   sel.setAttribute('aria-label', `Move ${label} to another tab`);
   const placeholder = document.createElement('option');
   placeholder.value = '';
@@ -209,7 +210,6 @@ function moveTabSelect(label) {
     opt.textContent = tab.label;
     sel.append(opt);
   }
-  return sel;
 }
 
 /**
@@ -230,7 +230,9 @@ function renderArrangeControls() {
     if (!group) {
       group = document.createElement('div');
       group.className = 'card__move';
-      group.append(moveButton('move-card-up'), moveButton('move-card-down'), moveTabSelect(label));
+      const sel = document.createElement('select');
+      sel.className = 'card__movetab';
+      group.append(moveButton('move-card-up'), moveButton('move-card-down'), sel);
       head.append(group);
     }
     const [up, down] = group.querySelectorAll('button');
@@ -238,6 +240,7 @@ function renderArrangeControls() {
     down.setAttribute('aria-label', `Move ${label} down`);
     up.disabled = pos.index === 0;
     down.disabled = pos.index === pos.count - 1;
+    fillTabOptions(group.querySelector('.card__movetab'), label); // always fresh (never stale)
   }
 }
 
@@ -324,8 +327,117 @@ export function resetLayout() {
   currentLayout = normalizeLayout(null); // a fresh default — never the shared DEFAULT_LAYOUT object
   saveLayout();
   applyLayout();
-  if (arranging) renderArrangeControls();
+  if (arranging) { renderArrangeControls(); renderTabList(); }
   announce('Layout reset to its default.');
+}
+
+/* ------------------------------------------------------ tab-editing list */
+
+function tabRowButton(action, label, glyph, disabled) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'icon-btn';
+  btn.dataset.action = action;
+  btn.textContent = glyph;
+  btn.setAttribute('aria-label', label);
+  btn.disabled = disabled;
+  return btn;
+}
+
+/**
+ * The dedicated tab-editing list in the arrange bar: one row per tab (rename field + ↑/↓
+ * reorder + ✕ remove) and an "Add tab" button. Rebuilt whole on each structural tab change;
+ * only lives in the DOM while arranging. The bottom tab bar stays the navigation surface.
+ */
+function renderTabList() {
+  const host = document.getElementById('tablist-edit');
+  if (!host) return;
+  host.replaceChildren();
+
+  const rows = document.createElement('ul');
+  rows.className = 'tablist-edit__rows';
+  const { tabs } = currentLayout;
+  tabs.forEach((tab, i) => {
+    const row = document.createElement('li');
+    row.className = 'tabrow';
+    row.dataset.tab = tab.id;
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'tabrow__name';
+    name.value = tab.label;
+    name.setAttribute('aria-label', `Rename ${tab.label} tab`);
+
+    row.append(
+      name,
+      tabRowButton('tab-up', `Move ${tab.label} tab up`, '↑', i === 0),
+      tabRowButton('tab-down', `Move ${tab.label} tab down`, '↓', i === tabs.length - 1),
+      tabRowButton('tab-remove', `Remove ${tab.label} tab`, '✕', tabs.length <= 1),
+    );
+    rows.append(row);
+  });
+  host.append(rows);
+
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'btn btn--small';
+  add.dataset.action = 'tab-add';
+  add.textContent = '+ Add tab';
+  host.append(add);
+}
+
+function clearTabList() {
+  const host = document.getElementById('tablist-edit');
+  if (host) host.replaceChildren();
+}
+
+/** Add a new empty tab and focus its rename field so the player can name it right away. */
+export function tabAdd() {
+  const id = newId();
+  currentLayout = addTab(currentLayout, id, 'New tab');
+  saveLayout();
+  applyLayout();
+  renderTabList();
+  renderArrangeControls();
+  announce('Tab added.');
+  document.querySelector(`.tabrow[data-tab="${id}"] .tabrow__name`)?.focus();
+}
+
+/** Remove a tab (its cards were re-homed by the pure removeTab); refresh + land focus. */
+export function tabRemove(tabId) {
+  currentLayout = removeTab(currentLayout, tabId);
+  saveLayout();
+  applyLayout();
+  renderTabList();
+  renderArrangeControls();
+  announce('Tab removed; its cards moved to the first tab.');
+  document.querySelector('#tablist-edit [data-action="tab-add"]')?.focus();
+}
+
+/** Rename a tab. Does NOT rebuild the list (keeps the field the user is in); relabels the bar. */
+export function tabRename(tabId, label) {
+  currentLayout = renameTab(currentLayout, tabId, label);
+  saveLayout();
+  applyLayout();
+  renderArrangeControls(); // the cards' "Move to…" options carry tab labels — keep them fresh
+  announce('Tab renamed.');
+}
+
+/** Reorder a tab; refresh the list and keep focus on the moved row's control. */
+export function tabMove(tabId, delta) {
+  currentLayout = moveTab(currentLayout, tabId, delta);
+  saveLayout();
+  applyLayout();
+  renderTabList();
+  renderArrangeControls(); // refresh the cards' "Move to…" option order too
+  announce('Tab moved.');
+  const row = document.querySelector(`.tabrow[data-tab="${tabId}"]`);
+  if (row) {
+    const btns = [...row.querySelectorAll('button')];
+    const want = delta < 0 ? 'tab-up' : 'tab-down';
+    const target = btns.find((b) => b.dataset.action === want && !b.disabled) || btns.find((b) => !b.disabled);
+    target?.focus();
+  }
 }
 
 function setArranging(on) {
@@ -340,12 +452,14 @@ export function toggleArrange() {
   if (arranging) {
     setArranging(false);
     removeArrangeControls();
+    clearTabList();
     const btn = document.getElementById('btn-arrange');
     if (btn) btn.focus(); // Done/exit — never strand focus on a now-hidden bar
     return false;
   }
   setArranging(true);
   renderArrangeControls();
+  renderTabList();
   return true;
 }
 
@@ -354,4 +468,5 @@ export function exitArrange() {
   if (!arranging) return;
   setArranging(false);
   removeArrangeControls();
+  clearTabList();
 }

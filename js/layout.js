@@ -118,6 +118,56 @@ export function normalizeLayout(raw) {
   return { layoutSchemaVersion: LAYOUT_SCHEMA_VERSION, tabs };
 }
 
+/* --------------------------------------------------------- tab mutators */
+
+/** Append a new empty tab, returning a NEW layout. No-op if the id already exists or is blank. */
+export function addTab(layout, id, label) {
+  if (!id || layout.tabs.some((tab) => tab.id === id)) return layout;
+  return { ...layout, tabs: [...layout.tabs, { id, label: label || id, cards: [] }] };
+}
+
+/**
+ * Remove a tab, moving its cards to the first REMAINING tab so nothing is ever lost (the
+ * every-card-placed-once invariant holds, and the spellcasting card's ability select is
+ * never orphaned). Never removes the last tab — the app must keep at least one.
+ */
+export function removeTab(layout, tabId) {
+  if (layout.tabs.length <= 1) return layout;
+  const victim = layout.tabs.find((tab) => tab.id === tabId);
+  if (!victim) return layout;
+  const remaining = layout.tabs.filter((tab) => tab.id !== tabId);
+  const firstId = remaining[0].id;
+  return {
+    ...layout,
+    tabs: remaining.map((tab) => (
+      tab.id === firstId ? { ...tab, cards: [...tab.cards, ...victim.cards] } : tab
+    )),
+  };
+}
+
+/** Rename a tab; a blank label keeps the current one (labels are never empty). */
+export function renameTab(layout, tabId, label) {
+  const clean = typeof label === 'string' ? label.trim() : '';
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => (
+      tab.id === tabId ? { ...tab, label: clean || tab.label } : tab
+    )),
+  };
+}
+
+/** Reorder a tab by delta (±1), clamped. No-op at the ends or for an unknown tab. */
+export function moveTab(layout, tabId, delta) {
+  const from = layout.tabs.findIndex((tab) => tab.id === tabId);
+  if (from === -1) return layout;
+  const to = from + delta;
+  if (to < 0 || to >= layout.tabs.length) return layout;
+  const tabs = layout.tabs.slice();
+  const [moved] = tabs.splice(from, 1);
+  tabs.splice(to, 0, moved);
+  return { ...layout, tabs };
+}
+
 /* ----------------------------------------------------------- accessors */
 
 /** Ordered tab ids — the single source of truth that replaces the hardcoded TAB_KEYS/TAB_ORDER. */
