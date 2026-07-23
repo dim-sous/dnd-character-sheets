@@ -9,12 +9,15 @@
 
 import {
   DEFAULT_LAYOUT, normalizeLayout, moveCard, moveCardToTab,
-  addTab, removeTab, renameTab, moveTab,
+  addTab, removeTab, renameTab, moveTab, moveObject, toggleObjectHidden,
 } from './layout.js';
-import { CARD_REGISTRY } from './layout-registry.js';
+import { CARD_REGISTRY, OBJECT_REGISTRY } from './layout-registry.js';
 import { newId } from './constants.js';
 
 const LAYOUT_KEY = 'dnd-character-sheets:layout';
+// A per-device "saved default" the player sets from their current arrangement; Reset restores
+// this if present, else the factory DEFAULT_LAYOUT.
+const LAYOUT_DEFAULT_KEY = 'dnd-character-sheets:layout-default';
 
 // The active layout. Starts at the default so getTabIds() is safe the moment any module
 // reads it (render.js resolves its first active tab from it at import time); loadLayout()
@@ -108,7 +111,11 @@ function applyObjects(cardNode, card) {
     const objNode = cardNode.querySelector(`[data-object="${obj.componentId}"]`);
     if (!objNode) continue;
     container.append(objNode); // reorder into config order
-    objNode.hidden = Boolean(obj.hidden);
+    const isHidden = Boolean(obj.hidden);
+    objNode.classList.toggle('is-hidden', isHidden);
+    // The real display:none only OUTSIDE arrange mode; while arranging a hidden object stays
+    // visible (dimmed via .is-hidden) so it can be unhidden.
+    objNode.hidden = isHidden && !arranging;
   }
 }
 
@@ -340,13 +347,122 @@ export function sendCardToTab(componentId, toTabId) {
   return toTabId;
 }
 
-/** Reset the whole layout to its default (correct regardless of any cross-tab moves). */
+/** Snapshot the current arrangement as the player's saved default (own key). */
+export function saveDefault() {
+  try {
+    localStorage.setItem(LAYOUT_DEFAULT_KEY, JSON.stringify(currentLayout));
+  } catch {
+    // best-effort; a layout is reconstructible so a private-mode failure is silent
+  }
+  announce('Current layout saved as your default.');
+}
+
+/** Reset to the saved default if the player set one, else the factory default. */
 export function resetLayout() {
-  currentLayout = normalizeLayout(null); // a fresh default — never the shared DEFAULT_LAYOUT object
+  let raw = null;
+  try {
+    const text = localStorage.getItem(LAYOUT_DEFAULT_KEY);
+    if (text) raw = JSON.parse(text);
+  } catch {
+    raw = null;
+  }
+  currentLayout = normalizeLayout(raw); // saved default if any, else a fresh factory default
   saveLayout();
   applyLayout();
-  if (arranging) { renderArrangeControls(); renderTabList(); }
-  announce('Layout reset to its default.');
+  if (arranging) { renderArrangeControls(); renderObjectControls(); renderTabList(); }
+  announce('Layout reset to your default.');
+}
+
+/* --------------------------------------------------- object arrange controls */
+
+function objButton(action, glyph) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'icon-btn';
+  btn.dataset.action = action;
+  btn.textContent = glyph;
+  return btn;
+}
+
+/** Where an object sits within its card: index, count, and its hidden flag. */
+function objectPosition(cardId, objectId) {
+  const card = currentLayout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === cardId);
+  if (!card || !card.objects) return null;
+  const i = card.objects.findIndex((o) => o.componentId === objectId);
+  return i === -1 ? null : { index: i, count: card.objects.length, hidden: card.objects[i].hidden };
+}
+
+/**
+ * Inject (or refresh) each object's arrange controls: ↑/↓ reorder within the card + a
+ * hide/show toggle. Reuses an existing cluster so focus survives a refresh. Only registered
+ * objects (Phase 5: the Combat card's tiles + status blocks) get controls.
+ */
+function renderObjectControls() {
+  for (const objNode of document.querySelectorAll('[data-object]')) {
+    const objectId = objNode.dataset.object;
+    const reg = OBJECT_REGISTRY[objectId];
+    if (!reg) continue;
+    const pos = objectPosition(reg.card, objectId);
+    if (!pos) continue;
+
+    let ctl = objNode.querySelector('.obj-ctl');
+    if (!ctl) {
+      ctl = document.createElement('div');
+      ctl.className = 'obj-ctl';
+      ctl.append(
+        objButton('move-object-up', '↑'),
+        objButton('move-object-down', '↓'),
+        objButton('toggle-object-hide', '👁'),
+      );
+      objNode.append(ctl);
+    }
+    const [up, down, hide] = ctl.querySelectorAll('button');
+    up.setAttribute('aria-label', `Move ${reg.label} up`);
+    down.setAttribute('aria-label', `Move ${reg.label} down`);
+    up.disabled = pos.index === 0;
+    down.disabled = pos.index === pos.count - 1;
+    hide.setAttribute('aria-label', pos.hidden ? `Show ${reg.label}` : `Hide ${reg.label}`);
+    hide.setAttribute('aria-pressed', String(pos.hidden));
+    hide.classList.toggle('is-off', pos.hidden);
+  }
+}
+
+function removeObjectControls() {
+  for (const ctl of document.querySelectorAll('.obj-ctl')) ctl.remove();
+}
+
+/** Move an object up/down within its card; persist, re-apply, keep focus. */
+export function reorderObject(cardId, objectId, delta) {
+  const pos = objectPosition(cardId, objectId);
+  if (!pos) return;
+  const target = pos.index + delta;
+  if (target < 0 || target >= pos.count) return;
+  currentLayout = moveObject(currentLayout, cardId, pos.index, target);
+  saveLayout();
+  applyLayout();
+  renderObjectControls();
+  const reg = OBJECT_REGISTRY[objectId];
+  const after = objectPosition(cardId, objectId);
+  if (after) announce(`Moved ${reg ? reg.label : objectId} to position ${after.index + 1} of ${after.count}.`);
+  const group = document.querySelector(`[data-object="${objectId}"] .obj-ctl`);
+  if (group) {
+    const [up, down] = group.querySelectorAll('button');
+    const wanted = delta < 0 ? up : down;
+    const t = wanted && !wanted.disabled ? wanted : (delta < 0 ? down : up);
+    if (t && !t.disabled) t.focus();
+  }
+}
+
+/** Hide or show an object; persist, re-apply, refresh, announce. */
+export function toggleObject(cardId, objectId) {
+  currentLayout = toggleObjectHidden(currentLayout, cardId, objectId);
+  saveLayout();
+  applyLayout();
+  renderObjectControls();
+  const reg = OBJECT_REGISTRY[objectId];
+  const pos = objectPosition(cardId, objectId);
+  announce(`${reg ? reg.label : objectId} ${pos && pos.hidden ? 'hidden' : 'shown'}.`);
+  document.querySelector(`[data-object="${objectId}"] .obj-ctl button[data-action="toggle-object-hide"]`)?.focus();
 }
 
 /* ------------------------------------------------------ tab-editing list */
@@ -469,14 +585,18 @@ function setArranging(on) {
 export function toggleArrange() {
   if (arranging) {
     setArranging(false);
+    applyLayout(); // re-hide any hidden objects (display:none again outside arrange)
     removeArrangeControls();
+    removeObjectControls();
     clearTabList();
     const btn = document.getElementById('btn-arrange');
     if (btn) btn.focus(); // Done/exit — never strand focus on a now-hidden bar
     return false;
   }
   setArranging(true);
+  applyLayout(); // reveal hidden objects (dimmed) so they can be unhidden
   renderArrangeControls();
+  renderObjectControls();
   renderTabList();
   return true;
 }
@@ -485,6 +605,8 @@ export function toggleArrange() {
 export function exitArrange() {
   if (!arranging) return;
   setArranging(false);
+  applyLayout();
   removeArrangeControls();
+  removeObjectControls();
   clearTabList();
 }

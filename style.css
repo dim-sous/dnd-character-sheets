@@ -438,6 +438,32 @@ body.is-arranging .arrange-bar {
 }
 .tabrow .icon-btn:disabled { opacity: .3; cursor: default; }
 
+/* Per-object controls (#54 Phase 5): a small overlay at an object's top-right, in arrange
+   mode. Objects get position:relative to anchor it; card content is pointer-inert while
+   arranging, so the controls re-enable themselves. */
+body.is-arranging [data-object] { position: relative; }
+.obj-ctl {
+  /* Anchored to the BOTTOM so it never covers the object's top label/heading — you always
+     see what you're moving. */
+  position: absolute; bottom: 2px; right: 2px; z-index: 2;
+  display: flex; gap: 1px; padding: 1px;
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+body.is-arranging .obj-ctl, body.is-arranging .obj-ctl * { pointer-events: auto; }
+/* Sized so all three fit within the narrowest single-column tile (~72px) without overflow. */
+.obj-ctl .icon-btn { width: 22px; height: 22px; flex: none; font-size: .75rem; border-radius: 6px; }
+.obj-ctl .icon-btn:disabled { opacity: .3; cursor: default; }
+.obj-ctl .icon-btn.is-off { opacity: .55; } /* the hide toggle once the object is hidden */
+
+/* A hidden object stays visible-but-dimmed (dashed) while arranging so it can be unhidden;
+   outside arrange the `hidden` attribute removes it via the global [hidden] kill-switch. */
+body.is-arranging [data-object].is-hidden {
+  opacity: .5;
+  outline: 1px dashed color-mix(in srgb, var(--ink-faint) 70%, transparent);
+  outline-offset: 1px;
+}
+
 /* Arrange mode forces the phone-like single-tab view at EVERY width, so cards are reordered
    on one clean vertical list (on a laptop the panels otherwise merge into multi-column). The
    compound `body.is-arranging` selectors outrank the ≥900px rules on specificity alone. */
@@ -922,7 +948,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 @media print {
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
-  .sidebar__foot, .banner, .arrange-bar, .card__move { display: none !important; }
+  .sidebar__foot, .banner, .arrange-bar, .card__move, .obj-ctl { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }
   /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */

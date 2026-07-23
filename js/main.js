@@ -21,8 +21,8 @@ import {
 } from './render.js';
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
-  toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout,
-  tabAdd, tabRemove, tabRename, tabMove,
+  toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
+  tabAdd, tabRemove, tabRename, tabMove, reorderObject, toggleObject,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -132,6 +132,11 @@ function tabIdOf(el) {
   return el.closest('.tabrow')?.dataset.tab;
 }
 
+/** The object id an object control lives in (its `data-object`). */
+function objIdOf(el) {
+  return el.closest('[data-object]')?.dataset.object;
+}
+
 function amountField() {
   const el = $('#f-hp-amount');
   const n = Number(el.value);
@@ -222,7 +227,14 @@ const ACTIONS = {
   },
   'move-card-up': (el) => reorderCard(cardIdOf(el), -1),
   'move-card-down': (el) => reorderCard(cardIdOf(el), 1),
+
+  // Object controls (#54 Phase 5): reorder/hide the tiles & status blocks within a card.
+  'move-object-up': (el) => reorderObject(cardIdOf(el), objIdOf(el), -1),
+  'move-object-down': (el) => reorderObject(cardIdOf(el), objIdOf(el), 1),
+  'toggle-object-hide': (el) => toggleObject(cardIdOf(el), objIdOf(el)),
+
   'arrange-reset': () => { resetLayout(); activateTab(getTabIds()[0]); },
+  'arrange-set-default': () => saveDefault(),
 
   // Tab CRUD (#54 Phase 4b). Each tab-set change re-applies the active tab (which tolerates
   // the active one having been removed). Removing a non-empty tab confirms first.
@@ -343,11 +355,15 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && isArranging() && !inField) { toggleArrange(); return; }
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
   const action = event.target.dataset && event.target.dataset.action;
-  if (action !== 'move-card-up' && action !== 'move-card-down') return;
-  const id = cardIdOf(event.target);
-  if (!id) return;
-  event.preventDefault();
-  reorderCard(id, event.key === 'ArrowUp' ? -1 : 1);
+  const delta = event.key === 'ArrowUp' ? -1 : 1;
+  if (action === 'move-card-up' || action === 'move-card-down') {
+    const id = cardIdOf(event.target);
+    if (id) { event.preventDefault(); reorderCard(id, delta); }
+  } else if (action === 'move-object-up' || action === 'move-object-down') {
+    const cardId = cardIdOf(event.target);
+    const objectId = objIdOf(event.target);
+    if (cardId && objectId) { event.preventDefault(); reorderObject(cardId, objectId, delta); }
+  }
 });
 
 /* ----------------------------------------------------- roster and files */

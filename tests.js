@@ -24,6 +24,7 @@ import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from '.
 import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
   moveCard, moveCardToTab, addTab, removeTab, renameTab, moveTab,
+  moveObject, toggleObjectHidden,
 } from './js/layout.js';
 import {
   CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
@@ -769,6 +770,41 @@ describe('normalizeLayout: objects');
 
   is('idempotent with objects', normalizeLayout(messy), messy);
   is('JSON round-trips with objects', normalizeLayout(JSON.parse(JSON.stringify(messy))), messy);
+}
+
+describe('moveObject / toggleObjectHidden');
+{
+  const combat = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
+  const objIds = (layout) => combat(layout).objects.map((o) => o.componentId);
+  const hiddenOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).hidden;
+
+  // hp is index 0, adjust-hp index 1 in the default order.
+  is('move down: hp (0) → 1', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 0, 1)).slice(0, 2), ['adjust-hp', 'hp']);
+  is('move up: adjust-hp (1) → 0', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 1, 0)).slice(0, 2), ['adjust-hp', 'hp']);
+  is('clamp at top is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 0, -1), DEFAULT_LAYOUT);
+  is('clamp at bottom is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 12, 13), DEFAULT_LAYOUT);
+  is('out-of-range fromIndex is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 99, 0), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', moveObject(DEFAULT_LAYOUT, 'attacks', 0, 1), DEFAULT_LAYOUT);
+  is('a moved-objects layout survives normalize unchanged',
+    normalizeLayout(moveObject(DEFAULT_LAYOUT, 'combat', 0, 5)), moveObject(DEFAULT_LAYOUT, 'combat', 0, 5));
+
+  // toggleObjectHidden flips exactly one, twice returns to start, unknown is a no-op.
+  is('hidden starts false', hiddenOf(DEFAULT_LAYOUT, 'exhaustion'), false);
+  const hid = toggleObjectHidden(DEFAULT_LAYOUT, 'combat', 'exhaustion');
+  is('toggle hides it', hiddenOf(hid, 'exhaustion'), true);
+  is('only that object is affected', hiddenOf(hid, 'hp'), false);
+  is('toggle twice restores', toggleObjectHidden(hid, 'combat', 'exhaustion'), DEFAULT_LAYOUT);
+  is('unknown object toggle is a no-op', toggleObjectHidden(DEFAULT_LAYOUT, 'combat', 'ghost'), DEFAULT_LAYOUT);
+  is('a hidden JS-host object survives normalize (present-but-hidden)',
+    hiddenOf(normalizeLayout(hid), 'exhaustion'), true);
+
+  // Immutability.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    moveObject(DEFAULT_LAYOUT, 'combat', 0, 3);
+    toggleObjectHidden(DEFAULT_LAYOUT, 'combat', 'ac');
+    is('object mutators never mutate the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
 }
 
 export { results };

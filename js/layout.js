@@ -151,6 +151,53 @@ export function normalizeLayout(raw) {
   return { layoutSchemaVersion: LAYOUT_SCHEMA_VERSION, tabs };
 }
 
+/* ------------------------------------------------------- object mutators */
+
+/** Move an object within its card (clamped, immutable). No-op for an unknown card, a card
+ *  without objects, or an out-of-range index. */
+export function moveObject(layout, cardId, fromIndex, toIndex) {
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => {
+      if (!tab.cards.some((c) => c.componentId === cardId)) return tab;
+      return {
+        ...tab,
+        cards: tab.cards.map((card) => {
+          if (card.componentId !== cardId || !card.objects) return card;
+          const objects = card.objects.slice();
+          if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= objects.length) return card;
+          const to = Math.max(0, Math.min(toIndex, objects.length - 1));
+          const [moved] = objects.splice(fromIndex, 1);
+          objects.splice(to, 0, moved);
+          return { ...card, objects };
+        }),
+      };
+    }),
+  };
+}
+
+/** Flip one object's hidden flag within its card (immutable). No-op if the object is absent. */
+export function toggleObjectHidden(layout, cardId, objectId) {
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => {
+      if (!tab.cards.some((c) => c.componentId === cardId)) return tab;
+      return {
+        ...tab,
+        cards: tab.cards.map((card) => {
+          if (card.componentId !== cardId || !card.objects) return card;
+          return {
+            ...card,
+            objects: card.objects.map((o) => (
+              o.componentId === objectId ? { ...o, hidden: !o.hidden } : o
+            )),
+          };
+        }),
+      };
+    }),
+  };
+}
+
 /* --------------------------------------------------------- tab mutators */
 
 /** Append a new empty tab, returning a NEW layout. No-op if the id already exists or is blank. */
