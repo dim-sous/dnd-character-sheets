@@ -481,6 +481,31 @@ body.is-arranging [data-object] .subhead { visibility: hidden; }
 }
 body.is-arranging .obj-rename { pointer-events: auto; }
 
+/* Drag-and-drop reorder (#54 Phase 7). The ⠿ grip is a MOUSE affordance — hidden by default and
+   revealed only on a fine pointer, since native HTML5 drag doesn't work on touch (arrows remain
+   the touch path there). With the grip shown, the object cluster widens to fit 3 controls a row. */
+.drag-grip { display: none; }
+@media (pointer: fine) {
+  body.is-arranging .drag-grip {
+    display: inline-flex; align-items: center; justify-content: center; flex: none;
+    width: 22px; height: 22px; font-size: .8rem;
+    color: var(--ink-soft); background: var(--card);
+    border: 1px solid var(--line); border-radius: 6px;
+    cursor: grab; user-select: none;
+  }
+  body.is-arranging .card__move .drag-grip { width: 34px; height: 34px; font-size: 1rem; }
+  body.is-arranging .drag-grip:active { cursor: grabbing; }
+  .obj-ctl { width: 68px; }
+}
+
+/* The item being dragged dims; the drop target shows an accent bar on the edge where it will land
+   (top/bottom for the vertical card list, left/right for the inline object grid). */
+.card.is-dragging, [data-object].is-dragging { opacity: .4; }
+body.is-arranging .card.drop-before { box-shadow: 0 -3px 0 0 var(--accent); }
+body.is-arranging .card.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
+body.is-arranging [data-object].drop-before { box-shadow: -3px 0 0 0 var(--accent); }
+body.is-arranging [data-object].drop-after { box-shadow: 3px 0 0 0 var(--accent); }
+
 /* A hidden object stays visible-but-dimmed (dashed) while arranging so it can be unhidden;
    outside arrange the `hidden` attribute removes it via the global [hidden] kill-switch. */
 body.is-arranging [data-object].is-hidden {

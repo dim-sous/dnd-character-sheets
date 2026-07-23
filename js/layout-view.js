@@ -239,6 +239,20 @@ function moveButton(action) {
 }
 
 /**
+ * A mouse-only drag handle (#54 Phase 7): native HTML5 drag reorders the card/object it lives in.
+ * `aria-hidden` and not focusable — keyboard and AT users reorder with the ↑/↓ buttons; the grip
+ * is a pointer nicety, hidden on touch via CSS (native drag doesn't work there anyway).
+ */
+function dragGrip() {
+  const grip = document.createElement('span');
+  grip.className = 'drag-grip';
+  grip.draggable = true;
+  grip.setAttribute('aria-hidden', 'true');
+  grip.textContent = '⠿';
+  return grip;
+}
+
+/**
  * (Re)populate a card's "Move to…" select with the CURRENT tab set. Called on every render,
  * so it never goes stale after a tab is added, removed, renamed, or reordered (#54 Phase 4).
  * Choosing the card's own tab is a no-op (sendCardToTab guards it), so no per-card pruning.
@@ -295,7 +309,7 @@ function renderArrangeControls() {
       group.className = 'card__move';
       const sel = document.createElement('select');
       sel.className = 'card__movetab';
-      group.append(moveButton('move-card-up'), moveButton('move-card-down'), sel);
+      group.append(dragGrip(), moveButton('move-card-up'), moveButton('move-card-down'), sel);
       head.append(group);
     }
     const [up, down] = group.querySelectorAll('button');
@@ -359,6 +373,29 @@ export function reorderCard(componentId, delta) {
   const label = (CARD_REGISTRY[componentId] && CARD_REGISTRY[componentId].label) || componentId;
   if (after) announce(`Moved ${label} to position ${after.index + 1} of ${after.count}.`);
   restoreMoveFocus(componentId, delta);
+}
+
+/**
+ * Drop a dragged card immediately before `beforeId` in its tab (null → the tab's end), committing
+ * via moveCard (#54 Phase 7). Drag is same-tab only — cross-tab stays the "Move to…" select — so
+ * `beforeId` is always a sibling. No-op when the drop wouldn't change the order.
+ */
+export function dropCard(componentId, beforeId) {
+  if (beforeId === componentId) return;
+  const pos = cardPosition(componentId);
+  if (!pos) return;
+  const tab = currentLayout.tabs.find((t) => t.id === pos.tabId);
+  const reduced = tab.cards.map((c) => c.componentId).filter((id) => id !== componentId);
+  let to = beforeId != null ? reduced.indexOf(beforeId) : reduced.length;
+  if (to === -1) to = reduced.length;
+  if (to === pos.index) return; // dropped in place
+  currentLayout = moveCard(currentLayout, pos.tabId, pos.index, to);
+  saveLayout();
+  applyLayout();
+  renderArrangeControls();
+  const label = (CARD_REGISTRY[componentId] && CARD_REGISTRY[componentId].label) || componentId;
+  const after = cardPosition(componentId);
+  if (after) announce(`Moved ${label} to position ${after.index + 1} of ${after.count}.`);
 }
 
 /**
@@ -485,6 +522,7 @@ function renderObjectControls() {
       ctl = document.createElement('div');
       ctl.className = 'obj-ctl';
       ctl.append(
+        dragGrip(),
         objButton('move-object-up', '↑'),
         objButton('move-object-down', '↓'),
         objButton('resize-object', '↔'),
@@ -542,6 +580,31 @@ export function reorderObject(cardId, objectId, delta) {
     const t = wanted && !wanted.disabled ? wanted : (delta < 0 ? down : up);
     if (t && !t.disabled) t.focus();
   }
+}
+
+/**
+ * Drop a dragged object immediately before `beforeObjectId` within its card (null → the card's
+ * end), committing via moveObject (#54 Phase 7). Objects reorder within one card only. No-op when
+ * the drop wouldn't change the order.
+ */
+export function dropObject(cardId, objectId, beforeObjectId) {
+  if (beforeObjectId === objectId) return;
+  const card = currentLayout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === cardId);
+  if (!card || !card.objects) return;
+  const ids = card.objects.map((o) => o.componentId);
+  const from = ids.indexOf(objectId);
+  if (from === -1) return;
+  const reduced = ids.filter((id) => id !== objectId);
+  let to = beforeObjectId != null ? reduced.indexOf(beforeObjectId) : reduced.length;
+  if (to === -1) to = reduced.length;
+  if (to === from) return; // dropped in place
+  currentLayout = moveObject(currentLayout, cardId, from, to);
+  saveLayout();
+  applyLayout();
+  renderObjectControls();
+  const reg = OBJECT_REGISTRY[objectId];
+  const after = objectPosition(cardId, objectId);
+  if (after) announce(`Moved ${reg ? reg.label : objectId} to position ${after.index + 1} of ${after.count}.`);
 }
 
 /** Cycle an object's width (1 → 2 → full → 1); persist, re-apply, refresh, announce, keep focus. */

@@ -23,7 +23,7 @@ import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
   tabAdd, tabRemove, tabRename, tabMove, reorderObject, toggleObject, resizeObject,
-  renameCardTitle, renameObjectLabel,
+  renameCardTitle, renameObjectLabel, dropCard, dropObject,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -386,6 +386,100 @@ document.addEventListener('keydown', (event) => {
     if (cardId && objectId) { event.preventDefault(); reorderObject(cardId, objectId, delta); }
   }
 });
+
+/* Drag-and-drop reorder (#54 Phase 7): mouse-only, initiated from the ⠿ grips injected in arrange
+   mode. Native HTML5 drag; the ↑/↓ buttons stay the touch/keyboard path. Constrained to the
+   dragged item's own container — a card within its tab, an object within its card (cross-tab stays
+   the "Move to…" select) — so a drop only ever reorders siblings. */
+let drag = null;
+
+function clearDropMarks() {
+  for (const el of document.querySelectorAll('.drop-before, .drop-after')) {
+    el.classList.remove('drop-before', 'drop-after');
+  }
+}
+
+function endDrag() {
+  if (drag && drag.node) drag.node.classList.remove('is-dragging');
+  clearDropMarks();
+  drag = null;
+}
+
+/** Siblings of the dragged item in its container (excludes the dragged one itself). */
+function dragSiblings() {
+  return [...drag.container.children].filter(
+    (c) => c.dataset && c.dataset[drag.attr] != null && c.dataset[drag.attr] !== drag.id,
+  );
+}
+
+/** The sibling to insert before (null → end), from the pointer position within the container. */
+function insertionRef(x, y) {
+  for (const item of dragSiblings()) {
+    const r = item.getBoundingClientRect();
+    // Cards are a vertical list (compare against the vertical midpoint); objects flow inline in a
+    // grid (a point is "after" an object if below it, or within its row and past its center).
+    const after = drag.attr === 'editcard'
+      ? y > r.top + r.height / 2
+      : (y > r.bottom) || (y >= r.top && x > r.left + r.width / 2);
+    if (!after) return item;
+  }
+  return null;
+}
+
+document.addEventListener('dragstart', (event) => {
+  const grip = event.target.closest && event.target.closest('.drag-grip');
+  if (!grip || !isArranging()) return;
+  const objNode = grip.closest('[data-object]');
+  const cardNode = grip.closest('[data-editcard]');
+  if (objNode) {
+    drag = {
+      kind: 'object', attr: 'object', id: objNode.dataset.object,
+      cardId: cardNode && cardNode.dataset.editcard, container: objNode.parentElement, node: objNode,
+    };
+  } else if (cardNode) {
+    drag = {
+      kind: 'card', attr: 'editcard', id: cardNode.dataset.editcard,
+      container: cardNode.parentElement, node: cardNode,
+    };
+  } else {
+    return;
+  }
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', drag.id); // Firefox won't start a drag without data
+  try { event.dataTransfer.setDragImage(drag.node, 12, 12); } catch { /* not every engine */ }
+  drag.node.classList.add('is-dragging');
+});
+
+document.addEventListener('dragover', (event) => {
+  if (!drag) return;
+  const over = event.target.closest && event.target.closest(`[data-${drag.attr}]`);
+  if (!over || over.parentElement !== drag.container) return; // same container only
+  event.preventDefault(); // allow the drop
+  event.dataTransfer.dropEffect = 'move';
+  const ref = insertionRef(event.clientX, event.clientY);
+  clearDropMarks();
+  if (ref) {
+    ref.classList.add('drop-before');
+  } else {
+    const sibs = dragSiblings();
+    if (sibs.length) sibs[sibs.length - 1].classList.add('drop-after');
+  }
+});
+
+document.addEventListener('drop', (event) => {
+  if (!drag) return;
+  const over = event.target.closest && event.target.closest(`[data-${drag.attr}]`);
+  if (over && over.parentElement === drag.container) {
+    event.preventDefault();
+    const ref = insertionRef(event.clientX, event.clientY);
+    const beforeId = ref ? ref.dataset[drag.attr] : null;
+    if (drag.kind === 'object') dropObject(drag.cardId, drag.id, beforeId);
+    else dropCard(drag.id, beforeId);
+  }
+  endDrag();
+});
+
+document.addEventListener('dragend', endDrag);
 
 /* ----------------------------------------------------- roster and files */
 
