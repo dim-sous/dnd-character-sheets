@@ -392,6 +392,50 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 .list__head .card__title { margin: 0; border: 0; padding: 0; }
 .list__head .subhead { margin: 0; }
 
+/* ----------------------------------------------------- layout arrange (#54) */
+
+/* The reorder ↑/↓ controls injected into a card's head while arranging. They only exist in
+   the DOM during arrange mode (layout-view injects/removes them), so no is-arranging gate. */
+.card__move { display: inline-flex; gap: .1rem; margin-left: auto; }
+.card__move .icon-btn {
+  width: 34px; height: 34px; font-size: 1.1rem;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.card__move .icon-btn:disabled { opacity: .3; cursor: default; }
+
+/* The arrange toolbar: hidden except in arrange mode (no `hidden` attr — it would collide
+   with the global [hidden] kill-switch; a plain display swap is safe). */
+.arrange-bar { display: none; }
+body.is-arranging .arrange-bar {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  position: sticky; top: calc(var(--topbar-h) + env(safe-area-inset-top)); z-index: 29;
+  padding: .5rem .7rem;
+  background: color-mix(in srgb, var(--accent) 10%, var(--card));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+}
+.arrange-bar__label { flex: 1; min-width: 8rem; font-size: .8rem; color: var(--ink-soft); }
+.arrange-bar__actions { display: flex; gap: .5rem; margin-left: auto; }
+
+/* Arrange mode forces the phone-like single-tab view at EVERY width, so cards are reordered
+   on one clean vertical list (on a laptop the panels otherwise merge into multi-column). The
+   compound `body.is-arranging` selectors outrank the ≥900px rules on specificity alone. */
+body.is-arranging .cards { display: flex; flex-direction: column; }
+body.is-arranging .tabpanel { display: flex; flex-direction: column; gap: .7rem; }
+body.is-arranging .tabpanel[hidden] { display: none !important; } /* beat the desktop contents-reveal */
+body.is-arranging .tabbar { display: flex; }                      /* keep tab-switching on desktop */
+
+/* Card content is inert to the pointer while arranging — only the ↑/↓ controls stay live —
+   so a tap can't edit a field mid-reorder. Plus a subtle "this is movable" outline, and the
+   per-card content Edit / + Add are hidden (you're arranging, not typing). */
+body.is-arranging .card {
+  pointer-events: none;
+  outline: 2px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 2px;
+}
+body.is-arranging .card__move, body.is-arranging .card__move * { pointer-events: auto; }
+body.is-arranging .card__edit,
+body.is-arranging [data-action="add-row"] { display: none; }
+
 /* auto-fit everywhere rather than a fixed column count: these cards sit in columns of
    very different widths depending on breakpoint, and a fixed count clips. */
 .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: .6rem; }
@@ -852,7 +896,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 @media print {
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
-  .sidebar__foot, .banner { display: none !important; }
+  .sidebar__foot, .banner, .arrange-bar, .card__move { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }
   /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */

@@ -23,6 +23,7 @@ import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from '.
 // here), so its reconciliation is covered exactly like normalizeCharacter above.
 import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
+  moveCard, resetTabCards,
 } from './js/layout.js';
 import { CARD_REGISTRY, TAB_REGISTRY } from './js/layout-registry.js';
 
@@ -579,6 +580,57 @@ describe('normalizeLayout');
     normalizeLayout({ tabs: [] }).layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
   is('old version stamped forward',
     normalizeLayout({ layoutSchemaVersion: 0, tabs: [] }).layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+}
+
+/* ----------------------------------------------------- moveCard / resetTabCards (#54) */
+
+describe('moveCard');
+{
+  const cardsIn = (layout, tabId) => cardsOf(layout, tabId);
+
+  // gear holds [inventory, features] by default.
+  is('move down: inventory (0) → 1', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, 1), 'gear'),
+    ['features', 'inventory']);
+  is('move up: features (1) → 0', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 1, 0), 'gear'),
+    ['features', 'inventory']);
+
+  // Clamps to a no-op at both ends (the ↑/↓ buttons call this with fromIndex ± 1).
+  is('move up past top is a no-op', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, -1), 'gear'),
+    ['inventory', 'features']);
+  is('move down past bottom is a no-op', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 1, 2), 'gear'),
+    ['inventory', 'features']);
+
+  // Out-of-range fromIndex and unknown tab are no-ops.
+  is('out-of-range fromIndex → unchanged', moveCard(DEFAULT_LAYOUT, 'gear', 9, 0), DEFAULT_LAYOUT);
+  is('unknown tab → unchanged', moveCard(DEFAULT_LAYOUT, 'nope', 0, 1), DEFAULT_LAYOUT);
+
+  // Other tabs are untouched by a move.
+  is('combat tab unchanged when gear moves',
+    cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, 1), 'combat'), ['combat', 'attacks']);
+
+  // Immutability: the input layout is never mutated.
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    moveCard(DEFAULT_LAYOUT, 'gear', 0, 1);
+    is('input layout not mutated', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+
+  // A moved layout is still normal (idempotent under normalizeLayout).
+  {
+    const moved = moveCard(DEFAULT_LAYOUT, 'combat', 0, 1);
+    is('moved layout survives normalize unchanged', normalizeLayout(moved), moved);
+  }
+}
+
+describe('resetTabCards');
+{
+  const moved = moveCard(DEFAULT_LAYOUT, 'gear', 0, 1); // [features, inventory]
+  is('reset restores default order', cardsOf(resetTabCards(moved, 'gear'), 'gear'),
+    ['inventory', 'features']);
+  is('reset leaves other tabs alone', cardsOf(resetTabCards(moved, 'gear'), 'combat'),
+    ['combat', 'attacks']);
+  is('reset of an already-default tab is a no-op', resetTabCards(DEFAULT_LAYOUT, 'combat'),
+    DEFAULT_LAYOUT);
 }
 
 export { results };

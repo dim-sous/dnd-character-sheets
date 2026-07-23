@@ -18,7 +18,7 @@ import {
 } from './constants.js';
 import * as rules from './rules.js';
 import { getByPath, getListPath } from './state.js';
-import { getTabIds } from './layout-view.js';
+import { getTabIds, exitArrange } from './layout-view.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -128,6 +128,18 @@ export function toggleCardEdit(char, cardId) {
   if (cardId === 'spellcasting') renderSlots(char);
   applyEditState();
   renderDerived(char);
+}
+
+/**
+ * Drop every open per-card content edit at once (used when entering layout-arrange mode, so
+ * the two edit modes never overlap). Reverts the Spellcasting card out of slot-setup too.
+ */
+export function clearCardEdits(char) {
+  if (editCards.size === 0) return;
+  editCards.clear();
+  if (char) renderSlots(char);
+  applyEditState();
+  if (char) renderDerived(char);
 }
 
 /**
@@ -378,6 +390,11 @@ export function activateTab(tabKey, { focus = false } = {}) {
   }
 }
 
+/** The currently-shown tab id — the layout "Reset this tab" acts on it. */
+export function getActiveTab() {
+  return activeTabKey;
+}
+
 /**
  * Opening a different character drops you on the first tab; a structural re-render
  * of the SAME character (adding a row, say) keeps you where you were, so editing a
@@ -441,10 +458,12 @@ export function renderSheet(char) {
   const sheet = $('#sheet');
   const tabbar = $('#tabbar');
   const empty = $('#empty');
+  const arrangeBtn = $('#btn-arrange');
 
   sheet.hidden = !char;
   tabbar.hidden = !char;
   empty.hidden = Boolean(char);
+  if (arrangeBtn) arrangeBtn.hidden = !char; // the layout gear only makes sense with a sheet up
   if (!char) {
     $('#topbar-name').textContent = '—';
     $('#topbar-sub').textContent = '';
@@ -461,7 +480,7 @@ export function renderSheet(char) {
   // starts in view mode. Within the same character it persists across structural
   // rebuilds (so adding a row mid-edit doesn't bounce you out) — cleared here on the
   // id change, mirroring how syncActiveTab resets the active tab below.
-  if (char.id !== renderedCharId) editCards.clear();
+  if (char.id !== renderedCharId) { editCards.clear(); exitArrange(); }
   renderAbilities(char);
   renderConditions();
   renderStatusPips();

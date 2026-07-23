@@ -7,7 +7,9 @@
  * store must not freeze layout edits, or vice-versa.
  */
 
-import { DEFAULT_LAYOUT, normalizeLayout } from './layout.js';
+import {
+  DEFAULT_LAYOUT, normalizeLayout, moveCard, resetTabCards,
+} from './layout.js';
 import { CARD_REGISTRY } from './layout-registry.js';
 
 const LAYOUT_KEY = 'dnd-character-sheets:layout';
@@ -68,4 +70,166 @@ export function applyLayout() {
       if (node) panel.append(node);
     }
   }
+}
+
+/* ----------------------------------------------------------- persistence */
+
+let saveTimer = null;
+let dirty = false;
+
+function writeLayout() {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(currentLayout));
+    dirty = false;
+  } catch {
+    // Private mode / full storage. A layout is reconstructible from the default, so unlike
+    // character data this fails silently — no banner, no write-refusal.
+  }
+}
+
+/** Debounced write, mirroring state.js's scheduleSave — its OWN timer and key. */
+function saveLayout() {
+  dirty = true;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; if (dirty) writeLayout(); }, 400);
+}
+
+/** Synchronous write for pagehide/visibilitychange — only if there is something unsaved. */
+export function flushLayout() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (dirty) writeLayout();
+}
+
+/* ---------------------------------------------------------- arrange mode */
+
+// Transient display mode (never persisted): reorder cards within a tab. The layout RESULT
+// persists (own key); the mode itself does not.
+let arranging = false;
+
+export function isArranging() {
+  return arranging;
+}
+
+/** Where a card sits: its tab id, index within that tab, and the tab's card count. */
+function cardPosition(componentId) {
+  for (const tab of currentLayout.tabs) {
+    const index = tab.cards.findIndex((c) => c.componentId === componentId);
+    if (index !== -1) return { tabId: tab.id, index, count: tab.cards.length };
+  }
+  return null;
+}
+
+function moveButton(action, label) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'icon-btn';
+  btn.dataset.action = action;
+  btn.textContent = action === 'move-card-up' ? '↑' : '↓';
+  btn.setAttribute('aria-label', label);
+  return btn;
+}
+
+/**
+ * Inject (or refresh) each card's ↑/↓ reorder controls into its `.list__head`. Reuses an
+ * existing group so button identity — and the focus on it — survives a reorder. Disables the
+ * first card's ↑ and the last card's ↓ (also signals the bounds; a lone card disables both).
+ */
+function renderArrangeControls() {
+  for (const card of document.querySelectorAll('[data-editcard]')) {
+    const id = card.dataset.editcard;
+    const pos = cardPosition(id);
+    const head = card.querySelector('.list__head');
+    if (!pos || !head) continue;
+    const label = (CARD_REGISTRY[id] && CARD_REGISTRY[id].label) || id;
+
+    let group = head.querySelector('.card__move');
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'card__move';
+      group.append(moveButton('move-card-up', ''), moveButton('move-card-down', ''));
+      head.append(group);
+    }
+    const [up, down] = group.querySelectorAll('button');
+    up.setAttribute('aria-label', `Move ${label} up`);
+    down.setAttribute('aria-label', `Move ${label} down`);
+    up.disabled = pos.index === 0;
+    down.disabled = pos.index === pos.count - 1;
+  }
+}
+
+function removeArrangeControls() {
+  for (const group of document.querySelectorAll('.card__move')) group.remove();
+}
+
+function announce(message) {
+  const status = document.getElementById('arrange-status');
+  if (status) status.textContent = message;
+}
+
+/**
+ * After a reorder the used button may have become disabled (the card reached an end), which
+ * drops focus to <body>. Put it on the used button, or its still-enabled sibling.
+ */
+function restoreMoveFocus(componentId, delta) {
+  const card = document.querySelector(`[data-editcard="${componentId}"]`);
+  const group = card && card.querySelector('.card__move');
+  if (!group) return;
+  const [up, down] = group.querySelectorAll('button');
+  const wanted = delta < 0 ? up : down;
+  const target = wanted && !wanted.disabled ? wanted : (delta < 0 ? down : up);
+  if (target && !target.disabled) target.focus();
+}
+
+/** Move a card up (delta -1) or down (delta +1) within its tab; persist and re-lay-out. */
+export function reorderCard(componentId, delta) {
+  const pos = cardPosition(componentId);
+  if (!pos) return;
+  const target = pos.index + delta;
+  if (target < 0 || target >= pos.count) return; // at an end — nothing to do
+
+  currentLayout = moveCard(currentLayout, pos.tabId, pos.index, target);
+  saveLayout();
+  applyLayout(); // relocates the card node; focus inside it is preserved by append
+  renderArrangeControls();
+  const after = cardPosition(componentId);
+  const label = (CARD_REGISTRY[componentId] && CARD_REGISTRY[componentId].label) || componentId;
+  if (after) announce(`Moved ${label} to position ${after.index + 1} of ${after.count}.`);
+  restoreMoveFocus(componentId, delta);
+}
+
+/** Reset one tab's card order to the default. */
+export function resetTab(tabId) {
+  currentLayout = resetTabCards(currentLayout, tabId);
+  saveLayout();
+  applyLayout();
+  if (arranging) renderArrangeControls();
+  announce('Tab layout reset to its default order.');
+}
+
+function setArranging(on) {
+  arranging = on;
+  document.body.classList.toggle('is-arranging', on);
+  const btn = document.getElementById('btn-arrange');
+  if (btn) btn.setAttribute('aria-pressed', String(on));
+}
+
+/** Toggle arrange mode; returns true when it has just turned ON (so the caller can tidy up). */
+export function toggleArrange() {
+  if (arranging) {
+    setArranging(false);
+    removeArrangeControls();
+    const btn = document.getElementById('btn-arrange');
+    if (btn) btn.focus(); // Done/exit — never strand focus on a now-hidden bar
+    return false;
+  }
+  setArranging(true);
+  renderArrangeControls();
+  return true;
+}
+
+/** Force arrange mode off (e.g. on a character switch). Idempotent. */
+export function exitArrange() {
+  if (!arranging) return;
+  setArranging(false);
+  removeArrangeControls();
 }

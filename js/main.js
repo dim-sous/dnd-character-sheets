@@ -17,9 +17,12 @@ import {
 import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
-  clearNudge, showUpdatePrompt, showRecovery, activateTab,
+  clearNudge, showUpdatePrompt, showRecovery, activateTab, getActiveTab, clearCardEdits,
 } from './render.js';
-import { loadLayout, applyLayout, getTabIds } from './layout-view.js';
+import {
+  loadLayout, applyLayout, getTabIds, flushLayout,
+  toggleArrange, isArranging, reorderCard, resetTab,
+} from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -91,6 +94,11 @@ document.addEventListener('change', (event) => {
 /** Clicking pip i fills through i; clicking the last filled pip clears it. */
 function pipTarget(current, index) {
   return current === index + 1 ? index : index + 1;
+}
+
+/** The componentId of the card an arrange control lives in (its `data-editcard`). */
+function cardIdOf(el) {
+  return el.closest('[data-editcard]')?.dataset.editcard;
 }
 
 function amountField() {
@@ -175,6 +183,15 @@ const ACTIONS = {
     const char = state.getActive();
     if (char) toggleCardEdit(char, el.dataset.card);
   },
+
+  // Layout arrange mode (#54): a display preference under its own key, distinct from the
+  // per-card CONTENT edit above. Entering it drops any open content edit so they never overlap.
+  'arrange-toggle': () => {
+    if (toggleArrange()) clearCardEdits(state.getActive());
+  },
+  'move-card-up': (el) => reorderCard(cardIdOf(el), -1),
+  'move-card-down': (el) => reorderCard(cardIdOf(el), 1),
+  'arrange-reset-tab': () => resetTab(getActiveTab()),
 
   'reload-app': () => window.location.reload(),
 
@@ -262,6 +279,19 @@ document.addEventListener('keydown', (event) => {
   }
   event.preventDefault();
   activateTab(next.id.replace('tab-', ''), { focus: true });
+});
+
+/* Arrange mode (#54): Escape leaves it; arrow keys reorder while a card's ↑/↓ group is
+   focused (the buttons already move on Enter/Space — this is the keyboard-nav nicety). */
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && isArranging()) { toggleArrange(); return; }
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  const inMoveGroup = event.target.closest && event.target.closest('.card__move');
+  if (!inMoveGroup) return;
+  const id = cardIdOf(event.target);
+  if (!id) return;
+  event.preventDefault();
+  reorderCard(id, event.key === 'ArrowUp' ? -1 : 1);
 });
 
 /* ----------------------------------------------------- roster and files */
@@ -421,10 +451,11 @@ if (startup.corrupt) {
   showBanner('This browser is not saving changes (private mode or full storage). Export a backup to keep your work.');
 }
 
-// Phones kill tabs without warning; pagehide is the reliable last call.
-window.addEventListener('pagehide', () => state.flush());
+// Phones kill tabs without warning; pagehide is the reliable last call. Flush the layout on
+// its own key alongside the character store (both have independent debounced writes).
+window.addEventListener('pagehide', () => { state.flush(); flushLayout(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') state.flush();
+  if (document.visibilityState === 'hidden') { state.flush(); flushLayout(); }
 });
 
 // Another tab saved the roster: adopt it when we have nothing unsaved, so open tabs

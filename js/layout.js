@@ -132,3 +132,45 @@ export function cardsOf(layout, tabId) {
   const tab = layout.tabs.find((t) => t.id === tabId);
   return tab ? tab.cards.map((card) => card.componentId) : [];
 }
+
+/* ------------------------------------------------------------- mutators */
+
+/**
+ * Move a card within its tab, returning a NEW layout (the input is never mutated — the
+ * arrange UI relies on that to keep undo/compare cheap). `toIndex` clamps to the tab's
+ * bounds, so the ↑/↓ buttons calling this with `fromIndex ± 1` at an end are a clean no-op.
+ * An out-of-range `fromIndex` or an unknown `tabId` is a no-op too. Cross-tab moves are a
+ * later phase; this only reorders within one tab.
+ */
+export function moveCard(layout, tabId, fromIndex, toIndex) {
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => {
+      if (tab.id !== tabId) return tab;
+      const cards = tab.cards.slice();
+      if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= cards.length) return tab;
+      const to = Math.max(0, Math.min(toIndex, cards.length - 1));
+      const [moved] = cards.splice(fromIndex, 1);
+      cards.splice(to, 0, moved);
+      return { ...tab, cards };
+    }),
+  };
+}
+
+/**
+ * Reset one tab's card order to the default (its home cards in registry order), returning a
+ * NEW layout. Backs "Reset this tab". Other tabs are untouched. In this phase a tab only ever
+ * holds its own home cards, so restoring them by home+CARD_ORDER is exactly the default.
+ */
+export function resetTabCards(layout, tabId) {
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => {
+      if (tab.id !== tabId) return tab;
+      const cards = CARD_ORDER
+        .filter((id) => CARD_REGISTRY[id].home === tabId)
+        .map((componentId) => ({ componentId }));
+      return { ...tab, cards };
+    }),
+  };
+}
