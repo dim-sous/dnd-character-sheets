@@ -112,6 +112,51 @@ describe('skillTotal');
   is('unknown skill key → 0', rules.skillTotal(c, 'basketweaving'), 0);
 }
 
+/* ---------------------------------------------- skill misc bonuses (#57) */
+
+describe('skillTotal misc bonuses (#57)');
+{
+  const flat = char({ skillBonusAll: 2 });
+  is('flat skillBonusAll adds to a skill with no prof/expertise', rules.skillTotal(flat, 'acrobatics'), 2);
+
+  const flatWithProf = char({
+    level: 3, skillProficiencies: ['athletics'], skillExpertise: ['athletics'], skillBonusAll: 2,
+  });
+  is('flat skillBonusAll stacks on top of prof + expertise', rules.skillTotal(flatWithProf, 'athletics'), 6);
+
+  const perSkill = char({
+    abilities: { ...blankCharacter().abilities, wis: 12 },
+    skillBonuses: { ...blankCharacter().skillBonuses, insight: 3 },
+  });
+  is('per-skill skillBonuses adds only to the listed skill', rules.skillTotal(perSkill, 'insight'), 4);
+  is('per-skill skillBonuses leaves other skills untouched', rules.skillTotal(perSkill, 'acrobatics'), 0);
+
+  const combined = char({
+    abilities: { ...blankCharacter().abilities, wis: 12 },
+    skillBonusAll: -1,
+    skillBonuses: { ...blankCharacter().skillBonuses, insight: 3 },
+  });
+  is('skillBonusAll and skillBonuses combine additively', rules.skillTotal(combined, 'insight'), 3);
+  is('unknown skill key → 0 even when bonuses are set', rules.skillTotal(combined, 'basketweaving'), 0);
+}
+
+/* --------------------------------------- skill/save proficiency markers */
+
+describe('skillMarker / saveMarker (skills-edit collapsed view)');
+{
+  const c = char({
+    skillProficiencies: ['athletics'],
+    skillExpertise: ['stealth'],
+    saveProficiencies: ['con'],
+  });
+  is('proficient only → P', rules.skillMarker(c, 'athletics'), 'P');
+  is('expertise → E', rules.skillMarker(c, 'stealth'), 'E');
+  is('neither → empty string', rules.skillMarker(c, 'acrobatics'), '');
+  is('unknown skill key → empty string', rules.skillMarker(c, 'basketweaving'), '');
+  is('save proficient → P', rules.saveMarker(c, 'con'), 'P');
+  is('save not proficient → empty string', rules.saveMarker(c, 'dex'), '');
+}
+
 /* ---------------------------------------------- passive perception, init */
 
 describe('passivePerception & initiative');
@@ -298,6 +343,13 @@ is('currency missing → zeros', normalizeCharacter({}).currency, { cp: 0, sp: 0
 is('abilities coercion', normalizeCharacter({ abilities: { str: '18' } }).abilities.str, 18);
 is('abilities unknown key dropped', Object.keys(normalizeCharacter({ abilities: { str: 18, zzz: 5 } }).abilities), ['str', 'dex', 'con', 'int', 'wis', 'cha']);
 is('abilities missing → all 10', normalizeCharacter({}).abilities, { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
+is('skillBonusAll coercion from string', normalizeCharacter({ skillBonusAll: '3' }).skillBonusAll, 3);
+is('skillBonusAll missing → 0', normalizeCharacter({}).skillBonusAll, 0);
+is('skillBonusAll garbage → 0', normalizeCharacter({ skillBonusAll: 'x' }).skillBonusAll, 0);
+is('skillBonuses coercion', normalizeCharacter({ skillBonuses: { insight: '3' } }).skillBonuses.insight, 3);
+is('skillBonuses unknown key dropped', 'zzz' in normalizeCharacter({ skillBonuses: { insight: 3, zzz: 5 } }).skillBonuses, false);
+is('skillBonuses missing → all 18 skill keys at 0', normalizeCharacter({}).skillBonuses, blankCharacter().skillBonuses);
+is('skillBonuses non-object → all zero (default)', normalizeCharacter({ skillBonuses: 'nope' }).skillBonuses, blankCharacter().skillBonuses);
 is('name non-string → empty', normalizeCharacter({ name: 42 }).name, '');
 is('name string passes', normalizeCharacter({ name: 'Aria' }).name, 'Aria');
 is('heroicInspiration truthy → true', normalizeCharacter({ heroicInspiration: 1 }).heroicInspiration, true);

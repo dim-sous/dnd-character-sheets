@@ -58,7 +58,22 @@ export function skillTotal(char, skillKey) {
   let total = modFor(char, skill.ability);
   if (proficient) total += pb;
   if (expert) total += pb;
+  // #57: hand-computed extras — a flat bonus to every skill and a per-skill one,
+  // typed in once and retyped by hand if they ever change (item swapped, leveled
+  // into a new feature). Never recomputed from a formula, on purpose.
+  total += num(char.skillBonusAll) + num(char.skillBonuses[skillKey]);
   return total;
+}
+
+/** A discreet stand-in for the prof/expertise checkboxes when the skill list is collapsed. */
+export function skillMarker(char, skillKey) {
+  if (char.skillExpertise.includes(skillKey)) return 'E';
+  if (char.skillProficiencies.includes(skillKey)) return 'P';
+  return '';
+}
+
+export function saveMarker(char, abilityKey) {
+  return char.saveProficiencies.includes(abilityKey) ? 'P' : '';
 }
 
 export function passivePerception(char) {

@@ -70,6 +70,13 @@ export function invalidateRoster() {
 /* ------------------------------------------------------- static sections */
 
 /**
+ * Transient view state, like slot setup mode: collapsed shows one Total plus a
+ * discreet prof/expertise marker per skill; edit mode reveals the checkboxes and
+ * the misc-bonus input to change them. Never stored on the character.
+ */
+let skillsEditMode = false;
+
+/**
  * One group per ability: score + modifier in the header row, then its saving
  * throw and its skills in a shared grid beneath (#14). Everything still writes
  * the same derived/toggle/bind keys, so rules.js and state.js never learn the
@@ -77,6 +84,9 @@ export function invalidateRoster() {
  */
 function renderAbilities(char) {
   const host = $('#abilities');
+  // Scoped to the whole panel, not just #abilities, so the same flag also shows/hides
+  // the Init bonus / All-skills bonus fields that live alongside it in the card.
+  $('#panel-abilities').classList.toggle('abilities--editing', skillsEditMode);
   host.replaceChildren();
 
   for (const ability of ABILITIES) {
@@ -90,6 +100,10 @@ function renderAbilities(char) {
     score.dataset.bind = `abilities.${ability.key}`;
     score.setAttribute('aria-label', `${ability.label} score`);
 
+    // Read-only stand-in for the score input when the sheet is collapsed — same
+    // reason the skill marker exists: hiding the input must not hide the value.
+    $('.ability-row__score-display', node).dataset.derived = `score.${ability.key}`;
+
     const mod = $('.ability-row__mod', node);
     mod.dataset.derived = `mod.${ability.key}`;
     mod.setAttribute('for', scoreId);
@@ -101,6 +115,7 @@ function renderAbilities(char) {
     saveBox.dataset.value = ability.key;
     saveBox.setAttribute('aria-label', `${ability.label} saving throw proficiency`);
     $('.skill__total', save).dataset.derived = `save.${ability.key}`;
+    $('.skill__marker', save).dataset.derived = `saveMark.${ability.key}`;
 
     // Skills nest under the ability that drives them (#14). Every derived/toggle
     // key is unchanged, so renderDerived and state.js never learn the layout moved.
@@ -122,12 +137,31 @@ function renderAbilities(char) {
       exp.dataset.value = skill.key;
       exp.setAttribute('aria-label', `${skill.label} expertise`);
 
+      // #57: per-skill misc bonus. A plain data-bind, not data-toggle/data-derived —
+      // dataset.bind varies per skill, exactly like ability-row__score above varies
+      // per ability, so it has to be set here rather than statically in the template.
+      const bonus = $('.skill__bonus', row);
+      bonus.dataset.bind = `skillBonuses.${skill.key}`;
+      bonus.dataset.type = 'number';
+      bonus.setAttribute('aria-label', `${skill.label} misc bonus`);
+
       $('.skill__total', row).dataset.derived = `skill.${skill.key}`;
+      $('.skill__marker', row).dataset.derived = `skillMark.${skill.key}`;
       list.append(row);
     }
 
     host.append(node);
   }
+
+  const toggle = $('#btn-skills-edit');
+  if (toggle) toggle.textContent = skillsEditMode ? 'Done' : 'Edit';
+}
+
+/** Flip between the collapsed view and edit mode, then rebuild what the flip changes. */
+export function toggleSkillsEdit(char) {
+  skillsEditMode = !skillsEditMode;
+  renderAbilities(char);
+  renderDerived(char);
 }
 
 function renderConditions() {
@@ -396,6 +430,9 @@ export function renderSheet(char) {
 
   const focusToken = captureFocus();
 
+  // Skills edit mode is transient, like slot setup: any full rebuild (opening a
+  // character, a structural change) drops back to the collapsed view.
+  skillsEditMode = false;
   renderAbilities(char);
   renderConditions();
   renderStatusPips();
@@ -423,8 +460,11 @@ function derivedValue(char, key) {
   const [kind, arg] = key.split('.');
   switch (kind) {
     case 'mod': return rules.formatMod(rules.modFor(char, arg));
+    case 'score': return String(char.abilities[arg]);
     case 'save': return rules.formatMod(rules.saveTotal(char, arg));
     case 'skill': return rules.formatMod(rules.skillTotal(char, arg));
+    case 'saveMark': return rules.saveMarker(char, arg);
+    case 'skillMark': return rules.skillMarker(char, arg);
     case 'pb': return rules.formatMod(rules.characterPB(char));
     case 'passive': return String(rules.passivePerception(char));
     case 'initiative': return rules.formatMod(rules.initiative(char));
