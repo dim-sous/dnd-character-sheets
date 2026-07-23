@@ -64,22 +64,30 @@ export const CARD_ORDER = [
  * Phase 5 objectifies only the Combat card (its 9 tiles + 4 status blocks); other cards stay
  * whole. `cost:'js'` object hosts, for reference: hitdice→#hitDice, deathsaves→#death-successes
  * /#death-failures, exhaustion→#exhaustion, conditions→#conditions.
+ *
+ *   defaultSpan — the object's width within the `.tiles` grid (#54 Phase 6), reproducing today's
+ *                 layout: `'full'` (a whole grid row, `grid-column: 1 / -1`), `2` (two tracks),
+ *                 or `1` (one track). The layout config carries the live per-object span; this is
+ *                 the value reconciliation falls back to. Cards keep a single column for now.
  */
 export const OBJECT_REGISTRY = {
-  hp: { card: 'combat', label: 'Hit Points', cost: 'markup' },
-  'adjust-hp': { card: 'combat', label: 'Adjust HP', cost: 'markup' },
-  'temp-hp': { card: 'combat', label: 'Temp HP', cost: 'markup' },
-  rest: { card: 'combat', label: 'Rest', cost: 'markup' },
-  ac: { card: 'combat', label: 'AC', cost: 'markup' },
-  initiative: { card: 'combat', label: 'Initiative', cost: 'markup' },
-  speed: { card: 'combat', label: 'Speed', cost: 'markup' },
-  pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup' },
-  heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup' },
-  hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js' },
-  deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js' },
-  exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js' },
-  conditions: { card: 'combat', label: 'Conditions', cost: 'js' },
+  hp: { card: 'combat', label: 'Hit Points', cost: 'markup', defaultSpan: 'full' },
+  'adjust-hp': { card: 'combat', label: 'Adjust HP', cost: 'markup', defaultSpan: 'full' },
+  'temp-hp': { card: 'combat', label: 'Temp HP', cost: 'markup', defaultSpan: 1 },
+  rest: { card: 'combat', label: 'Rest', cost: 'markup', defaultSpan: 1 },
+  ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 1 },
+  initiative: { card: 'combat', label: 'Initiative', cost: 'markup', defaultSpan: 1 },
+  speed: { card: 'combat', label: 'Speed', cost: 'markup', defaultSpan: 1 },
+  pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup', defaultSpan: 1 },
+  heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup', defaultSpan: 1 },
+  hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js', defaultSpan: 'full' },
+  deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js', defaultSpan: 'full' },
+  exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js', defaultSpan: 'full' },
+  conditions: { card: 'combat', label: 'Conditions', cost: 'js', defaultSpan: 'full' },
 };
+
+/** The valid object spans, in cycle order — the ↔ resize control steps 1 → 2 → full → 1. */
+export const OBJECT_SPANS = [1, 2, 'full'];
 
 /** Default object order per card (matches today's DOM). Only `combat` has objects this phase. */
 export const OBJECT_ORDER = {

@@ -105,7 +105,7 @@
                  one can be reordered or hidden within the card. A tile is a label (shell) +
                  a body (value⇄input, or a live control). Status blocks span the full width. -->
             <div class="tiles">
-              <div class="tile tile--wide" data-object="hp">
+              <div class="tile" data-object="hp">
                 <span class="tile__label">Hit Points</span>
                 <div class="hp">
                   <button type="button" class="hp__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
@@ -120,7 +120,7 @@
                 </div>
               </div>
 
-              <div class="tile tile--wide" data-object="adjust-hp">
+              <div class="tile" data-object="adjust-hp">
                 <span class="tile__label">Adjust HP</span>
                 <div class="tile__body tile__body--actions">
                   <!-- Amount stays grouped with Damage/Heal: those actions read it imperatively. -->

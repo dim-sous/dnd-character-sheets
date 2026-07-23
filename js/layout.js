@@ -15,10 +15,27 @@
  */
 
 import {
-  TAB_REGISTRY, CARD_REGISTRY, CARD_ORDER, OBJECT_REGISTRY, OBJECT_ORDER,
+  TAB_REGISTRY, CARD_REGISTRY, CARD_ORDER, OBJECT_REGISTRY, OBJECT_ORDER, OBJECT_SPANS,
 } from './layout-registry.js';
 
 export const LAYOUT_SCHEMA_VERSION = 1;
+
+/**
+ * The width of an object within its card grid (#54 Phase 6). Any value not in OBJECT_SPANS
+ * (a stale number, a typo, a missing field) falls back to the object's registry default, so
+ * an old or hand-edited layout can never produce an invalid `grid-column`.
+ */
+function normalizeSpan(rawSpan, componentId) {
+  if (OBJECT_SPANS.includes(rawSpan)) return rawSpan;
+  const reg = OBJECT_REGISTRY[componentId];
+  return reg && OBJECT_SPANS.includes(reg.defaultSpan) ? reg.defaultSpan : 1;
+}
+
+/** The next span in the cycle 1 → 2 → full → 1 (what the ↔ resize control steps through). */
+export function cycleSpan(span) {
+  const i = OBJECT_SPANS.indexOf(span);
+  return OBJECT_SPANS[(i + 1) % OBJECT_SPANS.length];
+}
 
 function num(value, fallback) {
   const n = Number(value);
@@ -37,6 +54,11 @@ function str(value, fallback = '') {
  */
 function normalizeCard(componentId, rawCard) {
   const card = { componentId };
+  // A custom card title (#54) — a per-device override of the registry label. Stored only when
+  // set to a non-empty string, so the default layout stays label-free and a blank reverts to the
+  // registry default. Applies to EVERY card (kept before the non-objectified early return).
+  const rawLabel = rawCard && typeof rawCard.label === 'string' ? rawCard.label.trim() : '';
+  if (rawLabel) card.label = rawLabel;
   const order = OBJECT_ORDER[componentId];
   if (!order) return card; // this card is not objectified
 
@@ -49,12 +71,17 @@ function normalizeCard(componentId, rawCard) {
     const reg = OBJECT_REGISTRY[oid];
     if (!reg || reg.card !== componentId || seen.has(oid)) continue;
     seen.add(oid);
-    objects.push({ componentId: oid, hidden: Boolean(rawObj && rawObj.hidden) });
+    const rawLabel = rawObj && typeof rawObj.label === 'string' ? rawObj.label.trim() : '';
+    const obj = { componentId: oid };
+    if (rawLabel) obj.label = rawLabel; // custom title overriding the registry label (#54)
+    obj.hidden = Boolean(rawObj && rawObj.hidden);
+    obj.span = normalizeSpan(rawObj && rawObj.span, oid);
+    objects.push(obj);
   }
   for (const oid of order) {
     if (seen.has(oid)) continue;
     seen.add(oid);
-    objects.push({ componentId: oid, hidden: false });
+    objects.push({ componentId: oid, hidden: false, span: normalizeSpan(undefined, oid) });
   }
   card.objects = objects;
   return card;
@@ -170,6 +197,66 @@ export function moveObject(layout, cardId, fromIndex, toIndex) {
           const [moved] = objects.splice(fromIndex, 1);
           objects.splice(to, 0, moved);
           return { ...card, objects };
+        }),
+      };
+    }),
+  };
+}
+
+/**
+ * Set one object's span within its card (immutable). An out-of-range span is coerced to the
+ * object's registry default by normalizeSpan, so this can never store an invalid width. No-op
+ * (returns a structurally-equal layout) if the object is absent.
+ */
+export function setObjectSpan(layout, cardId, objectId, span) {
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => {
+      if (!tab.cards.some((c) => c.componentId === cardId)) return tab;
+      return {
+        ...tab,
+        cards: tab.cards.map((card) => {
+          if (card.componentId !== cardId || !card.objects) return card;
+          return {
+            ...card,
+            objects: card.objects.map((o) => (
+              o.componentId === objectId ? { ...o, span: normalizeSpan(span, objectId) } : o
+            )),
+          };
+        }),
+      };
+    }),
+  };
+}
+
+/**
+ * Set (or clear) an object's custom title within its card (immutable). A blank label removes the
+ * override so the object falls back to its registry label. Rebuilds the object in reconcile key
+ * order (componentId, label, hidden, span) so a renamed layout stays byte-identical to its
+ * normalized form. No-op if the object is absent.
+ */
+export function renameObject(layout, cardId, objectId, label) {
+  const clean = typeof label === 'string' ? label.trim() : '';
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => {
+      if (!tab.cards.some((c) => c.componentId === cardId)) return tab;
+      return {
+        ...tab,
+        cards: tab.cards.map((card) => {
+          if (card.componentId !== cardId || !card.objects) return card;
+          return {
+            ...card,
+            objects: card.objects.map((o) => {
+              if (o.componentId !== objectId) return o;
+              const next = { componentId: o.componentId };
+              if (clean) next.label = clean;
+              for (const [k, v] of Object.entries(o)) {
+                if (k !== 'componentId' && k !== 'label') next[k] = v;
+              }
+              return next;
+            }),
+          };
         }),
       };
     }),
@@ -297,14 +384,45 @@ export function moveCardToTab(layout, componentId, toTabId) {
   const from = layout.tabs.find((tab) => tab.cards.some((c) => c.componentId === componentId));
   const dest = layout.tabs.find((tab) => tab.id === toTabId);
   if (!from || !dest || from.id === toTabId) return layout;
+  // Carry the WHOLE card entry across, not a bare { componentId } — so a custom title, object
+  // order, spans, and hidden flags survive the move (otherwise they'd reset until the next
+  // normalize, which for the objectified Combat card would silently drop the player's tweaks).
+  const moved = from.cards.find((c) => c.componentId === componentId);
   return {
     ...layout,
     tabs: layout.tabs.map((tab) => {
       if (tab.id === from.id) {
         return { ...tab, cards: tab.cards.filter((c) => c.componentId !== componentId) };
       }
-      if (tab.id === toTabId) return { ...tab, cards: [...tab.cards, { componentId }] };
+      if (tab.id === toTabId) return { ...tab, cards: [...tab.cards, moved] };
       return tab;
     }),
+  };
+}
+
+/**
+ * Set (or clear) a card's custom title, returning a NEW layout (#54). A blank label removes the
+ * override so the card falls back to its registry default. No-op (returns the input) if the card
+ * isn't placed anywhere.
+ */
+export function renameCard(layout, componentId, label) {
+  if (!layout.tabs.some((tab) => tab.cards.some((c) => c.componentId === componentId))) return layout;
+  const clean = typeof label === 'string' ? label.trim() : '';
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => ({
+      ...tab,
+      cards: tab.cards.map((card) => {
+        if (card.componentId !== componentId) return card;
+        // Rebuild in normalizeCard's key order (componentId, label, then the rest) so a renamed
+        // layout stays byte-identical to its normalized form, like the other mutators.
+        const next = { componentId: card.componentId };
+        if (clean) next.label = clean;
+        for (const [k, v] of Object.entries(card)) {
+          if (k !== 'componentId' && k !== 'label') next[k] = v;
+        }
+        return next;
+      }),
+    })),
   };
 }

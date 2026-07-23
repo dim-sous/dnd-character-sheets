@@ -22,7 +22,8 @@ import {
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
-  tabAdd, tabRemove, tabRename, tabMove, reorderObject, toggleObject,
+  tabAdd, tabRemove, tabRename, tabMove, reorderObject, toggleObject, resizeObject,
+  renameCardTitle, renameObjectLabel,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -113,6 +114,25 @@ document.addEventListener('change', (event) => {
   reactivateTab();
   const tab = getLayout().tabs.find((t) => t.id === tabId);
   if (tab) input.value = tab.label;
+});
+
+// Card rename (#54): the arrange-mode title field commits on `change` (blur/Enter). renameCardTitle
+// re-applies the layout (repainting the title) and refreshes the field — a blank reverts to the
+// registry default.
+document.addEventListener('change', (event) => {
+  const input = event.target.closest && event.target.closest('.card__rename');
+  if (!input) return;
+  const id = cardIdOf(input);
+  if (id) renameCardTitle(id, input.value);
+});
+
+// Object (tile) rename (#54): the arrange-mode label field on each object commits on `change`.
+document.addEventListener('change', (event) => {
+  const input = event.target.closest && event.target.closest('.obj-rename');
+  if (!input) return;
+  const cardId = cardIdOf(input);
+  const objectId = objIdOf(input);
+  if (cardId && objectId) renameObjectLabel(cardId, objectId, input.value);
 });
 
 /* -------------------------------------------------------------- actions */
@@ -231,6 +251,7 @@ const ACTIONS = {
   // Object controls (#54 Phase 5): reorder/hide the tiles & status blocks within a card.
   'move-object-up': (el) => reorderObject(cardIdOf(el), objIdOf(el), -1),
   'move-object-down': (el) => reorderObject(cardIdOf(el), objIdOf(el), 1),
+  'resize-object': (el) => resizeObject(cardIdOf(el), objIdOf(el)),
   'toggle-object-hide': (el) => toggleObject(cardIdOf(el), objIdOf(el)),
 
   'arrange-reset': () => { resetLayout(); activateTab(getTabIds()[0]); },

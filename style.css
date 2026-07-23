@@ -324,7 +324,8 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
      (no hairline-grid strip) — and they read as the movable units #54 will rearrange. */
 }
 .tile > * { width: 100%; }
-.tile--wide { grid-column: 1 / -1; }
+/* Object width (1× / 2× / full) is owned by the layout config (#54 Phase 6): applyObjects
+   writes `grid-column` inline per object, so there is no static width class here anymore. */
 .tile__label {
   font-size: .62rem; font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
@@ -409,6 +410,16 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
   border: 1px solid var(--line); border-radius: 8px;
 }
 
+/* Editable card title (#54): while arranging, an input stands in for the static .card__title
+   (hidden below), sitting where the title was and growing to fill the head. */
+body.is-arranging .card__title { display: none; }
+.card__rename {
+  flex: 1; min-width: 0; min-height: 34px;
+  padding: 0 .5rem; font-size: 1rem; font-weight: 600;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+
 /* The arrange toolbar: hidden except in arrange mode (no `hidden` attr — it would collide
    with the global [hidden] kill-switch; a plain display swap is safe). */
 .arrange-bar { display: none; }
@@ -444,17 +455,31 @@ body.is-arranging .arrange-bar {
 body.is-arranging [data-object] { position: relative; }
 .obj-ctl {
   /* Anchored to the BOTTOM so it never covers the object's top label/heading — you always
-     see what you're moving. */
+     see what you're moving. Fixed narrow width wraps the four buttons into a 2×2 block that
+     fits the narrowest single-column tile (~72px) without overflow. */
   position: absolute; bottom: 2px; right: 2px; z-index: 2;
-  display: flex; gap: 1px; padding: 1px;
+  display: flex; flex-wrap: wrap; justify-content: flex-end; width: 47px; gap: 1px; padding: 1px;
   background: color-mix(in srgb, var(--card) 92%, transparent);
   border: 1px solid var(--line); border-radius: 8px;
 }
 body.is-arranging .obj-ctl, body.is-arranging .obj-ctl * { pointer-events: auto; }
-/* Sized so all three fit within the narrowest single-column tile (~72px) without overflow. */
 .obj-ctl .icon-btn { width: 22px; height: 22px; flex: none; font-size: .75rem; border-radius: 6px; }
 .obj-ctl .icon-btn:disabled { opacity: .3; cursor: default; }
 .obj-ctl .icon-btn.is-off { opacity: .55; } /* the hide toggle once the object is hidden */
+
+/* Editable object (tile) title (#54): an opaque field overlaying the object's top while arranging.
+   The static label(s) sit hidden beneath — `visibility` keeps their box so nothing shifts — so the
+   field simply shows (and edits) the name of whatever you're arranging. */
+body.is-arranging [data-object] .tile__label,
+body.is-arranging [data-object] .subhead { visibility: hidden; }
+.obj-rename {
+  position: absolute; top: 2px; left: 2px; right: 2px; z-index: 2;
+  height: 20px; min-height: 20px; padding: 0 .3rem;
+  font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+body.is-arranging .obj-rename { pointer-events: auto; }
 
 /* A hidden object stays visible-but-dimmed (dashed) while arranging so it can be unhidden;
    outside arrange the `hidden` attribute removes it via the global [hidden] kill-switch. */
@@ -480,7 +505,8 @@ body.is-arranging .card {
   outline: 2px dashed color-mix(in srgb, var(--accent) 40%, transparent);
   outline-offset: 2px;
 }
-body.is-arranging .card__move, body.is-arranging .card__move * { pointer-events: auto; }
+body.is-arranging .card__move, body.is-arranging .card__move *,
+body.is-arranging .card__rename { pointer-events: auto; } /* the rename field must stay interactive */
 body.is-arranging .card__edit,
 body.is-arranging [data-action="add-row"] { display: none; }
 
@@ -669,10 +695,11 @@ body.is-arranging [data-action="add-row"] { display: none; }
 
 /* The seams the #14 card merge created: sections that used to be separate cards. */
 .status__block { margin-top: .9rem; }
-/* Since #54 Phase 5 the status blocks live INSIDE the Combat tiles grid as full-width
-   objects (so they reorder/hide with the tiles). Span every column; the top margin + grid
-   gap together keep the ~.9rem section break they had as siblings. */
-.tiles > .status__block { grid-column: 1 / -1; margin-top: .5rem; }
+/* Since #54 Phase 5 the status blocks live INSIDE the Combat tiles grid as objects (so they
+   reorder/hide/resize with the tiles). Their width (full by default) is owned by the layout
+   config now (#54 Phase 6) — applyObjects writes grid-column inline — so only the spacing that
+   keeps the ~.9rem section break they had as siblings stays here. */
+.tiles > .status__block { margin-top: .5rem; }
 
 /* Conditions disclosure inside the Combat card (#14): closed, the summary line
    lists the active conditions. Print always shows exactly that line — full and
@@ -948,7 +975,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 @media print {
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
-  .sidebar__foot, .banner, .arrange-bar, .card__move, .obj-ctl { display: none !important; }
+  .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename, .obj-ctl, .obj-rename { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }
   /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */

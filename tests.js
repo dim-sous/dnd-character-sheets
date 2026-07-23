@@ -23,11 +23,11 @@ import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from '.
 // here), so its reconciliation is covered exactly like normalizeCharacter above.
 import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
-  moveCard, moveCardToTab, addTab, removeTab, renameTab, moveTab,
-  moveObject, toggleObjectHidden,
+  moveCard, moveCardToTab, renameCard, addTab, removeTab, renameTab, moveTab,
+  moveObject, toggleObjectHidden, setObjectSpan, cycleSpan, renameObject,
 } from './js/layout.js';
 import {
-  CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
+  CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER, OBJECT_SPANS,
 } from './js/layout-registry.js';
 
 const results = [];
@@ -677,6 +677,40 @@ describe('moveCardToTab');
   const empties = moveCardToTab(DEFAULT_LAYOUT, 'abilities', 'combat');
   is('source tab may be left empty', cardsOf(empties, 'abilities'), []);
   is('empty-source layout still normal (no phantom re-home)', normalizeLayout(empties), empties);
+
+  // Moving the objectified Combat card carries its objects along (no silent reset).
+  const tweaked = renameCard(moveObject(DEFAULT_LAYOUT, 'combat', 0, 5), 'combat', 'War');
+  const combatMoved = moveCardToTab(tweaked, 'combat', 'character');
+  const combatCard = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
+  is('moved card keeps its objects', combatCard(combatMoved).objects.length, 13);
+  is('moved card keeps its reordered object state',
+    combatCard(combatMoved).objects.map((o) => o.componentId), combatCard(tweaked).objects.map((o) => o.componentId));
+  is('moved card keeps its custom label', combatCard(combatMoved).label, 'War');
+}
+
+describe('renameCard (#54)');
+{
+  const card = (layout, id) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === id);
+
+  is('default card has no label (uses registry default)', 'label' in card(DEFAULT_LAYOUT, 'combat'), false);
+  is('renameCard sets a custom label', card(renameCard(DEFAULT_LAYOUT, 'combat', 'Fight!'), 'combat').label, 'Fight!');
+  is('renameCard trims the label', card(renameCard(DEFAULT_LAYOUT, 'combat', '  Fight  '), 'combat').label, 'Fight');
+  is('blank label clears the override', 'label' in card(renameCard(renameCard(DEFAULT_LAYOUT, 'combat', 'X'), 'combat', '  '), 'combat'), false);
+  is('only the named card changes', 'label' in card(renameCard(DEFAULT_LAYOUT, 'combat', 'X'), 'attacks'), false);
+  is('unknown card is a no-op', renameCard(DEFAULT_LAYOUT, 'ghost', 'X'), DEFAULT_LAYOUT);
+  is('a custom label survives normalize', card(normalizeLayout(renameCard(DEFAULT_LAYOUT, 'notes', 'Log')), 'notes').label, 'Log');
+  is('a renamed layout survives normalize unchanged',
+    normalizeLayout(renameCard(DEFAULT_LAYOUT, 'combat', 'Fight')), renameCard(DEFAULT_LAYOUT, 'combat', 'Fight'));
+
+  // Reconcile coerces a non-string / empty label away, never storing an empty override.
+  const junk = normalizeLayout({ tabs: [{ id: 'character', cards: [{ componentId: 'notes', label: '   ' }] }] });
+  is('a whitespace-only stored label is dropped', 'label' in card(junk, 'notes'), false);
+
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    renameCard(DEFAULT_LAYOUT, 'combat', 'X');
+    is('renameCard never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
 }
 
 /* ------------------------------------------------- tab CRUD (#54 Phase 4b) */
@@ -746,24 +780,48 @@ describe('normalizeLayout: objects');
   const objIds = (layout) => card(layout, 'combat').objects.map((o) => o.componentId);
   const objCount = (layout, id) => card(layout, 'combat').objects.filter((o) => o.componentId === id).length;
 
+  const objSpan = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id).span;
+
   is('default combat carries all 13 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
   is('default objects all visible', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.hidden === false), true);
   is('a non-objectified card (attacks) has no objects field', 'objects' in card(DEFAULT_LAYOUT, 'attacks'), false);
+
+  // Span (#54 Phase 6): every object carries its registry default span; the small vitals are 1×,
+  // HP/Adjust-HP and the status blocks are full-width — reproducing today's layout.
+  is('default span comes from the registry', objSpan(DEFAULT_LAYOUT, 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
+  is('a small vital defaults to 1×', objSpan(DEFAULT_LAYOUT, 'ac'), 1);
+  is('a status block defaults to full', objSpan(DEFAULT_LAYOUT, 'exhaustion'), 'full');
+  is('every default span is a valid span', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => OBJECT_SPANS.includes(o.span)), true);
 
   // Reconcile: unknown dropped, duplicate collapsed, bare-string coerced, hidden preserved,
   // and every registered object present exactly once (js hosts included — anti-crash).
   const messy = normalizeLayout({
     tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [
-      { componentId: 'ac', hidden: true },
+      { componentId: 'ac', hidden: true, span: 2 },
       { componentId: 'ghost-obj' },
       { componentId: 'ac' },
+      { componentId: 'temp-hp', span: 'huge' },
       'exhaustion',
     ] }] }],
   });
   is('unknown object dropped', objIds(messy).includes('ghost-obj'), false);
   is('duplicate object collapses to one', objCount(messy, 'ac'), 1);
-  is('kept object order honored (ac, exhaustion first)', objIds(messy).slice(0, 2), ['ac', 'exhaustion']);
+  is('kept object order honored (ac, temp-hp, exhaustion first)', objIds(messy).slice(0, 3), ['ac', 'temp-hp', 'exhaustion']);
   is('hidden flag preserved', card(messy, 'combat').objects.find((o) => o.componentId === 'ac').hidden, true);
+  is('valid span preserved', objSpan(messy, 'ac'), 2);
+  is('invalid span coerced to registry default', objSpan(messy, 'temp-hp'), OBJECT_REGISTRY['temp-hp'].defaultSpan);
+
+  // Object label (#54): custom title reconciled like the card's; default objects carry none.
+  is('default object has no label', 'label' in card(DEFAULT_LAYOUT, 'combat').objects[0], false);
+  const labelled = normalizeLayout({
+    tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [
+      { componentId: 'ac', label: '  Armor  ' },
+      { componentId: 'speed', label: '   ' },
+    ] }] }],
+  });
+  const obj = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id);
+  is('custom object label preserved (trimmed)', obj(labelled, 'ac').label, 'Armor');
+  is('whitespace-only object label dropped', 'label' in obj(labelled, 'speed'), false);
   is('every registered object present exactly once', objIds(messy).slice().sort(), [...COMBAT_OBJS].sort());
   is('js-host objects all present (anti-crash, one level down)',
     JS_OBJS.every((id) => objCount(messy, id) === 1), true);
@@ -804,6 +862,60 @@ describe('moveObject / toggleObjectHidden');
     moveObject(DEFAULT_LAYOUT, 'combat', 0, 3);
     toggleObjectHidden(DEFAULT_LAYOUT, 'combat', 'ac');
     is('object mutators never mutate the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+}
+
+describe('setObjectSpan / cycleSpan (#54 Phase 6)');
+{
+  const combat = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
+  const spanOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).span;
+
+  // cycleSpan steps 1 → 2 → full → 1, and tolerates a junk input by re-entering the cycle.
+  is('cycle 1 → 2', cycleSpan(1), 2);
+  is('cycle 2 → full', cycleSpan(2), 'full');
+  is('cycle full → 1', cycleSpan('full'), 1);
+  is('cycle covers every span exactly once', [1, cycleSpan(1), cycleSpan(cycleSpan(1))].sort(), [...OBJECT_SPANS].sort());
+  is('cycle of a junk value lands on a valid span', OBJECT_SPANS.includes(cycleSpan('junk')), true);
+
+  // setObjectSpan sets one object's width, coerces junk to the registry default, no-ops elsewhere.
+  is('sets a valid span', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full'), 'ac'), 'full');
+  is('only that object changes', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full'), 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
+  is('junk span coerced to registry default', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'wat'), 'ac'), OBJECT_REGISTRY.ac.defaultSpan);
+  is('unknown object is a no-op', setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ghost', 2), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', setObjectSpan(DEFAULT_LAYOUT, 'attacks', 'ac', 2), DEFAULT_LAYOUT);
+  is('a resized layout survives normalize unchanged',
+    normalizeLayout(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 2)), setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 2));
+
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full');
+    is('setObjectSpan never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+}
+
+describe('renameObject (#54)');
+{
+  const obj = (layout, id) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat')
+    .objects.find((o) => o.componentId === id);
+
+  is('renameObject sets a custom label', obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor'), 'ac').label, 'Armor');
+  is('renameObject trims the label', obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', '  Armor  '), 'ac').label, 'Armor');
+  is('blank label clears the override',
+    'label' in obj(renameObject(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X'), 'combat', 'ac', ' '), 'ac'), false);
+  is('only the named object changes', 'label' in obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X'), 'speed'), false);
+  is('rename keeps hidden + span intact', (() => {
+    const o = obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor'), 'ac');
+    return o.hidden === false && o.span === OBJECT_REGISTRY.ac.defaultSpan;
+  })(), true);
+  is('unknown object is a no-op', renameObject(DEFAULT_LAYOUT, 'combat', 'ghost', 'X'), DEFAULT_LAYOUT);
+  is('unknown card is a no-op', renameObject(DEFAULT_LAYOUT, 'attacks', 'ac', 'X'), DEFAULT_LAYOUT);
+  is('a renamed-object layout survives normalize unchanged',
+    normalizeLayout(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor')), renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor'));
+
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X');
+    is('renameObject never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
   }
 }
 

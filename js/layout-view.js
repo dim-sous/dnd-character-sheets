@@ -8,8 +8,9 @@
  */
 
 import {
-  DEFAULT_LAYOUT, normalizeLayout, moveCard, moveCardToTab,
+  DEFAULT_LAYOUT, normalizeLayout, moveCard, moveCardToTab, renameCard,
   addTab, removeTab, renameTab, moveTab, moveObject, toggleObjectHidden,
+  setObjectSpan, cycleSpan, renameObject,
 } from './layout.js';
 import { CARD_REGISTRY, OBJECT_REGISTRY } from './layout-registry.js';
 import { newId } from './constants.js';
@@ -97,10 +98,20 @@ function ensurePanel(id) {
   return panel;
 }
 
+/** An object's span expressed as a `grid-column` value. Config owns object width now (#54
+ *  Phase 6), so it is written inline on every object — beating the static `.tiles` rules — and
+ *  span `1` becomes explicit `auto` so a shrunk full-width object drops back to one track. */
+function spanToGridColumn(span) {
+  if (span === 'full') return '1 / -1';
+  if (span === 2) return 'span 2';
+  return 'auto';
+}
+
 /**
- * Order a card's objects within their grid container and apply each one's hidden state (#54
- * Phase 5). Relocation by identity, like cards: a hidden object keeps its render.js host in the
- * DOM (present-but-hidden), so nothing dereferences null. No-op for a card without objects.
+ * Order a card's objects within their grid container and apply each one's hidden state and span
+ * (#54 Phase 5/6). Relocation by identity, like cards: a hidden object keeps its render.js host
+ * in the DOM (present-but-hidden), so nothing dereferences null. Width is written inline so the
+ * layout config is the single source of truth for it. No-op for a card without objects.
  */
 function applyObjects(cardNode, card) {
   if (!card.objects || !card.objects.length) return;
@@ -111,6 +122,13 @@ function applyObjects(cardNode, card) {
     const objNode = cardNode.querySelector(`[data-object="${obj.componentId}"]`);
     if (!objNode) continue;
     container.append(objNode); // reorder into config order
+    objNode.style.gridColumn = spanToGridColumn(obj.span); // config-owned width (#54 Phase 6)
+    // Config-owned title (#54): write to EVERY label node so multi-label objects (Conditions
+    // has a visually-hidden heading + a visible summary title) rename together. Default = the
+    // registry label, which matches the static markup, so it's a no-op.
+    const reg = OBJECT_REGISTRY[obj.componentId];
+    const label = obj.label || (reg && reg.label) || obj.componentId;
+    for (const node of objNode.querySelectorAll('.tile__label, .subhead')) node.textContent = label;
     const isHidden = Boolean(obj.hidden);
     objNode.classList.toggle('is-hidden', isHidden);
     // The real display:none only OUTSIDE arrange mode; while arranging a hidden object stays
@@ -142,7 +160,12 @@ export function applyLayout() {
     for (const card of tab.cards) {
       const reg = CARD_REGISTRY[card.componentId];
       const node = reg && document.querySelector(reg.sel);
-      if (node) { panel.append(node); applyObjects(node, card); }
+      if (node) {
+        const title = node.querySelector('.card__title');
+        if (title) title.textContent = card.label || reg.label; // config-owned title (#54)
+        panel.append(node);
+        applyObjects(node, card);
+      }
     }
   }
 
@@ -251,6 +274,21 @@ function renderArrangeControls() {
     if (!pos || !head) continue;
     const label = (CARD_REGISTRY[id] && CARD_REGISTRY[id].label) || id;
 
+    // Editable card title (#54): an input that stands in for the (CSS-hidden) .card__title while
+    // arranging. Prefilled with the current display title (custom override or registry default);
+    // never clobbered while the player is typing in it.
+    const cfg = currentLayout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === id);
+    const displayTitle = (cfg && cfg.label) || label;
+    let rename = head.querySelector('.card__rename');
+    if (!rename) {
+      rename = document.createElement('input');
+      rename.type = 'text';
+      rename.className = 'card__rename';
+      head.insertBefore(rename, head.firstChild); // sits where the title is
+    }
+    rename.setAttribute('aria-label', `Rename ${displayTitle} card`);
+    if (document.activeElement !== rename) rename.value = displayTitle;
+
     let group = head.querySelector('.card__move');
     if (!group) {
       group = document.createElement('div');
@@ -271,6 +309,20 @@ function renderArrangeControls() {
 
 function removeArrangeControls() {
   for (const group of document.querySelectorAll('.card__move')) group.remove();
+  for (const input of document.querySelectorAll('.card__rename')) input.remove();
+}
+
+/**
+ * Commit a card-title edit (#54): store the new label (blank reverts to the registry default),
+ * persist, and re-apply so the title paints everywhere. Refresh the controls so the field
+ * reflects the stored value (e.g. a blanked entry snapping back to the default).
+ */
+export function renameCardTitle(componentId, label) {
+  currentLayout = renameCard(currentLayout, componentId, label);
+  saveLayout();
+  applyLayout();
+  renderArrangeControls();
+  announce('Card renamed.');
 }
 
 function announce(message) {
@@ -384,12 +436,23 @@ function objButton(action, glyph) {
   return btn;
 }
 
-/** Where an object sits within its card: index, count, and its hidden flag. */
+/** Where an object sits within its card: index, count, its hidden flag, and its span. */
 function objectPosition(cardId, objectId) {
   const card = currentLayout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === cardId);
   if (!card || !card.objects) return null;
   const i = card.objects.findIndex((o) => o.componentId === objectId);
-  return i === -1 ? null : { index: i, count: card.objects.length, hidden: card.objects[i].hidden };
+  if (i === -1) return null;
+  const obj = card.objects[i];
+  return {
+    index: i, count: card.objects.length, hidden: obj.hidden, span: obj.span, label: obj.label,
+  };
+}
+
+/** Human-readable width, for the resize control's label + the announcement. */
+function spanLabel(span) {
+  if (span === 'full') return 'full width';
+  if (span === 2) return 'double width';
+  return 'normal width';
 }
 
 /**
@@ -405,6 +468,18 @@ function renderObjectControls() {
     const pos = objectPosition(reg.card, objectId);
     if (!pos) continue;
 
+    // Editable object title (#54): an opaque field overlaying the object's top; the static label
+    // text sits hidden beneath it (CSS), so you always see the name of what you're arranging.
+    let rename = objNode.querySelector('.obj-rename');
+    if (!rename) {
+      rename = document.createElement('input');
+      rename.type = 'text';
+      rename.className = 'obj-rename';
+      objNode.append(rename); // absolutely positioned, so DOM order doesn't matter
+    }
+    rename.setAttribute('aria-label', `Rename ${reg.label} tile`);
+    if (document.activeElement !== rename) rename.value = pos.label || reg.label;
+
     let ctl = objNode.querySelector('.obj-ctl');
     if (!ctl) {
       ctl = document.createElement('div');
@@ -412,15 +487,17 @@ function renderObjectControls() {
       ctl.append(
         objButton('move-object-up', '↑'),
         objButton('move-object-down', '↓'),
+        objButton('resize-object', '↔'),
         objButton('toggle-object-hide', '👁'),
       );
       objNode.append(ctl);
     }
-    const [up, down, hide] = ctl.querySelectorAll('button');
+    const [up, down, resize, hide] = ctl.querySelectorAll('button');
     up.setAttribute('aria-label', `Move ${reg.label} up`);
     down.setAttribute('aria-label', `Move ${reg.label} down`);
     up.disabled = pos.index === 0;
     down.disabled = pos.index === pos.count - 1;
+    resize.setAttribute('aria-label', `Resize ${reg.label} (${spanLabel(pos.span)})`);
     hide.setAttribute('aria-label', pos.hidden ? `Show ${reg.label}` : `Hide ${reg.label}`);
     hide.setAttribute('aria-pressed', String(pos.hidden));
     hide.classList.toggle('is-off', pos.hidden);
@@ -429,6 +506,20 @@ function renderObjectControls() {
 
 function removeObjectControls() {
   for (const ctl of document.querySelectorAll('.obj-ctl')) ctl.remove();
+  for (const input of document.querySelectorAll('.obj-rename')) input.remove();
+}
+
+/**
+ * Commit an object-title edit (#54): store the new label (blank reverts to the registry label),
+ * persist, re-apply (repaints every label node), and refresh the controls so the field reflects
+ * the stored value.
+ */
+export function renameObjectLabel(cardId, objectId, label) {
+  currentLayout = renameObject(currentLayout, cardId, objectId, label);
+  saveLayout();
+  applyLayout();
+  renderObjectControls();
+  announce('Tile renamed.');
 }
 
 /** Move an object up/down within its card; persist, re-apply, keep focus. */
@@ -451,6 +542,20 @@ export function reorderObject(cardId, objectId, delta) {
     const t = wanted && !wanted.disabled ? wanted : (delta < 0 ? down : up);
     if (t && !t.disabled) t.focus();
   }
+}
+
+/** Cycle an object's width (1 → 2 → full → 1); persist, re-apply, refresh, announce, keep focus. */
+export function resizeObject(cardId, objectId) {
+  const pos = objectPosition(cardId, objectId);
+  if (!pos) return;
+  const next = cycleSpan(pos.span);
+  currentLayout = setObjectSpan(currentLayout, cardId, objectId, next);
+  saveLayout();
+  applyLayout();
+  renderObjectControls();
+  const reg = OBJECT_REGISTRY[objectId];
+  announce(`${reg ? reg.label : objectId} set to ${spanLabel(next)}.`);
+  document.querySelector(`[data-object="${objectId}"] .obj-ctl button[data-action="resize-object"]`)?.focus();
 }
 
 /** Hide or show an object; persist, re-apply, refresh, announce. */
