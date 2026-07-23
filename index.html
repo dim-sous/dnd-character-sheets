@@ -80,52 +80,91 @@
           <!-- hit points + combat stats + status + conditions, one card (#14): every host
                inside is addressed by id or data-attribute, so relocating them changes
                nothing in render.js. card--flow: print lets the tall card fragment. -->
-          <section class="card card--flow">
-            <h2 class="card__title">Combat</h2>
-            <div class="hp">
-              <button type="button" class="hp__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
-              <div class="hp__readout">
-                <label class="visually-hidden" for="f-hp-current">Current hit points</label>
-                <input class="hp__cur" id="f-hp-current" type="number" inputmode="numeric" data-bind="hp.current" data-type="number">
-                <span class="hp__slash" aria-hidden="true">/</span>
-                <label class="visually-hidden" for="f-hp-max">Maximum hit points</label>
-                <input class="hp__max" id="f-hp-max" type="number" inputmode="numeric" data-bind="hp.max" data-type="number">
+          <section class="card card--flow" data-editcard="combat">
+            <div class="list__head">
+              <h2 class="card__title">Combat</h2>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="combat" aria-pressed="false">Edit</button>
+            </div>
+            <!-- Every box below is the same "tile": a label (shell) + a body that is
+                 either a value⇄input pair (authored, swaps on the card's Edit) or a
+                 live control (data-live). Uniform tiles in one grid = the #54 groundwork. -->
+            <div class="tiles">
+              <div class="tile tile--wide">
+                <span class="tile__label">Hit Points</span>
+                <div class="hp">
+                  <button type="button" class="hp__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
+                  <div class="hp__readout">
+                    <label class="visually-hidden" for="f-hp-current">Current hit points</label>
+                    <input class="hp__cur" id="f-hp-current" type="number" inputmode="numeric" data-bind="hp.current" data-type="number" data-live>
+                    <span class="hp__slash" aria-hidden="true">/</span>
+                    <label class="visually-hidden" for="f-hp-max">Maximum hit points</label>
+                    <input class="hp__max" id="f-hp-max" type="number" inputmode="numeric" data-bind="hp.max" data-type="number" data-live>
+                  </div>
+                  <button type="button" class="hp__step" data-action="hp-inc" aria-label="Gain one hit point">+</button>
+                </div>
               </div>
-              <button type="button" class="hp__step" data-action="hp-inc" aria-label="Gain one hit point">+</button>
-            </div>
-            <div class="hp__work">
-              <p class="field field--narrow"><label for="f-hp-temp">Temp</label>
-                <input id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number"></p>
-              <p class="field field--narrow"><label for="f-hp-amount">Amount</label>
-                <input id="f-hp-amount" type="number" inputmode="numeric" placeholder="0"></p>
-              <button type="button" class="btn btn--danger btn--small" data-action="damage">Damage</button>
-              <button type="button" class="btn btn--good btn--small" data-action="heal">Heal</button>
-            </div>
 
-            <div class="vitals">
-              <div class="vital">
-                <label class="vital__label" for="f-ac">AC</label>
-                <input class="vital__input" id="f-ac" type="number" inputmode="numeric" data-bind="ac" data-type="number">
+              <div class="tile tile--wide">
+                <span class="tile__label">Adjust HP</span>
+                <div class="tile__body tile__body--actions">
+                  <!-- Amount stays grouped with Damage/Heal: those actions read it imperatively. -->
+                  <label class="visually-hidden" for="f-hp-amount">Amount</label>
+                  <input class="tile__input" id="f-hp-amount" type="number" inputmode="numeric" placeholder="0" data-live>
+                  <button type="button" class="btn btn--danger btn--small" data-action="damage">Damage</button>
+                  <button type="button" class="btn btn--good btn--small" data-action="heal">Heal</button>
+                </div>
               </div>
-              <div class="vital">
-                <span class="vital__label">Initiative</span>
-                <output class="vital__value" data-derived="initiative">+0</output>
+
+              <div class="tile">
+                <span class="tile__label">Temp HP</span>
+                <div class="tile__body">
+                  <label class="visually-hidden" for="f-hp-temp">Temporary hit points</label>
+                  <input class="tile__input" id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number" data-live>
+                </div>
               </div>
-              <div class="vital">
-                <label class="vital__label" for="f-speed">Speed</label>
-                <input class="vital__input" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number">
+
+              <div class="tile">
+                <span class="tile__label">Rest</span>
+                <div class="tile__body">
+                  <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
+                </div>
               </div>
-              <div class="vital">
-                <span class="vital__label">Prof. Bonus</span>
-                <output class="vital__value" data-derived="pb">+2</output>
+
+              <div class="tile">
+                <span class="tile__label">AC</span>
+                <div class="tile__body">
+                  <output class="tile__value" data-derived="raw.ac">—</output>
+                  <input class="tile__input" id="f-ac" type="number" inputmode="numeric" data-bind="ac" data-type="number" aria-label="Armor Class">
+                </div>
               </div>
-              <div class="vital vital--toggle">
-                <span class="vital__label">Heroic Insp.</span>
-                <label class="switch">
-                  <input type="checkbox" data-bind="heroicInspiration" data-type="checkbox">
-                  <span class="switch__track" aria-hidden="true"></span>
-                  <span class="visually-hidden">Heroic Inspiration</span>
-                </label>
+
+              <div class="tile">
+                <span class="tile__label">Initiative</span>
+                <div class="tile__body">
+                  <output class="tile__value" data-derived="initiative">+0</output>
+                </div>
+              </div>
+
+              <div class="tile">
+                <span class="tile__label">Speed</span>
+                <div class="tile__body">
+                  <output class="tile__value" data-derived="raw.speed">—</output>
+                  <input class="tile__input" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number" aria-label="Speed">
+                </div>
+              </div>
+
+              <div class="tile">
+                <span class="tile__label">Prof. Bonus</span>
+                <div class="tile__body">
+                  <output class="tile__value" data-derived="pb">+2</output>
+                </div>
+              </div>
+
+              <div class="tile">
+                <span class="tile__label">Heroic Insp.</span>
+                <div class="tile__body">
+                  <input type="checkbox" class="toggle" id="f-heroic" data-bind="heroicInspiration" data-type="checkbox" data-live aria-label="Heroic Inspiration">
+                </div>
               </div>
             </div>
             <div class="status__block">
@@ -173,10 +212,13 @@
           </section>
 
           <!-- attacks -->
-          <section class="card">
+          <section class="card" data-editcard="attacks">
             <div class="list__head">
               <h2 class="card__title">Attacks</h2>
-              <button type="button" class="btn btn--small" data-action="add-row" data-list="attacks">+ Add</button>
+              <div class="head-actions">
+                <button type="button" class="btn btn--small" data-action="add-row" data-list="attacks">+ Add</button>
+                <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="attacks" aria-pressed="false">Edit</button>
+              </div>
             </div>
             <ul class="rows" id="attacks"></ul>
           </section>
@@ -189,10 +231,10 @@
           <!-- abilities + saves + skills, one card: each ability heads its own save
                and skills (#14). card--flow: taller than a print column, so print
                lets it fragment at group boundaries -->
-          <section class="card card--flow">
+          <section class="card card--flow" data-editcard="abilities">
             <div class="list__head">
               <h2 class="card__title">Abilities &amp; Skills</h2>
-              <button type="button" class="btn btn--small" id="btn-skills-edit" data-action="toggle-skills-edit">Edit</button>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="abilities" aria-pressed="false">Edit</button>
             </div>
             <div class="inline-fields">
               <p class="field field--narrow"><label for="f-init-bonus">Init bonus</label>
@@ -219,8 +261,11 @@
         <!-- ===================================================== Spells -->
         <section class="tabpanel" id="panel-spells" role="tabpanel" aria-labelledby="tab-spells" tabindex="0" hidden>
 
-          <section class="card" id="card-spellcasting">
-            <h2 class="card__title">Spellcasting</h2>
+          <section class="card" id="card-spellcasting" data-editcard="spellcasting">
+            <div class="list__head">
+              <h2 class="card__title">Spellcasting</h2>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="spellcasting" aria-pressed="false">Edit</button>
+            </div>
             <div class="inline-fields">
               <p class="field"><label for="f-spell-ability">Spellcasting ability</label>
                 <select id="f-spell-ability" data-bind="spellcasting.ability" data-structural="true">
@@ -235,23 +280,23 @@
             </div>
 
             <div id="spell-body" hidden>
-              <div class="spell-stats">
-                <div class="vital">
-                  <span class="vital__label">Spell save DC</span>
-                  <output class="vital__value" data-derived="spellDC">—</output>
+              <div class="tiles spell-stats">
+                <div class="tile">
+                  <span class="tile__label">Spell save DC</span>
+                  <div class="tile__body">
+                    <output class="tile__value" data-derived="spellDC">—</output>
+                  </div>
                 </div>
-                <div class="vital">
-                  <span class="vital__label">Spell attack</span>
-                  <output class="vital__value" data-derived="spellAtk">—</output>
+                <div class="tile">
+                  <span class="tile__label">Spell attack</span>
+                  <div class="tile__body">
+                    <output class="tile__value" data-derived="spellAtk">—</output>
+                  </div>
                 </div>
               </div>
 
               <div class="slots__head">
                 <h3 class="subhead">Spell Slots</h3>
-                <div class="slots__actions">
-                  <button type="button" class="btn btn--small" id="btn-slot-setup" data-action="toggle-slot-setup">Edit slots</button>
-                  <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
-                </div>
               </div>
               <div class="slots" id="slots"></div>
             </div>
@@ -263,32 +308,38 @@
         <section class="tabpanel" id="panel-gear" role="tabpanel" aria-labelledby="tab-gear" tabindex="0" hidden>
 
           <!-- inventory -->
-          <section class="card">
+          <section class="card" data-editcard="inventory">
             <div class="list__head">
               <h2 class="card__title">Inventory</h2>
-              <button type="button" class="btn btn--small" data-action="add-row" data-list="inventory">+ Add</button>
+              <div class="head-actions">
+                <button type="button" class="btn btn--small" data-action="add-row" data-list="inventory">+ Add</button>
+                <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="inventory" aria-pressed="false">Edit</button>
+              </div>
             </div>
             <ul class="rows" id="inventory"></ul>
             <h3 class="subhead">Currency</h3>
             <div class="currency">
               <p class="field field--narrow"><label for="f-cp">CP</label>
-                <input id="f-cp" type="number" inputmode="numeric" data-bind="currency.cp" data-type="number"></p>
+                <input id="f-cp" type="number" inputmode="numeric" data-bind="currency.cp" data-type="number" data-live></p>
               <p class="field field--narrow"><label for="f-sp">SP</label>
-                <input id="f-sp" type="number" inputmode="numeric" data-bind="currency.sp" data-type="number"></p>
+                <input id="f-sp" type="number" inputmode="numeric" data-bind="currency.sp" data-type="number" data-live></p>
               <p class="field field--narrow"><label for="f-ep">EP</label>
-                <input id="f-ep" type="number" inputmode="numeric" data-bind="currency.ep" data-type="number"></p>
+                <input id="f-ep" type="number" inputmode="numeric" data-bind="currency.ep" data-type="number" data-live></p>
               <p class="field field--narrow"><label for="f-gp">GP</label>
-                <input id="f-gp" type="number" inputmode="numeric" data-bind="currency.gp" data-type="number"></p>
+                <input id="f-gp" type="number" inputmode="numeric" data-bind="currency.gp" data-type="number" data-live></p>
               <p class="field field--narrow"><label for="f-pp">PP</label>
-                <input id="f-pp" type="number" inputmode="numeric" data-bind="currency.pp" data-type="number"></p>
+                <input id="f-pp" type="number" inputmode="numeric" data-bind="currency.pp" data-type="number" data-live></p>
             </div>
           </section>
 
           <!-- features -->
-          <section class="card">
+          <section class="card" data-editcard="features">
             <div class="list__head">
               <h2 class="card__title">Features &amp; Traits</h2>
-              <button type="button" class="btn btn--small" data-action="add-row" data-list="features">+ Add</button>
+              <div class="head-actions">
+                <button type="button" class="btn btn--small" data-action="add-row" data-list="features">+ Add</button>
+                <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="features" aria-pressed="false">Edit</button>
+              </div>
             </div>
             <ul class="rows" id="features"></ul>
           </section>
@@ -299,8 +350,11 @@
         <section class="tabpanel" id="panel-character" role="tabpanel" aria-labelledby="tab-character" tabindex="0" hidden>
 
           <!-- identity -->
-          <section class="card">
-            <h2 class="card__title">Identity</h2>
+          <section class="card" data-editcard="identity">
+            <div class="list__head">
+              <h2 class="card__title">Identity</h2>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="identity" aria-pressed="false">Edit</button>
+            </div>
             <div class="field-grid">
               <p class="field"><label for="f-name">Name</label>
                 <input id="f-name" type="text" data-bind="name" autocomplete="off"></p>
@@ -322,8 +376,11 @@
           </section>
 
           <!-- notes -->
-          <section class="card">
-            <h2 class="card__title">Notes</h2>
+          <section class="card" data-editcard="notes">
+            <div class="list__head">
+              <h2 class="card__title">Notes</h2>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="notes" aria-pressed="false">Edit</button>
+            </div>
             <label class="visually-hidden" for="f-notes">Notes</label>
             <textarea id="f-notes" rows="8" data-bind="notes"></textarea>
           </section>
@@ -414,7 +471,7 @@
 
 <template id="tpl-chip">
   <label class="chip">
-    <input type="checkbox" class="chip__box">
+    <input type="checkbox" class="chip__box" data-live>
     <span class="chip__text"></span>
   </label>
 </template>
@@ -466,7 +523,7 @@
       <option value="d10">d10</option>
       <option value="d12">d12</option>
     </select>
-    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="remaining" data-type="number" placeholder="0" aria-label="Hit Point Dice remaining">
+    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="remaining" data-type="number" placeholder="0" aria-label="Hit Point Dice remaining" data-live>
     <span class="row__of" aria-hidden="true">/</span>
     <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="total" data-type="number" placeholder="0" aria-label="Hit Point Dice total">
     <button type="button" class="row__remove" data-action="remove-row" data-list="hitDice" aria-label="Remove Hit Point Dice pool">✕</button>

@@ -70,11 +70,64 @@ export function invalidateRoster() {
 /* ------------------------------------------------------- static sections */
 
 /**
- * Transient view state, like slot setup mode: collapsed shows one Total plus a
- * discreet prof/expertise marker per skill; edit mode reveals the checkboxes and
- * the misc-bonus input to change them. Never stored on the character.
+ * Per-card edit mode. A card in this set reveals its editing affordances — the ability
+ * scores + per-skill checkboxes/misc-bonus inputs, the spell-slot totals, and its list
+ * Add / remove (✕) controls — and unlocks its authored fields, all via the `.is-editing`
+ * class on that card (each editable card carries `data-editcard` + a header Edit button).
+ * Never stored on the character: it's a display preference, not sheet data.
+ *
+ * Persistent across a structural rebuild (unlike a keystroke) so that adding a row while
+ * editing doesn't bounce you out; cleared only when a different character is opened (see
+ * renderSheet). Modelled on activeTabKey, not a transient flag.
  */
-let skillsEditMode = false;
+let editCards = new Set();
+
+/**
+ * Reflect editCards into the DOM: the `.is-editing` class each reveal keys off, each card's
+ * Edit button label + pressed state, and the per-field read-only lock. Idempotent — safe on
+ * every render.
+ */
+function applyEditState() {
+  for (const card of $$('[data-editcard]')) {
+    const on = editCards.has(card.dataset.editcard);
+    card.classList.toggle('is-editing', on);
+    const btn = $('.card__edit', card);
+    if (btn) {
+      btn.textContent = on ? 'Done' : 'Edit';
+      btn.setAttribute('aria-pressed', String(on));
+    }
+
+    // Lock authored fields in view mode; Edit unlocks them. Only the always-live play
+    // controls stay editable everywhere — HP current/max/temp + the Damage/Heal amount,
+    // heroic inspiration, the hit-dice "current" count, conditions, and currency — tagged
+    // `data-live` in the markup. (Damage/Heal/Long-rest and the death-save/exhaustion/slot
+    // pips are buttons, so they're live regardless.) Values are still written by
+    // renderDerived; readOnly/disabled only block the user. Selects and checkboxes ignore
+    // readOnly, so they take `disabled` instead.
+    for (const field of $$('input, textarea, select', card)) {
+      const locked = !on && !field.hasAttribute('data-live');
+      if (field.tagName === 'SELECT' || field.type === 'checkbox' || field.type === 'radio') {
+        field.disabled = locked;
+      } else {
+        field.readOnly = locked;
+      }
+    }
+  }
+}
+
+/**
+ * Flip one card between view and edit mode. The Spellcasting card rebuilds its slot rows
+ * first (setup mode adds the empty levels + the total inputs) so the lock pass then sees
+ * the fresh inputs; the other cards reveal purely via CSS, so a class toggle plus a derived
+ * pass is enough.
+ */
+export function toggleCardEdit(char, cardId) {
+  if (editCards.has(cardId)) editCards.delete(cardId);
+  else editCards.add(cardId);
+  if (cardId === 'spellcasting') renderSlots(char);
+  applyEditState();
+  renderDerived(char);
+}
 
 /**
  * One group per ability: score + modifier in the header row, then its saving
@@ -84,9 +137,6 @@ let skillsEditMode = false;
  */
 function renderAbilities(char) {
   const host = $('#abilities');
-  // Scoped to the whole panel, not just #abilities, so the same flag also shows/hides
-  // the Init bonus / All-skills bonus fields that live alongside it in the card.
-  $('#panel-abilities').classList.toggle('abilities--editing', skillsEditMode);
   host.replaceChildren();
 
   for (const ability of ABILITIES) {
@@ -152,16 +202,6 @@ function renderAbilities(char) {
 
     host.append(node);
   }
-
-  const toggle = $('#btn-skills-edit');
-  if (toggle) toggle.textContent = skillsEditMode ? 'Done' : 'Edit';
-}
-
-/** Flip between the collapsed view and edit mode, then rebuild what the flip changes. */
-export function toggleSkillsEdit(char) {
-  skillsEditMode = !skillsEditMode;
-  renderAbilities(char);
-  renderDerived(char);
 }
 
 function renderConditions() {
@@ -218,21 +258,15 @@ function paintSlotPipRow(row, char) {
     (i, n) => `Level ${level} slot ${i + 1} of ${n}`);
 }
 
-/**
- * Transient view state, like the active tab: setup mode shows all nine levels with
- * their editable totals; play mode shows only levels that have slots, with a
- * remaining/total count instead. Never stored on the character — it is not
- * character data, and persisting it would leak layout into every export.
- */
-let slotSetupMode = false;
-
 function renderSlots(char) {
   const host = $('#slots');
   host.replaceChildren();
 
-  // Play mode hides levels with no slots (#9) — a level-5 wizard shouldn't scroll
-  // past six dead rows. Setup mode is where empty levels come back to be filled in.
-  const levels = slotSetupMode
+  // Setup mode = the Spellcasting card is in edit mode (editCards): it shows all nine
+  // levels with their editable totals. Play mode hides levels with no slots (#9) — a
+  // level-5 wizard shouldn't scroll past six dead rows — and shows a remaining/total count.
+  const setup = editCards.has('spellcasting');
+  const levels = setup
     ? SPELL_LEVELS
     : SPELL_LEVELS.filter((level) => char.spellcasting.slots[level].total > 0);
 
@@ -253,8 +287,8 @@ function renderSlots(char) {
 
     // The third grid column is the count in play mode, the total input in setup
     // mode. Both live in the template so the row shape never changes.
-    $('.slot__total', node).hidden = !slotSetupMode;
-    $('.slot__count', node).hidden = slotSetupMode;
+    $('.slot__total', node).hidden = !setup;
+    $('.slot__count', node).hidden = setup;
 
     paintSlotPipRow(node, char);
 
@@ -262,23 +296,13 @@ function renderSlots(char) {
   }
 
   // A brand-new caster has every total at 0, so the play-mode filter would show
-  // nothing and the card would look broken (#9). Point at the Edit slots button.
+  // nothing and the card would look broken (#9). Point at the Edit button.
   if (levels.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'rows__empty';
-    empty.textContent = 'No spell slots yet — use “Edit slots” to set them up.';
+    empty.textContent = 'No spell slots yet — use Edit to set them up.';
     host.append(empty);
   }
-
-  const toggle = $('#btn-slot-setup');
-  if (toggle) toggle.textContent = slotSetupMode ? 'Done' : 'Edit slots';
-}
-
-/** Flip between play and setup mode, then rebuild the rows the flip changes. */
-export function toggleSlotSetup(char) {
-  slotSetupMode = !slotSetupMode;
-  renderSlots(char);
-  renderDerived(char);
 }
 
 /**
@@ -326,7 +350,7 @@ function renderRows(char, listName) {
   if (items.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'rows__empty';
-    empty.textContent = 'Nothing here yet.';
+    empty.textContent = 'Nothing here yet — tap Edit to add.';
     host.append(empty);
   }
 }
@@ -425,20 +449,20 @@ export function renderSheet(char) {
     // renderDerived never runs without a character, so clear this here or it
     // survives the deletion of the last (bloodied) character.
     document.body.classList.remove('is-bloodied');
+    editCards.clear();
     return;
   }
 
   const focusToken = captureFocus();
 
-  // Skills edit mode is transient, like slot setup: any full rebuild (opening a
-  // character, a structural change) drops back to the collapsed view.
-  skillsEditMode = false;
+  // Edit mode is a display preference, not sheet data: opening a DIFFERENT character
+  // starts in view mode. Within the same character it persists across structural
+  // rebuilds (so adding a row mid-edit doesn't bounce you out) — cleared here on the
+  // id change, mirroring how syncActiveTab resets the active tab below.
+  if (char.id !== renderedCharId) editCards.clear();
   renderAbilities(char);
   renderConditions();
   renderStatusPips();
-  // Setup mode is transient, like the active tab: any full rebuild (opening a
-  // character, a structural change) drops back to play mode.
-  slotSetupMode = false;
   renderSlots(char);
   for (const listName of Object.keys(ROW_TEMPLATE_IDS)) renderRows(char, listName);
 
@@ -450,6 +474,7 @@ export function renderSheet(char) {
   }
 
   syncActiveTab(char);
+  applyEditState();
   renderDerived(char);
   restoreFocus(focusToken);
 }
@@ -457,7 +482,10 @@ export function renderSheet(char) {
 /* ------------------------------------------------------ derived readouts */
 
 function derivedValue(char, key) {
-  const [kind, arg] = key.split('.');
+  // Multi-segment safe: `raw.hp.temp` → kind 'raw', arg 'hp.temp'. Single-segment keys
+  // (mod.str, save.dex …) are unaffected — rest is just the one segment.
+  const [kind, ...rest] = key.split('.');
+  const arg = rest.join('.');
   switch (kind) {
     case 'mod': return rules.formatMod(rules.modFor(char, arg));
     case 'score': return String(char.abilities[arg]);
@@ -479,6 +507,12 @@ function derivedValue(char, key) {
     case 'spellAtk': {
       const atk = rules.spellAttackBonus(char);
       return atk === null ? '—' : rules.formatMod(atk);
+    }
+    // A tile's view-mode readout of a plain STORED value (AC, Speed…): no rules.js
+    // function, just echo the bound value so the field reads as text until Edit.
+    case 'raw': {
+      const v = getByPath(char, arg);
+      return v === null || v === undefined || v === '' ? '—' : String(v);
     }
     default: return '';
   }

@@ -102,7 +102,13 @@ input[type="text"], input[type="number"], select, textarea {
   font-variant-numeric: tabular-nums;
 }
 
-textarea { min-height: 5rem; resize: vertical; line-height: 1.5; }
+/* field-sizing grows the box to fit its text so a long Feature/Notes entry never needs
+   an inner scrollbar (painful on a phone). Where unsupported, min-height + resize:vertical
+   are the fallback. The `rows` attributes stay as the non-supporting default height. */
+textarea { min-height: 5rem; resize: vertical; line-height: 1.5; field-sizing: content; }
+
+/* Notes would otherwise collapse to the 5rem floor when empty; keep it roomy to write in. */
+#f-notes { min-height: 12rem; }
 
 input[type="number"] { text-align: center; }
 
@@ -111,12 +117,40 @@ input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
 
+/* One reusable checkbox used everywhere a checkbox appears (skill proficiency/expertise,
+   conditions, heroic inspiration) so none fall back to the raw browser tick box: a themed
+   box that fills accent with a white check when on. */
 input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  /* No `display` here on purpose: `input[type=checkbox]` (0,1,1) would outrank the
+     `.skill__prof{display:none}` (0,1,0) that hides prof/exp in the collapsed skills
+     view. Keep the UA inline-block and centre the check via absolute positioning. */
+  position: relative;
   width: 22px; height: 22px;
-  accent-color: var(--accent);
-  margin: 0;
-  flex: none;
+  flex: none; margin: 0;
+  vertical-align: middle;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
 }
+input[type="checkbox"]::before {
+  content: "";
+  position: absolute; inset: 0; margin: auto;
+  width: 62%; height: 62%;
+  transform: scale(0);
+  transition: transform .1s ease;
+  background: #fff;
+  clip-path: polygon(14% 44%, 0 65%, 45% 100%, 100% 20%, 82% 6%, 43% 62%);
+}
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
+
+/* Heroic inspiration is a lone, prominent toggle — size it up a touch. */
+.toggle { width: 26px; height: 26px; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -158,7 +192,6 @@ input[type="checkbox"] {
   text-transform: uppercase; color: var(--ink-faint);
 }
 
-.switch { display: inline-flex; align-items: center; min-height: 32px; }
 
 /* --------------------------------------------------------------- shell */
 
@@ -270,38 +303,54 @@ input[type="checkbox"] {
 
 .scrim { position: fixed; inset: 0; z-index: 40; background: rgba(20, 14, 8, .45); }
 
-/* -------------------------------------------------------------- vitals */
+/* --------------------------------------------------------------- tiles */
 
 /* A segmented readout inside the Combat card (it used to be the sticky top strip).
    auto-fit so it packs sensibly whether the card is a full-width phone column or a
    narrow multicol column on a laptop. */
-.vitals {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr)); gap: 1px;
-  margin: 0; padding: 1px;
-  background: var(--line);
-  border-radius: var(--radius); overflow: hidden;
+/* ---- tile: the one uniform box. Shell = label, Body = value ⇄ input | live control.
+   Every box shares this grid, so any arrangement stays aligned — the #54 groundwork. ---- */
+.tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+  gap: .4rem; margin: 0;
 }
-
-.vital {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: .1rem; padding: .45rem .3rem;
+.tile {
+  display: flex; flex-direction: column; gap: .15rem;
+  padding: .45rem .35rem;
   background: var(--card);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  /* isolated boxes with a gap, so a partial last row just leaves clean empty space
+     (no hairline-grid strip) — and they read as the movable units #54 will rearrange. */
 }
-.vital__label {
+.tile > * { width: 100%; }
+.tile--wide { grid-column: 1 / -1; }
+.tile__label {
   font-size: .62rem; font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
   text-align: center; line-height: 1.2;
 }
-.vital__value {
+.tile__body {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: .3rem; min-height: 40px;
+}
+.tile__body--actions { gap: .4rem; }
+.tile__value {
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
   font-variant-numeric: tabular-nums; line-height: 1.1;
 }
-.vital__input {
+.tile__input {
   width: 3.2rem; min-height: 34px; padding: .1rem;
   background: none; border: 0;
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600; text-align: center;
 }
-.vital__input:focus { background: var(--parchment); }
+.tile__input:focus { background: var(--parchment); border-radius: 6px; }
+
+/* view ⇄ edit swap, driven by the card's .is-editing. No `display` on base input (it would
+   outrank class hides, as the checkbox bug proved); live inputs ([data-live]) always show. */
+.tile__input:not([data-live]) { display: none; }
+.is-editing .tile__value { display: none; }
+.is-editing .tile__input { display: block; }
 
 /* --------------------------------------------------------------- cards */
 
@@ -381,12 +430,12 @@ input[type="checkbox"] {
   font-size: .9rem; text-align: center;
   display: none;
 }
-.abilities--editing .ability-row__score { display: inline-block; }
+.is-editing .ability-row__score { display: inline-block; }
 .ability-row__score-display {
   min-width: 3.4rem; text-align: center;
   font-size: .9rem;
 }
-.abilities--editing .ability-row__score-display { display: none; }
+.is-editing .ability-row__score-display { display: none; }
 .ability-row__mod {
   min-width: 2.6rem; text-align: center;
   font-family: var(--serif); font-size: 1.35rem; font-weight: 600;
@@ -418,7 +467,7 @@ input[type="checkbox"] {
   align-items: center;
   gap: .3rem;
 }
-.abilities--editing .skills__legend, .abilities--editing .skill {
+.is-editing .skills__legend, .is-editing .skill {
   grid-template-columns: 1fr 2.4rem 2.4rem 2.4rem 2.6rem;
 }
 /* One compact legend per ability group, sharing the skill grid so it can never
@@ -440,17 +489,17 @@ input[type="checkbox"] {
 .legend__prof, .legend__exp, .legend__bonus, .legend__total {
   display: none;
 }
-.abilities--editing .skill__prof, .abilities--editing .skill__exp, .abilities--editing .skill__bonus,
-.abilities--editing .legend__prof, .abilities--editing .legend__exp, .abilities--editing .legend__bonus,
-.abilities--editing .legend__total {
+.is-editing .skill__prof, .is-editing .skill__exp, .is-editing .skill__bonus,
+.is-editing .legend__prof, .is-editing .legend__exp, .is-editing .legend__bonus,
+.is-editing .legend__total {
   display: inline-block;
 }
-.abilities--editing .skill__marker { display: none; }
+.is-editing .skill__marker { display: none; }
 
 /* Init bonus / All-skills bonus are edit-only too — nothing to tap when the row
    below is just a name, a marker and a total. */
 #panel-abilities .inline-fields { display: none; }
-#panel-abilities.abilities--editing .inline-fields { display: flex; }
+#panel-abilities .is-editing .inline-fields { display: flex; }
 
 .skill__prof, .skill__exp, .skill__bonus { justify-self: center; }
 .skill__bonus {
@@ -521,11 +570,13 @@ input[type="checkbox"] {
   color: var(--bad);
   font-weight: 600;
 }
+/* Match the checkbox to the chip's "active" colour so a set condition reads as one red
+   unit rather than a red pill wrapping an accent box. */
+.chip:has(:checked) .chip__box { background: var(--bad); border-color: var(--bad); }
 .chip__box { width: 18px; height: 18px; }
 
 /* The seams the #14 card merge created: sections that used to be separate cards. */
 .status__block { margin-top: .9rem; }
-.hp__work + .vitals { margin-top: .9rem; }
 
 /* Conditions disclosure inside the Combat card (#14): closed, the summary line
    lists the active conditions. Print always shows exactly that line — full and
@@ -549,12 +600,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
 /* ---------------------------------------------------------- spellcasting */
 
-.spell-stats {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
-  margin-bottom: .5rem; padding: 1px;
-  background: var(--line);
-  border-radius: var(--radius); overflow: hidden;
-}
+.spell-stats { margin-bottom: .5rem; }
 
 .slots { display: flex; flex-direction: column; gap: .4rem; }
 
@@ -622,6 +668,52 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 }
 .row__remove:hover { color: var(--bad); border-color: var(--bad); }
 
+/* ---- per-card Edit mode --------------------------------------------------------
+   Each editable card carries `data-editcard` + a header Edit button (render.js
+   applyEditState), which flips `.is-editing` on that card — locking its authored fields
+   in view mode and revealing its Add/remove controls in edit mode. */
+
+/* Title-row action group: the +Add and Edit buttons sit together, right of the title. */
+.head-actions { display: flex; align-items: center; gap: .4rem; }
+
+/* Quiet by default so it doesn't fight the sheet — a low-weight text button that turns
+   into a clear accent "Done" chip once its card is unlocked. */
+.card__edit {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-faint);
+  font-size: .8rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.card__edit:hover { color: var(--ink); }
+.is-editing .card__edit {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* "+ Add" and per-row remove (✕) exist only in edit mode; view mode is uncluttered. */
+[data-action="add-row"], .row__remove { display: none; }
+.is-editing [data-action="add-row"] { display: inline-flex; }
+.is-editing .row__remove { display: inline-flex; align-items: center; justify-content: center; }
+
+/* View mode renders locked fields as flat read-only text, so the sheet reads as something
+   you look at; Edit restores the input chrome. The always-live play controls (data-live:
+   HP, currency, hit-dice current, heroic inspiration, conditions) are never locked, so they
+   keep their editable boxes. Selects/checkboxes ignore readOnly, so they lock via :disabled;
+   -webkit-text-fill-color keeps disabled values legible on iOS. */
+input:read-only, textarea:read-only, select:disabled {
+  border-color: transparent;
+  background: none;
+  cursor: default;
+  resize: none;
+  color: var(--ink);
+  opacity: 1;
+  -webkit-text-fill-color: var(--ink);
+}
+select:disabled { appearance: none; -webkit-appearance: none; }
+
 /* auto-fit rather than a fixed 5 columns: at 375px five fixed columns leave each
    input too narrow to show a four-digit number. */
 .currency { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr)); gap: .4rem; }
@@ -660,12 +752,6 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   font-size: 1.15rem; color: var(--ink-soft); text-align: left;
 }
 .hp__cur:focus, .hp__max:focus { background: var(--parchment); border-radius: 6px; }
-
-.hp__work { display: flex; flex-wrap: wrap; gap: .4rem; align-items: flex-end; margin-top: .7rem; }
-.hp__work .field { flex: 0 1 4.5rem; }
-.hp__work .field > label { text-align: center; }
-.hp__work input { min-height: 40px; }
-.hp__work .btn { flex: 1 1 6rem; max-width: 10rem; min-height: 40px; }
 
 /* --------------------------------------------------------------- tab bar */
 
@@ -778,8 +864,8 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
      than the column is defeated anyway and splits at an arbitrary row. Let those two
      fragment deliberately, keeping each ability group / status block intact. */
   .card--flow { break-inside: auto; }
-  .ability-group, .card--flow .status__block, .card--flow .vitals,
-  .card--flow .hp, .card--flow .hp__work, .card--flow .inline-fields { break-inside: avoid; }
+  .ability-group, .card--flow .status__block, .card--flow .tile,
+  .card--flow .hp, .card--flow .inline-fields { break-inside: avoid; }
   /* Never strand a title at a column foot with its card body on the next column. */
   .card--flow .card__title { break-after: avoid; }
   /* Conditions print as the summary line only — full and wrapped, never the chip

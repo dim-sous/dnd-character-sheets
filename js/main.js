@@ -15,8 +15,7 @@ import {
   recordFirstSeen, recordBackup, snoozeBackup, snoozeInstall,
 } from './nudges.js';
 import {
-  renderRoster, renderSheet, renderDerived, renderSlotPips, toggleSlotSetup,
-  toggleSkillsEdit,
+  renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
   clearNudge, showUpdatePrompt, showRecovery, activateTab,
 } from './render.js';
@@ -171,14 +170,9 @@ const ACTIONS = {
     state.setSlotsUsed(level, slot.total - next);
   },
 
-  'toggle-slot-setup': () => {
+  'toggle-card-edit': (el) => {
     const char = state.getActive();
-    if (char) toggleSlotSetup(char);
-  },
-
-  'toggle-skills-edit': () => {
-    const char = state.getActive();
-    if (char) toggleSkillsEdit(char);
+    if (char) toggleCardEdit(char, el.dataset.card);
   },
 
   'reload-app': () => window.location.reload(),
