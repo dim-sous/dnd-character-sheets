@@ -540,8 +540,8 @@ describe('normalizeLayout');
     ],
   };
   const norm = normalizeLayout(partial);
-  is('partial: kept tab order honored, missing tabs appended',
-    tabIds(norm), ['gear', 'combat', 'abilities', 'spells', 'character']);
+  is('partial: only the input tabs are kept (missing NOT restored)',
+    tabIds(norm), ['gear', 'combat']);
   is('partial: custom tab label preserved', norm.tabs[0].label, 'Loot');
   is('partial: within-tab card order honored (attacks before combat)',
     cardsOf(norm, 'combat'), ['attacks', 'combat']);
@@ -550,16 +550,36 @@ describe('normalizeLayout');
   is('idempotent on a partial layout', normalizeLayout(norm), norm);
   is('JSON round-trips unchanged', normalizeLayout(JSON.parse(JSON.stringify(norm))), norm);
 
-  // Stale / unknown references are dropped without throwing.
+  // Unknown COMPONENT ids are dropped; a non-registry TAB id is now KEPT (a user-created
+  // tab — Tab CRUD, #54). Either way every card still lands exactly once.
   const stale = normalizeLayout({
     tabs: [
       { id: 'combat', cards: [{ componentId: 'combat' }, { componentId: 'ghost-card' }] },
-      { id: 'nonsense-tab', cards: [{ componentId: 'attacks' }] },
+      { id: 'my-tab', label: 'My Tab', cards: [{ componentId: 'attacks' }] },
     ],
   });
   is('unknown componentId dropped', placed(stale).includes('ghost-card'), false);
-  is('unknown tab id dropped', tabIds(stale).includes('nonsense-tab'), false);
-  is('a card orphaned by a dropped tab is re-homed once', count(placed(stale), 'attacks'), 1);
+  is('user-created tab id is kept', tabIds(stale).includes('my-tab'), true);
+  is('user tab keeps its card', cardsOf(stale, 'my-tab'), ['attacks']);
+  is('every card still placed exactly once (with a user tab)',
+    placed(stale).slice().sort(), [...CARD_IDS].sort());
+
+  // Tab-set is input-driven now, never registry-whitelisted or floor-restored above 1.
+  {
+    const oneTab = normalizeLayout({ tabs: [{ id: 'combat', cards: [{ componentId: 'combat' }] }] });
+    is('a single-tab layout stays single-tab (no phantom tabs)', tabIds(oneTab), ['combat']);
+    is('every card re-homes onto the surviving tab',
+      placed(oneTab).slice().sort(), [...CARD_IDS].sort());
+    is('js hosts still all present on the lone tab',
+      JS_CARDS.every((id) => count(placed(oneTab), id) === 1), true);
+
+    is('tabs with no usable id → DEFAULT',
+      normalizeLayout({ tabs: [{ label: 'x' }, { id: '' }] }), DEFAULT_LAYOUT);
+
+    const noGear = normalizeLayout({ tabs: [{ id: 'combat', cards: [] }, { id: 'spells', cards: [] }] });
+    is('a card whose home tab is gone re-homes to the first tab',
+      cardsOf(noGear, 'combat').includes('inventory'), true);
+  }
 
   // A duplicated card collapses to a single placement (keep first).
   const dup = normalizeLayout({
@@ -570,10 +590,11 @@ describe('normalizeLayout');
   });
   is('duplicate componentId collapses to one', count(placed(dup), 'combat'), 1);
 
-  // Bare-string card entries (hand-edited) are tolerated.
+  // Bare-string card entries (hand-edited) are tolerated and coerced, in order (the rest of
+  // the single tab's cards are the re-homed remainder).
   const strings = normalizeLayout({ tabs: [{ id: 'combat', cards: ['attacks', 'combat'] }] });
   is('string card entries coerced to { componentId }',
-    cardsOf(strings, 'combat'), ['attacks', 'combat']);
+    cardsOf(strings, 'combat').slice(0, 2), ['attacks', 'combat']);
 
   // Version handling: an old/absent version normalizes forward to the current stamp.
   is('absent version stamped forward',

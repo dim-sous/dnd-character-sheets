@@ -375,6 +375,16 @@ function renderRows(char, listName) {
 let activeTabKey = getTabIds()[0];
 let renderedCharId = null;
 
+/**
+ * Re-apply the active-tab state after the tab set has changed (#54 Tab CRUD): keep the
+ * current tab if it still exists, else fall back to the first. Called after any add/remove/
+ * reorder so the reconciled buttons get their aria-selected/tabindex.
+ */
+export function reactivateTab() {
+  const ids = getTabIds();
+  activateTab(ids.includes(activeTabKey) ? activeTabKey : (ids[0] || activeTabKey));
+}
+
 /** Show one panel, hide the rest. Desktop CSS overrides the `hidden` to show all. */
 export function activateTab(tabKey, { focus = false } = {}) {
   activeTabKey = tabKey;

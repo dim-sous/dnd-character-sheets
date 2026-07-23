@@ -75,15 +75,18 @@ export function normalizeLayout(raw) {
 
   const seen = new Set(); // componentIds already placed — dedupe + drop-unknown
   const byId = new Map(); // tabId -> its normalized tab, for the append-missing pass
-  const takenTabs = new Set();
   const tabs = [];
 
-  // Keep the input's tabs (known ids only, no duplicates), preserving their order.
+  // Keep EVERY tab with a unique, non-empty string id — registry or user-created (#54 Tab
+  // CRUD). Unlike earlier phases we no longer whitelist the registry tabs or restore
+  // "missing" ones: a tab the user removed stays removed. A default tab's id still gets its
+  // registry label as a fallback.
   for (const rawTab of Array.isArray(input.tabs) ? input.tabs : []) {
     if (!rawTab || typeof rawTab !== 'object') continue;
-    const reg = TAB_REGISTRY.find((t) => t.id === rawTab.id);
-    if (!reg || takenTabs.has(reg.id)) continue;
-    takenTabs.add(reg.id);
+    const id = typeof rawTab.id === 'string' ? rawTab.id.trim() : '';
+    if (!id || byId.has(id)) continue;
+    const regLabel = (TAB_REGISTRY.find((t) => t.id === id) || {}).label;
+    const label = str(rawTab.label, '').trim() ? rawTab.label : (regLabel || id);
 
     const cards = [];
     for (const rawCard of Array.isArray(rawTab.cards) ? rawTab.cards : []) {
@@ -94,22 +97,17 @@ export function normalizeLayout(raw) {
       cards.push({ componentId });
     }
 
-    const tab = { id: reg.id, label: str(rawTab.label, reg.label), cards };
+    const tab = { id, label, cards };
     tabs.push(tab);
-    byId.set(reg.id, tab);
+    byId.set(id, tab);
   }
 
-  // Restore any registry tab the input dropped, in registry order, appended after the
-  // kept ones (so it never crashes; its home cards land in the pass below).
-  for (const reg of TAB_REGISTRY) {
-    if (takenTabs.has(reg.id)) continue;
-    const tab = { id: reg.id, label: reg.label, cards: [] };
-    tabs.push(tab);
-    byId.set(reg.id, tab);
-  }
+  // The app can never be tab-less: a fully corrupt/empty tab set rebuilds the default.
+  if (tabs.length === 0) return buildDefaultLayout();
 
-  // Append every card not yet placed at its home tab (guaranteed present). One pass that
-  // also enforces the exactly-once + never-missing invariants above.
+  // Place every registry card exactly once: at its home tab if that tab still exists, else
+  // the first tab. This still guarantees no `cost:'js'` host can go missing (the anti-crash
+  // invariant) even when a card's home tab was deleted.
   for (const componentId of CARD_ORDER) {
     if (seen.has(componentId)) continue;
     seen.add(componentId);

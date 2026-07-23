@@ -60,14 +60,74 @@ export function getTabIds() {
  * end to end. Panels and tab buttons stay static in index.html for now — generating them
  * is a later phase; this only orders the cards within each existing panel.
  */
+/** The tab-button node for a tab id, created (with full ARIA) if it doesn't exist yet. */
+function ensureTabButton(id, label) {
+  let btn = document.getElementById(`tab-${id}`);
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tab';
+    btn.id = `tab-${id}`;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', `panel-${id}`);
+    btn.setAttribute('aria-selected', 'false');
+    btn.tabIndex = -1;
+  }
+  btn.textContent = label; // relabel on rename (no-op for a default tab)
+  return btn;
+}
+
+/** The panel node for a tab id, created (hidden, with full ARIA) if it doesn't exist yet. */
+function ensurePanel(id) {
+  let panel = document.getElementById(`panel-${id}`);
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.className = 'tabpanel';
+    panel.id = `panel-${id}`;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `tab-${id}`);
+    panel.tabIndex = 0;
+    panel.hidden = true;
+  }
+  return panel;
+}
+
+/**
+ * Build the sheet from the config by RELOCATING existing live nodes — never regenerating
+ * markup — so every render.js host stays alive by identity and the data layer never learns.
+ *
+ * Reconciles the tab set too (#54 Tab CRUD): ensure a button + panel per config tab (create
+ * missing ones with the `#tab-<id>`/`#panel-<id>` convention the nav relies on), order both
+ * by append, relabel; relocate each tab's cards into its panel; then drop the button + panel
+ * of any tab no longer in the config (a removed tab's cards were re-homed by the loop above,
+ * so its panel is already empty). On the default layout every step is a no-op reposition.
+ */
 export function applyLayout() {
+  const tabbar = document.getElementById('tabbar');
+  const cardsWrap = document.querySelector('.cards');
+  const liveIds = new Set(currentLayout.tabs.map((t) => t.id));
+
   for (const tab of currentLayout.tabs) {
-    const panel = document.getElementById(`panel-${tab.id}`);
-    if (!panel) continue; // a config-only tab with no panel yet — a later phase creates it
+    const btn = ensureTabButton(tab.id, tab.label);
+    const panel = ensurePanel(tab.id);
+    if (tabbar) tabbar.append(btn); // append = create-or-reorder into config order
+    if (cardsWrap) cardsWrap.append(panel);
     for (const card of tab.cards) {
       const reg = CARD_REGISTRY[card.componentId];
       const node = reg && document.querySelector(reg.sel);
       if (node) panel.append(node);
+    }
+  }
+
+  // Reap the chrome of removed tabs (never a `cost:'js'` host — the cards moved out above).
+  if (tabbar) {
+    for (const btn of [...tabbar.querySelectorAll('.tab')]) {
+      if (!liveIds.has(btn.id.replace('tab-', ''))) btn.remove();
+    }
+  }
+  if (cardsWrap) {
+    for (const panel of [...cardsWrap.querySelectorAll('.tabpanel')]) {
+      if (!liveIds.has(panel.id.replace('panel-', ''))) panel.remove();
     }
   }
 }
