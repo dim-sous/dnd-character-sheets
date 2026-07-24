@@ -99,12 +99,12 @@ function applyEditState() {
     }
 
     // Lock authored fields in view mode; Edit unlocks them. Only the always-live play
-    // controls stay editable everywhere — HP current/max/temp + the Damage/Heal amount,
-    // heroic inspiration, the hit-dice "current" count, conditions, and currency — tagged
-    // `data-live` in the markup. (Damage/Heal/Long-rest and the death-save/exhaustion/slot
-    // pips are buttons, so they're live regardless.) Values are still written by
-    // renderDerived; readOnly/disabled only block the user. Selects and checkboxes ignore
-    // readOnly, so they take `disabled` instead.
+    // controls stay editable everywhere — HP current + temp, heroic inspiration, the hit-dice
+    // "current" count, conditions, and currency — tagged `data-live` in the markup. HP max is
+    // NOT data-live (#65): it's Edit-gated so a mis-tap can't silently rewrite the denominator.
+    // (Long-rest and the death-save/exhaustion/slot pips are buttons, so they're live
+    // regardless.) Values are still written by renderDerived; readOnly/disabled only block the
+    // user. Selects and checkboxes ignore readOnly, so they take `disabled` instead.
     for (const field of $$('input, textarea, select', card)) {
       const locked = !on && !field.hasAttribute('data-live');
       if (field.tagName === 'SELECT' || field.type === 'checkbox' || field.type === 'radio') {

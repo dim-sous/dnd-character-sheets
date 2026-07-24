@@ -330,12 +330,18 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
   font-size: .62rem; font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
   text-align: center; line-height: 1.2;
+  /* Reserve two lines (#65 symptom 1) so a one-line label (AC) and a two-line one
+     (Prof. Bonus) leave their tile bodies on the same baseline across a row. */
+  min-height: 2.4em;
 }
 .tile__body {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
   gap: .3rem; min-height: 40px;
 }
 .tile__body--actions { gap: .4rem; }
+/* Action tiles (Rest): the button(s) stretch to fill the tile instead of a lonely centred
+   pill (#65 symptom 3), mirroring .btn-row > .btn. */
+.tile__body--actions .btn { flex: 1 1 auto; }
 .tile__value {
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
   font-variant-numeric: tabular-nums; line-height: 1.1;
@@ -721,10 +727,10 @@ body.is-arranging [data-action="add-row"] { display: none; }
 /* The seams the #14 card merge created: sections that used to be separate cards. */
 .status__block { margin-top: .9rem; }
 /* Since #54 Phase 5 the status blocks live INSIDE the Combat tiles grid as objects (so they
-   reorder/hide/resize with the tiles). Their width (full by default) is owned by the layout
-   config now (#54 Phase 6) — applyObjects writes grid-column inline — so only the spacing that
-   keeps the ~.9rem section break they had as siblings stays here. */
-.tiles > .status__block { margin-top: .5rem; }
+   reorder/hide/resize with the tiles). Since #65 they also carry `.tile`, so they get the tile
+   frame and sit flush in the grid like every other tile — the `.tiles` gap alone separates
+   them, so the old section-break margin is dropped. */
+.tiles > .status__block { margin-top: 0; }
 
 /* Conditions disclosure inside the Combat card (#14): closed, the summary line
    lists the active conditions. Print always shows exactly that line — full and
@@ -872,34 +878,35 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 /* The HP readout + damage/heal workflow, absorbed into the Combat tab from the
    old sticky bottom bar. */
-.hp { display: flex; align-items: center; gap: .6rem; }
-
-.hp__step {
-  width: 56px; height: 52px; flex: none;
-  background: var(--parchment);
-  border: 1px solid var(--line); border-radius: var(--radius);
-  font-size: 1.6rem; line-height: 1; cursor: pointer;
+/* Hit Points tile (#65/#74/#75): three labelled fields — Current / Max / Temp — laid out as
+   one row inside the tile body, each column separated by a hairline. No buttons and no
+   steppers: Current is the sole HP-change control (a bare number sets it; a signed value
+   damages/heals — see main.js + rules.applyHpInput). */
+.tile__body.hp {
+  display: flex; align-items: stretch; justify-content: center;
+  flex-wrap: nowrap; gap: 0;
 }
-.hp__step:active { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-.hp__readout {
-  flex: 1;
-  display: flex; align-items: baseline; justify-content: center; gap: .15rem;
+.hp__field {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: .15rem;
+  padding: 0 .35rem;
 }
-.hp__cur {
-  width: 4.2rem; min-height: 44px; padding: 0;
-  background: none; border: 0;
-  font-family: var(--serif); font-size: 2.1rem; font-weight: 700;
-  text-align: right;
+.hp__field + .hp__field { border-left: 1px solid var(--line-soft); } /* the "separated" seam */
+.hp__sublabel {
+  font-size: .56rem; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--ink-faint); line-height: 1;
 }
-.is-bloodied .hp__cur { color: var(--bad); }
-.hp__slash { font-size: 1.3rem; color: var(--ink-faint); }
-.hp__max {
-  width: 3.2rem; min-height: 32px; padding: 0;
-  background: none; border: 0;
-  font-size: 1.15rem; color: var(--ink-soft); text-align: left;
+/* The box, padding, full width and 44px min-height all come from the base `input[type=…]`
+   rule (specificity 0,1,1, which outranks these class selectors), so Current/Temp read as
+   boxed editable fields like currency, while the Edit-gated Max flattens via `input:read-only`
+   — the app's existing "live field = boxed, locked = flat" language. These rules only set the
+   serif display scale, making Current the primary (larger) number. */
+.hp__cur, .hp__max, .hp__temp {
+  font-family: var(--serif); font-weight: 700; text-align: center; line-height: 1.1;
 }
-.hp__cur:focus, .hp__max:focus { background: var(--parchment); border-radius: 6px; }
+.hp__cur { font-size: 1.8rem; }                    /* the primary number, a touch larger */
+.hp__max, .hp__temp { font-size: 1.4rem; font-weight: 600; }
+.is-bloodied .hp__cur { color: var(--bad); }       /* current HP reddens at ≤ half (unchanged) */
 
 /* --------------------------------------------------------------- tab bar */
 

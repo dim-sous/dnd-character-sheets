@@ -82,6 +82,9 @@ function applyField(el) {
 document.addEventListener('input', (event) => {
   const el = event.target;
   if (!el.dataset || el.dataset.structural === 'true') return;
+  // Current HP commits on `change`, not per-keystroke: a signed value like "-8" is a delta
+  // (damage/heal), so writing it live would set current HP to a literal negative mid-type.
+  if (el.dataset.hpCurrent) return;
   applyField(el);
 });
 
@@ -89,6 +92,31 @@ document.addEventListener('change', (event) => {
   const el = event.target;
   if (!el.dataset || el.dataset.structural !== 'true') return;
   applyField(el);
+});
+
+// Current HP (#65/#74): the sole HP-change control now that the steppers and Damage/Heal
+// buttons are gone. A bare number sets current HP; a signed value adjusts it — "-8" damages
+// (through temp first), "+5" heals (capped at max) — via the pure rules.applyHpInput. Then
+// repaint the field to the resulting absolute value (renderDerived skips the active element,
+// so an Enter that keeps focus wouldn't otherwise show the result).
+function commitHpCurrent(el) {
+  const char = state.getActive();
+  if (!char) return;
+  const hp = rules.applyHpInput(char.hp, el.value);
+  state.updateActive('hp', hp);
+  el.value = String(hp.current);
+}
+
+// Two ways to register the change: tap away (blur → change) or press Enter. A text field
+// doesn't fire `change` on Enter, so Enter blurs the field, which both commits and deselects.
+document.addEventListener('change', (event) => {
+  if (event.target.dataset?.hpCurrent) commitHpCurrent(event.target);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && event.target.dataset?.hpCurrent) {
+    event.preventDefault();
+    event.target.blur();
+  }
 });
 
 // Cross-tab card move (#54): the arrange-mode "Move to…" select. A <select> fires `change`,
@@ -157,59 +185,7 @@ function objIdOf(el) {
   return el.closest('[data-object]')?.dataset.object;
 }
 
-function amountField() {
-  const el = $('#f-hp-amount');
-  const n = Number(el.value);
-  // Round the scratch amount so the Damage/Heal buttons emit whole HP (a decimal like 3.5
-  // would otherwise leave fractional HP). Direct edits to the HP fields stay free-form.
-  return { el, value: Number.isFinite(n) ? Math.round(Math.abs(n)) : 0 };
-}
-
-/**
- * iOS Safari and Firefox do NOT blur a focused <input> when you tap a <button>, so a
- * tapped-into HP field stays document.activeElement — and renderDerived deliberately skips
- * writing back the active element to protect the caret while typing. Net effect there: tap
- * into an HP field, then tap +/-/Damage/Heal, and the number on screen stays STALE (Chromium
- * blurs on tap, so it's already fine). Release the field first so the write-back repaints it.
- * Scoped to the hp.* display inputs; a no-op when nothing (or the Amount scratch field) is
- * focused. Typing is untouched — it never reaches these handlers.
- */
-function blurActiveHpField() {
-  const el = document.activeElement;
-  if (el?.dataset?.bind?.startsWith('hp.')) el.blur();
-}
-
-function adjustHp(delta) {
-  const char = state.getActive();
-  if (!char) return;
-  blurActiveHpField();
-  const next = char.hp.current + delta;
-  const max = char.hp.max;
-  state.updateActive('hp.current', Math.max(0, max > 0 ? Math.min(max, next) : next));
-}
-
 const ACTIONS = {
-  'hp-inc': () => adjustHp(1),
-  'hp-dec': () => adjustHp(-1),
-
-  damage: () => {
-    const char = state.getActive();
-    const { el, value } = amountField();
-    if (!char || value === 0) return;
-    blurActiveHpField();
-    state.updateActive('hp', rules.applyDamage(char.hp, value));
-    el.value = '';
-  },
-
-  heal: () => {
-    const char = state.getActive();
-    const { el, value } = amountField();
-    if (!char || value === 0) return;
-    blurActiveHpField();
-    state.updateActive('hp', rules.applyHealing(char.hp, value));
-    el.value = '';
-  },
-
   'death-save': (el) => {
     const char = state.getActive();
     if (!char) return;
@@ -306,6 +282,9 @@ const ACTIONS = {
     clearNudge('install');
   },
   'long-rest': () => {
+    // Current HP commits on blur (#65); flush a pending edit first so a still-focused HP field
+    // can't blur *after* the rest and silently overwrite it back. No-op when nothing's focused.
+    document.activeElement?.blur?.();
     // Destructive now that it touches HP and death saves — a mis-tap shouldn't wipe
     // what you were tracking, so gate it behind a confirm.
     const ok = confirm(

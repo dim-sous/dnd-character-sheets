@@ -105,43 +105,43 @@
                  one can be reordered or hidden within the card. A tile is a label (shell) +
                  a body (value⇄input, or a live control). Status blocks span the full width. -->
             <div class="tiles">
+              <!-- Hit Points: three labelled fields, no buttons (#65/#74/#75). Current HP is
+                   the sole HP-change control — a bare number sets it, a signed value adjusts it
+                   (−8 damage through temp first, +5 heal capped at max). Temp merged in here so
+                   the HP domain reads as one group; the old Adjust HP and Temp HP tiles are gone. -->
               <div class="tile" data-object="hp">
                 <span class="tile__label">Hit Points</span>
-                <div class="hp">
-                  <button type="button" class="hp__step" data-action="hp-dec" aria-label="Lose one hit point">−</button>
-                  <div class="hp__readout">
-                    <label class="visually-hidden" for="f-hp-current">Current hit points</label>
-                    <input class="hp__cur" id="f-hp-current" type="number" inputmode="numeric" data-bind="hp.current" data-type="number" data-live>
-                    <span class="hp__slash" aria-hidden="true">/</span>
-                    <label class="visually-hidden" for="f-hp-max">Maximum hit points</label>
-                    <input class="hp__max" id="f-hp-max" type="number" inputmode="numeric" data-bind="hp.max" data-type="number" data-live>
-                  </div>
-                  <button type="button" class="hp__step" data-action="hp-inc" aria-label="Gain one hit point">+</button>
-                </div>
-              </div>
-
-              <div class="tile" data-object="adjust-hp">
-                <span class="tile__label">Adjust HP</span>
-                <div class="tile__body tile__body--actions">
-                  <!-- Amount stays grouped with Damage/Heal: those actions read it imperatively. -->
-                  <label class="visually-hidden" for="f-hp-amount">Amount</label>
-                  <input class="tile__input" id="f-hp-amount" type="number" inputmode="numeric" placeholder="0" data-live>
-                  <button type="button" class="btn btn--danger btn--small" data-action="damage">Damage</button>
-                  <button type="button" class="btn btn--good btn--small" data-action="heal">Heal</button>
-                </div>
-              </div>
-
-              <div class="tile" data-object="temp-hp">
-                <span class="tile__label">Temp HP</span>
-                <div class="tile__body">
-                  <label class="visually-hidden" for="f-hp-temp">Temporary hit points</label>
-                  <input class="tile__input" id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number" data-live>
+                <div class="tile__body hp">
+                  <span class="hp__field hp__field--current">
+                    <label class="hp__sublabel" for="f-hp-current">Current</label>
+                    <!-- type="text", NOT number: a number field strips a leading "+" (so a "+5"
+                         heal would arrive as a bare "5" set) and its keypad lacks −/+ on iOS.
+                         Commits on change, not per-keystroke (main.js skips data-hp-current on
+                         input), so a signed delta isn't written as a literal value mid-type. -->
+                    <input class="hp__cur" id="f-hp-current" type="text" inputmode="text"
+                           data-bind="hp.current" data-live data-hp-current="true"
+                           placeholder="0" title="Type a number to set, or −8 for damage / +5 to heal"
+                           aria-describedby="hp-current-hint">
+                    <span id="hp-current-hint" class="visually-hidden">Type a number to set current hit points, or a signed value such as minus 8 to take damage or plus 5 to heal.</span>
+                  </span>
+                  <span class="hp__field hp__field--max">
+                    <label class="hp__sublabel" for="f-hp-max">Max</label>
+                    <!-- No data-live: Max sits behind the card's Edit button (#65 symptom 2), so a
+                         mis-tap can't silently rewrite the denominator every HP clamp depends on. -->
+                    <input class="hp__max" id="f-hp-max" type="number" inputmode="numeric" data-bind="hp.max" data-type="number">
+                  </span>
+                  <span class="hp__field hp__field--temp">
+                    <label class="hp__sublabel" for="f-hp-temp">Temp</label>
+                    <input class="hp__temp" id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number" data-live>
+                  </span>
                 </div>
               </div>
 
               <div class="tile" data-object="rest">
-                <span class="tile__label">Rest</span>
-                <div class="tile__body">
+                <!-- Label hidden (#65 symptom 4): the button text is the label. Kept in the DOM
+                     (visually-hidden, not removed) so arrange mode can still title/overlay it. -->
+                <span class="tile__label visually-hidden">Rest</span>
+                <div class="tile__body tile__body--actions">
                   <button type="button" class="btn btn--small" data-action="long-rest">Long rest</button>
                 </div>
               </div>
@@ -185,16 +185,16 @@
 
               <!-- Status blocks are full-width objects inside the SAME grid (#54 Phase 5),
                    so they reorder/hide alongside the tiles. Their hosts keep their ids. -->
-              <div class="status__block" data-object="hitdice">
+              <div class="tile status__block" data-object="hitdice">
                 <div class="list__head">
-                  <h3 class="subhead">Hit Point Dice</h3>
+                  <h3 class="tile__label">Hit Point Dice</h3>
                   <button type="button" class="btn btn--small" data-action="add-row" data-list="hitDice">+ Add</button>
                 </div>
                 <ul class="rows rows--tight" id="hitDice"></ul>
               </div>
 
-              <div class="status__block" data-object="deathsaves">
-                <h3 class="subhead">Death Saves</h3>
+              <div class="tile status__block" data-object="deathsaves">
+                <h3 class="tile__label">Death Saves</h3>
                 <div class="deathsaves">
                   <div class="deathsaves__row">
                     <span class="deathsaves__label">Successes</span>
@@ -207,12 +207,12 @@
                 </div>
               </div>
 
-              <div class="status__block" data-object="exhaustion">
-                <h3 class="subhead">Exhaustion</h3>
+              <div class="tile status__block" data-object="exhaustion">
+                <h3 class="tile__label">Exhaustion</h3>
                 <div class="pips pips--bad" id="exhaustion" role="group" aria-label="Exhaustion level"></div>
               </div>
 
-              <div class="status__block conditions" data-object="conditions">
+              <div class="tile status__block conditions" data-object="conditions">
                 <!-- The real heading lives OUTSIDE the summary, visually hidden: browsers
                      strip heading semantics from <summary> descendants, which dropped
                      Conditions from screen-reader heading navigation. The visible title

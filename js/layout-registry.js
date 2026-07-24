@@ -61,8 +61,9 @@ export const CARD_ORDER = [
  * `data-object="<id>"`, the object analogue of `data-editcard`. `cost:'js'` objects contain a
  * render.js host, so they may be hidden (host stays present-but-hidden) but never detached.
  *
- * Phase 5 objectifies only the Combat card (its 9 tiles + 4 status blocks); other cards stay
- * whole. `cost:'js'` object hosts, for reference: hitdice→#hitDice, deathsaves→#death-successes
+ * Phase 5 objectifies only the Combat card (its 7 tiles + 4 status blocks; Temp HP folded into
+ * the Hit Points tile and the Adjust HP tile retired in #65); other cards stay whole.
+ * `cost:'js'` object hosts, for reference: hitdice→#hitDice, deathsaves→#death-successes
  * /#death-failures, exhaustion→#exhaustion, conditions→#conditions.
  *
  *   defaultSpan — the object's width within the `.tiles` grid (#54 Phase 6), reproducing today's
@@ -72,8 +73,6 @@ export const CARD_ORDER = [
  */
 export const OBJECT_REGISTRY = {
   hp: { card: 'combat', label: 'Hit Points', cost: 'markup', defaultSpan: 'full' },
-  'adjust-hp': { card: 'combat', label: 'Adjust HP', cost: 'markup', defaultSpan: 'full' },
-  'temp-hp': { card: 'combat', label: 'Temp HP', cost: 'markup', defaultSpan: 1 },
   rest: { card: 'combat', label: 'Rest', cost: 'markup', defaultSpan: 1 },
   ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 1 },
   initiative: { card: 'combat', label: 'Initiative', cost: 'markup', defaultSpan: 1 },
@@ -92,7 +91,7 @@ export const OBJECT_SPANS = [1, 2, 'full'];
 /** Default object order per card (matches today's DOM). Only `combat` has objects this phase. */
 export const OBJECT_ORDER = {
   combat: [
-    'hp', 'adjust-hp', 'temp-hp', 'rest', 'ac', 'initiative', 'speed', 'pb', 'heroic',
+    'hp', 'rest', 'ac', 'initiative', 'speed', 'pb', 'heroic',
     'hitdice', 'deathsaves', 'exhaustion', 'conditions',
   ],
 };
