@@ -323,7 +323,13 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
   /* isolated boxes with a gap, so a partial last row just leaves clean empty space
      (no hairline-grid strip) — and they read as the movable units #54 will rearrange. */
 }
-.tile > * { width: 100%; }
+/* Tile children fill the tile's width — EXCEPT screen-reader-only helpers. `.visually-hidden`
+   pins width to 1px, but it and this rule share specificity (0,1,0), so without the :not()
+   this later rule wins and a visually-hidden label/heading inside a `.tile` (Rest's label, the
+   Conditions heading — both since #65) resolves width:100% against the viewport (it is
+   position:absolute with no positioned ancestor) → a ~467px invisible box → horizontal
+   overflow, empty scroll space, and a clipped tab bar. */
+.tile > *:not(.visually-hidden) { width: 100%; }
 /* Object width (1× / 2× / full) is owned by the layout config (#54 Phase 6): applyObjects
    writes `grid-column` inline per object, so there is no static width class here anymore. */
 .tile__label {
@@ -338,9 +344,10 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
   gap: .3rem; min-height: 40px;
 }
-.tile__body--actions { gap: .4rem; }
-/* Action tiles (Rest): the button(s) stretch to fill the tile instead of a lonely centred
-   pill (#65 symptom 3), mirroring .btn-row > .btn. */
+/* Action tiles (Rest): the body grows to the tile's stretched height (flex:1) and stretches
+   its child on the cross axis, so the button fills the tile in BOTH dimensions instead of a
+   lonely centred pill (#65 symptom 3). flex:1 1 auto on the button owns the width. */
+.tile__body--actions { gap: .4rem; flex: 1; align-items: stretch; }
 .tile__body--actions .btn { flex: 1 1 auto; }
 .tile__value {
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
@@ -899,13 +906,12 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 /* The box, padding, full width and 44px min-height all come from the base `input[type=…]`
    rule (specificity 0,1,1, which outranks these class selectors), so Current/Temp read as
    boxed editable fields like currency, while the Edit-gated Max flattens via `input:read-only`
-   — the app's existing "live field = boxed, locked = flat" language. These rules only set the
-   serif display scale, making Current the primary (larger) number. */
+   — the app's existing "live field = boxed, locked = flat" language. All three share one serif
+   display scale so Current / Max / Temp read as one uniform row. */
 .hp__cur, .hp__max, .hp__temp {
-  font-family: var(--serif); font-weight: 700; text-align: center; line-height: 1.1;
+  font-family: var(--serif); font-weight: 700; font-size: 1.4rem;
+  text-align: center; line-height: 1.1;
 }
-.hp__cur { font-size: 1.8rem; }                    /* the primary number, a touch larger */
-.hp__max, .hp__temp { font-size: 1.4rem; font-weight: 600; }
 .is-bloodied .hp__cur { color: var(--bad); }       /* current HP reddens at ≤ half (unchanged) */
 
 /* --------------------------------------------------------------- tab bar */
