@@ -222,6 +222,25 @@ is('unbounded when max is 0', rules.applyHealing({ max: 0, current: 3, temp: 0 }
 is('leaves temp alone', rules.applyHealing({ max: 30, current: 10, temp: 4 }, 5).temp, 4);
 is('never lowers a current already above max', rules.applyHealing({ max: 30, current: 35, temp: 0 }, 5).current, 35);
 
+/* ------------------------------------------------ applyHpInput (Current HP field) */
+
+describe('applyHpInput');
+is('bare number sets current', rules.applyHpInput({ max: 30, current: 20, temp: 0 }, '17').current, 17);
+is('bare number may exceed max (hand override)', rules.applyHpInput({ max: 30, current: 20, temp: 0 }, '45').current, 45);
+is('negative delta damages through temp first', rules.applyHpInput({ max: 30, current: 20, temp: 5 }, '-8'),
+   { max: 30, current: 17, temp: 0 });
+is('negative delta floors at 0', rules.applyHpInput({ max: 30, current: 3, temp: 0 }, '-8').current, 0);
+is('positive delta heals', rules.applyHpInput({ max: 30, current: 10, temp: 0 }, '+5').current, 15);
+is('positive delta caps at max', rules.applyHpInput({ max: 30, current: 28, temp: 0 }, '+9').current, 30);
+is('blank is a no-op', rules.applyHpInput({ max: 30, current: 20, temp: 5 }, ''), { max: 30, current: 20, temp: 5 });
+is('garbage is a no-op', rules.applyHpInput({ max: 30, current: 20, temp: 5 }, 'abc'), { max: 30, current: 20, temp: 5 });
+is('whitespace is trimmed', rules.applyHpInput({ max: 30, current: 20, temp: 0 }, '  12 ').current, 12);
+is('does not mutate its input', (() => {
+  const hp = { max: 30, current: 20, temp: 5 };
+  rules.applyHpInput(hp, '-8');
+  return hp;
+})(), { max: 30, current: 20, temp: 5 });
+
 /* ------------------------------------------------ restoreHitDice (long rest) */
 
 describe('restoreHitDice');
@@ -682,7 +701,7 @@ describe('moveCardToTab');
   const tweaked = renameCard(moveObject(DEFAULT_LAYOUT, 'combat', 0, 5), 'combat', 'War');
   const combatMoved = moveCardToTab(tweaked, 'combat', 'character');
   const combatCard = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
-  is('moved card keeps its objects', combatCard(combatMoved).objects.length, 13);
+  is('moved card keeps its objects', combatCard(combatMoved).objects.length, 11);
   is('moved card keeps its reordered object state',
     combatCard(combatMoved).objects.map((o) => o.componentId), combatCard(tweaked).objects.map((o) => o.componentId));
   is('moved card keeps its custom label', combatCard(combatMoved).label, 'War');
@@ -782,12 +801,12 @@ describe('normalizeLayout: objects');
 
   const objSpan = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id).span;
 
-  is('default combat carries all 13 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
+  is('default combat carries all 11 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
   is('default objects all visible', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.hidden === false), true);
   is('a non-objectified card (attacks) has no objects field', 'objects' in card(DEFAULT_LAYOUT, 'attacks'), false);
 
   // Span (#54 Phase 6): every object carries its registry default span; the small vitals are 1×,
-  // HP/Adjust-HP and the status blocks are full-width — reproducing today's layout.
+  // HP and the status blocks are full-width — reproducing today's layout.
   is('default span comes from the registry', objSpan(DEFAULT_LAYOUT, 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
   is('a small vital defaults to 1×', objSpan(DEFAULT_LAYOUT, 'ac'), 1);
   is('a status block defaults to full', objSpan(DEFAULT_LAYOUT, 'exhaustion'), 'full');
@@ -800,16 +819,16 @@ describe('normalizeLayout: objects');
       { componentId: 'ac', hidden: true, span: 2 },
       { componentId: 'ghost-obj' },
       { componentId: 'ac' },
-      { componentId: 'temp-hp', span: 'huge' },
+      { componentId: 'speed', span: 'huge' },
       'exhaustion',
     ] }] }],
   });
   is('unknown object dropped', objIds(messy).includes('ghost-obj'), false);
   is('duplicate object collapses to one', objCount(messy, 'ac'), 1);
-  is('kept object order honored (ac, temp-hp, exhaustion first)', objIds(messy).slice(0, 3), ['ac', 'temp-hp', 'exhaustion']);
+  is('kept object order honored (ac, speed, exhaustion first)', objIds(messy).slice(0, 3), ['ac', 'speed', 'exhaustion']);
   is('hidden flag preserved', card(messy, 'combat').objects.find((o) => o.componentId === 'ac').hidden, true);
   is('valid span preserved', objSpan(messy, 'ac'), 2);
-  is('invalid span coerced to registry default', objSpan(messy, 'temp-hp'), OBJECT_REGISTRY['temp-hp'].defaultSpan);
+  is('invalid span coerced to registry default', objSpan(messy, 'speed'), OBJECT_REGISTRY['speed'].defaultSpan);
 
   // Object label (#54): custom title reconciled like the card's; default objects carry none.
   is('default object has no label', 'label' in card(DEFAULT_LAYOUT, 'combat').objects[0], false);
@@ -836,11 +855,11 @@ describe('moveObject / toggleObjectHidden');
   const objIds = (layout) => combat(layout).objects.map((o) => o.componentId);
   const hiddenOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).hidden;
 
-  // hp is index 0, adjust-hp index 1 in the default order.
-  is('move down: hp (0) → 1', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 0, 1)).slice(0, 2), ['adjust-hp', 'hp']);
-  is('move up: adjust-hp (1) → 0', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 1, 0)).slice(0, 2), ['adjust-hp', 'hp']);
+  // hp is index 0, rest index 1 in the default order.
+  is('move down: hp (0) → 1', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 0, 1)).slice(0, 2), ['rest', 'hp']);
+  is('move up: rest (1) → 0', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 1, 0)).slice(0, 2), ['rest', 'hp']);
   is('clamp at top is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 0, -1), DEFAULT_LAYOUT);
-  is('clamp at bottom is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 12, 13), DEFAULT_LAYOUT);
+  is('clamp at bottom is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 10, 11), DEFAULT_LAYOUT);
   is('out-of-range fromIndex is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 99, 0), DEFAULT_LAYOUT);
   is('unknown card is a no-op', moveObject(DEFAULT_LAYOUT, 'attacks', 0, 1), DEFAULT_LAYOUT);
   is('a moved-objects layout survives normalize unchanged',

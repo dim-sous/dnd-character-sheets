@@ -129,6 +129,26 @@ export function applyHealing(hp, amount) {
 }
 
 /**
+ * Interpret what a player typed into the Current HP field — the sole HP-change control now
+ * that the +/- steppers and the Damage/Heal buttons are gone. A *signed* value is a delta:
+ * `-8` takes 8 damage (through temp first, via applyDamage), `+5` heals 5 (capped at max, via
+ * applyHealing). A *bare* number sets current HP outright — the hand-override that keeps this
+ * a tracker, not a rules engine (it may sit above max). Blank or non-numeric input is a no-op.
+ * Returns a new hp object; never mutates.
+ */
+export function applyHpInput(hp, raw) {
+  const text = String(raw).trim();
+  if (text === '') return { ...hp };
+  const n = Number(text);
+  if (!Number.isFinite(n)) return { ...hp };
+  // A leading + or - marks a delta; a bare number is an absolute set.
+  if (/^[+-]/.test(text)) {
+    return n < 0 ? applyDamage(hp, -n) : applyHealing(hp, n);
+  }
+  return { ...hp, current: n };
+}
+
+/**
  * A 2024 long rest restores every spent Hit Point Die — each pool goes back to its total.
  * (The 2014 rule regained only half, rounded down; 2024 dropped that, and with it any
  * question of which pool a multiclass character recovers into.) New pools; never mutates.
