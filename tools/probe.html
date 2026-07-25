@@ -52,7 +52,14 @@ try {
   // Seed through the app's own canonical shape so the probe can never drift from the real
   // model. A spellcasting ability is required or the Spells card renders nothing to measure.
   const c = blankCharacter();
-  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5;
+  // A full name, not "Probe": the Identity card sized every field the same and cropped four
+  // of eight, and a five-letter name is the fixture that hides it — the same blind spot the
+  // attack rows had. Same reasoning for the rest of the identity line.
+  c.name = 'Thorin Blackhand'; c.class = 'Fighter'; c.level = 5;
+  c.subclass = 'Battle Master'; c.species = 'Mountain Dwarf';
+  // A real background from a real character, and the value that was still being cut off
+  // ("Emerald Enclave Ca…") after the first attempt at this card.
+  c.background = 'Emerald Enclave Captain'; c.alignment = 'Lawful Good'; c.player = 'Dimitris';
   c.hp.max = 30; c.hp.current = 20; c.hp.temp = 0;
   c.ac = 15; c.speed = 30;
   c.spellcasting.ability = 'int';
@@ -140,6 +147,27 @@ try {
     return r.w + 0.5 >= TAP && r.h + 0.5 >= TAP;
   }
 
+  /*
+   * A field whose value is wider than its box shows a truncated word with no indication that
+   * anything is missing — a read-only field in play mode cannot even be scrolled to reveal the
+   * rest. That is a different failure from a small tap target or a scrolling document, and
+   * neither of the other two measurements can see it: the layout is perfectly well-behaved,
+   * it is the content that has been silently cut.
+   *
+   * Text inputs only. A textarea grows (field-sizing) and a number field holds a number.
+   */
+  function clippedFields() {
+    const out = [];
+    for (const el of d.querySelectorAll('input[type="text"]')) {
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 && box.height === 0) continue;
+      if (!el.value) continue;
+      if (el.scrollWidth <= el.clientWidth + 1) continue;
+      out.push(`${label(el)} "${el.value}" needs ${el.scrollWidth} in ${el.clientWidth}`);
+    }
+    return out;
+  }
+
   function auditScene(name) {
     const groups = new Map();
     const seen = new Set();
@@ -171,6 +199,7 @@ try {
       viewport: w.innerWidth,
       scrollWidth: d.documentElement.scrollWidth,
       overflows: d.documentElement.scrollWidth > w.innerWidth,
+      clipped: clippedFields(),
       failures: rows,
     };
   }
@@ -237,7 +266,7 @@ try {
   d.querySelector('.arrange-bar [data-action="arrange-toggle"]')?.click();
   await settle();
 
-  report.scenes = report.scenes.filter((s) => s.failures.length || s.overflows);
+  report.scenes = report.scenes.filter((s) => s.failures.length || s.overflows || s.clipped.length);
   report.totalFailures = report.scenes.reduce(
     (n, s) => n + s.failures.reduce((m, f) => m + f.count, 0), 0,
   );
@@ -257,11 +286,16 @@ try {
     .filter((s) => s.overflows)
     .map((s) => `${s.scene}: scrollWidth ${s.scrollWidth} > ${s.viewport}`);
 
+  // Deduplicated: the same field is measured once per scene it appears in, and one cropped
+  // Name would otherwise be reported eight times.
+  report.clippedFields = [...new Set(report.scenes.flatMap((s) => s.clipped))];
+
   const parts = [];
   if (report.totalFailures) parts.push(`${report.totalFailures} control(s) under ${TAP}px`);
   if (report.overflowScenes.length) parts.push(`${report.overflowScenes.length} scene(s) scroll sideways`);
+  if (report.clippedFields.length) parts.push(`${report.clippedFields.length} field(s) crop their value`);
   report.verdict = parts.length === 0
-    ? `PASS — every measured control has a >=${TAP}px hit area at ${VIEWPORT}px, and nothing scrolls sideways`
+    ? `PASS — every measured control has a >=${TAP}px hit area at ${VIEWPORT}px, nothing scrolls sideways, and no field crops its value`
     : `FAIL — ${parts.join('; ')}`;
   out.textContent = JSON.stringify(report, null, 1);
 } catch (err) {

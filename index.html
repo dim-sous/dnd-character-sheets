@@ -474,23 +474,26 @@
               <h2 class="card__title">Identity</h2>
               <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="identity" aria-pressed="false">Edit</button>
             </div>
+            <!-- Source order IS the visual order and the tab order: one field per row, and
+                 Player — the only field about the human rather than the character — sits
+                 last. Nothing is placed explicitly in the grid, so the three never drift. -->
             <div class="field-grid">
               <p class="field"><label for="f-name">Name</label>
                 <input id="f-name" type="text" data-bind="name" autocomplete="off"></p>
-              <p class="field"><label for="f-player">Player</label>
-                <input id="f-player" type="text" data-bind="player" autocomplete="off"></p>
+              <p class="field"><label for="f-level">Level</label>
+                <input id="f-level" type="number" inputmode="numeric" data-bind="level" data-type="number"></p>
               <p class="field"><label for="f-class">Class</label>
                 <input id="f-class" type="text" data-bind="class" autocomplete="off"></p>
               <p class="field"><label for="f-subclass">Subclass</label>
                 <input id="f-subclass" type="text" data-bind="subclass" autocomplete="off"></p>
-              <p class="field field--narrow"><label for="f-level">Level</label>
-                <input id="f-level" type="number" inputmode="numeric" data-bind="level" data-type="number"></p>
               <p class="field"><label for="f-species">Species</label>
                 <input id="f-species" type="text" data-bind="species" autocomplete="off"></p>
               <p class="field"><label for="f-background">Background</label>
                 <input id="f-background" type="text" data-bind="background" autocomplete="off"></p>
               <p class="field"><label for="f-alignment">Alignment</label>
                 <input id="f-alignment" type="text" data-bind="alignment" autocomplete="off"></p>
+              <p class="field"><label for="f-player">Player</label>
+                <input id="f-player" type="text" data-bind="player" autocomplete="off"></p>
             </div>
           </section>
 
@@ -634,14 +637,20 @@
          Tapping anywhere on the row toggles the notes line below (main.js). -->
     <div class="row__primary">
       <input type="text" data-bind-suffix="name" placeholder="Name" aria-label="Attack name">
-      <!-- #84: to-hit is a DERIVED readout now (renderRows bakes the row index into
-           data-derived-suffix). With an ability chosen it is mod + PB + misc − Exhaustion;
-           in Custom mode it echoes the typed bonus below, Exhaustion-adjusted when that is a
-           plain number. Exactly one of the two is ever on this line — see style.css. -->
-      <output class="row__hit" data-derived-suffix="attackHit" aria-label="To hit"></output>
-      <input type="text" class="row__bonus" size="4" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
-      <input type="text" size="16" data-bind-suffix="damage" placeholder="1d8+3" aria-label="Damage">
-      <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
+      <!-- The numbers travel together. As four loose children the line could wrap between
+           them, which put the to-hit beside a long name and dropped the damage onto a line
+           of its own; grouped, the line has exactly two items and either the whole row fits
+           or the name takes a line and the numbers follow. See style.css. -->
+      <span class="row__stats">
+        <!-- #84: to-hit is a DERIVED readout now (renderRows bakes the row index into
+             data-derived-suffix). With an ability chosen it is mod + PB + misc − Exhaustion;
+             in Custom mode it echoes the typed bonus below, Exhaustion-adjusted when that is a
+             plain number. Exactly one of the two is ever on this line — see style.css. -->
+        <output class="row__hit" data-derived-suffix="attackHit" aria-label="To hit"></output>
+        <input type="text" class="row__bonus" size="4" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
+        <input type="text" size="16" data-bind-suffix="damage" placeholder="1d8+3" aria-label="Damage">
+        <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
+      </span>
     </div>
     <!-- Edit-only second line: what the to-hit is derived FROM. It cannot join the primary
          line — at 390px a select + checkbox + number would starve the name field to nothing —
