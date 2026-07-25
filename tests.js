@@ -200,6 +200,58 @@ describe('spellcasting');
   is('attack = 3 + 4 → +7', rules.spellAttackBonus(caster), 7);
 }
 
+/* ------------------------------------------------------------- exhaustion */
+
+describe('exhaustion penalties (#63)');
+{
+  // Level 0 must leave every derived number exactly as it was before #63 — the whole
+  // feature has to be invisible to a character carrying no exhaustion.
+  const rested = char({
+    level: 3,
+    abilities: { str: 16, dex: 18, con: 14, int: 8, wis: 14, cha: 10 },
+    saveProficiencies: ['str'],
+    skillProficiencies: ['athletics'],
+    initiativeBonus: 2,
+  });
+  is('level 0 → penalty is 0', rules.exhaustionPenalty(rested), 0);
+  is('level 0 leaves a save unchanged', rules.saveTotal(rested, 'str'), 5);
+  is('level 0 leaves a skill unchanged', rules.skillTotal(rested, 'athletics'), 5);
+  is('level 0 leaves initiative unchanged', rules.initiative(rested), 6);
+  is('level 0 leaves passive Perception unchanged', rules.passivePerception(rested), 12);
+  is('level 0 leaves speed unchanged', rules.effectiveSpeed(rested), 30);
+
+  // 2024: a D20 Test is reduced by 2 × level.
+  const worn = { ...rested, exhaustion: 3 };
+  is('level 3 → penalty is −6', rules.exhaustionPenalty(worn), -6);
+  is('level 3 takes 6 off a save', rules.saveTotal(worn, 'str'), -1);
+  is('level 3 takes 6 off a skill', rules.skillTotal(worn, 'athletics'), -1);
+  is('level 3 takes 6 off initiative', rules.initiative(worn), 0);
+
+  // Decided in #63: passive Perception inherits the penalty via skillTotal.
+  is('level 1 takes 2 off passive Perception', rules.passivePerception({ ...rested, exhaustion: 1 }), 10);
+
+  // A spell attack is a D20 Test; the save DC is not a roll and must not move.
+  const caster = char({ level: 5, abilities: { ...blankCharacter().abilities, cha: 18 } });
+  caster.spellcasting.ability = 'cha';
+  is('level 2 takes 4 off spell attack', rules.spellAttackBonus({ ...caster, exhaustion: 2 }), 3);
+  is('spell save DC is untouched at level 2', rules.spellSaveDC({ ...caster, exhaustion: 2 }), 15);
+  is('spell save DC is untouched at level 6', rules.spellSaveDC({ ...caster, exhaustion: 6 }), 15);
+  is('non-caster still returns null at level 3', rules.spellAttackBonus({ ...char({ level: 5 }), exhaustion: 3 }), null);
+
+  // Speed: −5 ft per level, floored at 0.
+  is('speed 30 at level 2 → 20', rules.effectiveSpeed({ ...rested, exhaustion: 2 }), 20);
+  is('speed 30 at level 6 → 0 (exactly cancels)', rules.effectiveSpeed({ ...rested, exhaustion: MAX_EXHAUSTION }), 0);
+  is('speed 20 at level 6 → 0, never negative', rules.effectiveSpeed({ ...rested, speed: 20, exhaustion: MAX_EXHAUSTION }), 0);
+  is('base speed is not mutated by the readout', rested.speed, 30);
+
+  // Garbage in the stored level must not become a bonus.
+  is('negative level → no penalty', rules.exhaustionPenalty({ exhaustion: -4 }), 0);
+  is('negative level → speed unchanged', rules.effectiveSpeed({ speed: 30, exhaustion: -4 }), 30);
+  is('garbage level → no penalty', rules.exhaustionPenalty({ exhaustion: 'x' }), 0);
+  is('missing level → no penalty', rules.exhaustionPenalty({}), 0);
+  is('garbage speed → 0', rules.effectiveSpeed({ speed: 'fast', exhaustion: 0 }), 0);
+}
+
 /* ------------------------------------------------------------------- HP */
 
 describe('applyDamage');

@@ -522,6 +522,9 @@ function derivedValue(char, key) {
     case 'pb': return rules.formatMod(rules.characterPB(char));
     case 'passive': return String(rules.passivePerception(char));
     case 'initiative': return rules.formatMod(rules.initiative(char));
+    // Speed is derived rather than echoed (#63): the bound field holds BASE speed and
+    // this subtracts 5 ft per Exhaustion level. At level 0 it prints the base unchanged.
+    case 'speed': return String(rules.effectiveSpeed(char));
     // The closed conditions disclosure still tells you what you're suffering — and
     // print shows exactly this line (full and wrapped; the chip grid is print-hidden
     // so the output doesn't depend on whether the disclosure was left open).

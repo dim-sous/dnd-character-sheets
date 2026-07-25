@@ -38,9 +38,46 @@ export function modFor(char, abilityKey) {
   return abilityMod(char.abilities[abilityKey]);
 }
 
+/**
+ * Exhaustion level, floored at 0. It is tracked and clamped to 0..MAX_EXHAUSTION at the
+ * doors (on input and on import, storage.js), so this is belt-and-braces: a hand-edited
+ * file with a negative level must not turn the penalty into a bonus.
+ */
+function exhaustionLevel(char) {
+  return Math.max(0, num(char.exhaustion));
+}
+
+/**
+ * 2024 Exhaustion: "When you make a D20 Test, the roll is reduced by 2 × your Exhaustion
+ * level." Applied to every roll TOTAL this sheet derives — saveTotal, skillTotal,
+ * initiative, spellAttackBonus. Returns 0 at level 0, so a character with no exhaustion
+ * sees exactly the numbers they saw before (#63).
+ *
+ * Deliberately NOT applied to:
+ * - spellSaveDC — a DC is not a roll. The D20 Test there is the *target's* saving throw,
+ *   already covered by saveTotal on the target's own sheet.
+ * - modFor/abilityMod — the bare ability-modifier readout stays raw. It is a component,
+ *   not a total: it feeds the four penalized functions (which would then double-apply),
+ *   and it also feeds damage rolls and the DC, neither of which Exhaustion touches. The
+ *   cost is that a straight ability check read off that readout doesn't show the penalty.
+ */
+export function exhaustionPenalty(char) {
+  return -2 * exhaustionLevel(char);
+}
+
+/**
+ * Speed after Exhaustion — "your Speed is reduced by 5 × your Exhaustion level feet" —
+ * floored at 0 so six levels never render a negative. The stored `speed` stays the BASE
+ * value the player typed and is what the Edit field still binds to, exactly the split
+ * initiativeBonus → initiative already uses, so dropping a level restores it precisely.
+ */
+export function effectiveSpeed(char) {
+  return Math.max(0, num(char.speed) - 5 * exhaustionLevel(char));
+}
+
 export function saveTotal(char, abilityKey) {
   const proficient = char.saveProficiencies.includes(abilityKey);
-  return modFor(char, abilityKey) + (proficient ? characterPB(char) : 0);
+  return modFor(char, abilityKey) + (proficient ? characterPB(char) : 0) + exhaustionPenalty(char);
 }
 
 export function skillTotal(char, skillKey) {
@@ -62,6 +99,9 @@ export function skillTotal(char, skillKey) {
   // typed in once and retyped by hand if they ever change (item swapped, leveled
   // into a new feature). Never recomputed from a formula, on purpose.
   total += num(char.skillBonusAll) + num(char.skillBonuses[skillKey]);
+  // #63: an ability check is a D20 Test. Living here rather than at each call site is
+  // what makes passivePerception inherit it — a deliberate call, see the note there.
+  total += exhaustionPenalty(char);
   return total;
 }
 
@@ -76,18 +116,27 @@ export function saveMarker(char, abilityKey) {
   return char.saveProficiencies.includes(abilityKey) ? 'P' : '';
 }
 
+/**
+ * Passive Perception inherits the Exhaustion penalty through skillTotal (#63).
+ *
+ * By the letter of the rule a passive check "doesn't involve a roll" and so is not a
+ * D20 Test — but a reduced Perception check reading as a reduced passive score is what
+ * tables expect. Recorded here so it doesn't get "fixed" as a leak later.
+ */
 export function passivePerception(char) {
   return 10 + skillTotal(char, 'perception');
 }
 
 export function initiative(char) {
-  return modFor(char, 'dex') + num(char.initiativeBonus);
+  // Initiative is a Dexterity check, so it takes the Exhaustion penalty like any other.
+  return modFor(char, 'dex') + num(char.initiativeBonus) + exhaustionPenalty(char);
 }
 
 export function isSpellcaster(char) {
   return Boolean(char.spellcasting && char.spellcasting.ability);
 }
 
+/** No Exhaustion penalty here on purpose — a DC is not a roll. See exhaustionPenalty. */
 export function spellSaveDC(char) {
   if (!isSpellcaster(char)) return null;
   return 8 + characterPB(char) + modFor(char, char.spellcasting.ability);
@@ -95,14 +144,15 @@ export function spellSaveDC(char) {
 
 export function spellAttackBonus(char) {
   if (!isSpellcaster(char)) return null;
-  return characterPB(char) + modFor(char, char.spellcasting.ability);
+  return characterPB(char) + modFor(char, char.spellcasting.ability) + exhaustionPenalty(char);
 }
 
 /**
  * Damage eats temporary hit points first, then real ones. Current HP floors at 0.
  *
- * This is the only D&D rule the app enforces, and it is a convenience rather than a
- * ruling: max/current/temp all stay directly editable so the player can override it.
+ * This is the only D&D rule the app applies to a STORED value, and it is a convenience
+ * rather than a ruling: max/current/temp all stay directly editable so the player can
+ * override it. (Exhaustion, #63, reduces recomputed readouts only — nothing stored.)
  * Returns a new hp object; it does not mutate the one passed in.
  */
 export function applyDamage(hp, amount) {
