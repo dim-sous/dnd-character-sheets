@@ -67,6 +67,9 @@
     <div class="arrange-bar" id="arrange-bar" role="region" aria-label="Layout arrange controls">
       <span class="arrange-bar__label">Arranging layout</span>
       <div class="arrange-bar__actions">
+        <!-- #73: layout changes used to commit instantly with nothing to step back to. Enabled
+             by layout-view whenever the session's undo stack is non-empty. -->
+        <button type="button" class="btn btn--small" data-action="layout-undo" disabled>Undo</button>
         <button type="button" class="btn btn--small btn--primary" data-action="arrange-toggle">Done</button>
       </div>
       <!-- #72: the selected tile's controls. One full-size set here instead of a 22px cluster
@@ -76,10 +79,10 @@
       <div class="objbar" id="objbar"></div>
 
       <!-- #73: everything rare lives behind this disclosure — renaming/reordering/removing tabs,
-           and the two destructive layout actions. Open, it is ~290px of an 844px phone screen;
-           it used to be open permanently, which left 2 of 12 tiles visible while you arranged
-           them. Set-as-default and Reset sit here rather than beside Done for the second reason
-           #73 gives: there is no undo, and "Set as default" is one mistap from permanent. -->
+           and the layout-default actions. Open, it is ~290px of an 844px phone screen; it used
+           to be open permanently, which left 2 of 12 tiles visible while you arranged them.
+           Set-as-default and the resets sit here rather than beside Done because they are the
+           rare and consequential half of the mode. -->
       <details class="arrange-more">
         <summary class="arrange-more__summary">
           <span class="arrange-more__marker" aria-hidden="true">▸</span>Tabs &amp; defaults
@@ -89,7 +92,13 @@
           <div class="tablist-edit" id="tablist-edit"></div>
           <div class="arrange-more__actions">
             <button type="button" class="btn btn--small" data-action="arrange-set-default">Set as default</button>
-            <button type="button" class="btn btn--small" data-action="arrange-reset">Reset</button>
+            <!-- Hidden by layout-view until a default actually exists, or it and the button
+                 below would be two names for the same thing. -->
+            <button type="button" class="btn btn--small" data-action="arrange-reset" hidden>Reset to my default</button>
+            <!-- The escape hatch (#73). "Set as default" used to be permanent: Reset read the
+                 saved default and fell back to the shipped layout only when that key was
+                 ABSENT, and nothing ever cleared it. This clears it. -->
+            <button type="button" class="btn btn--small" data-action="arrange-reset-factory">Reset to original</button>
           </div>
         </div>
       </details>

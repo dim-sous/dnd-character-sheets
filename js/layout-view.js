@@ -253,7 +253,7 @@ function dragGrip() {
 }
 
 /**
- * (Re)populate a card's "Move to…" select with the CURRENT tab set. Called on every render,
+ * (Re)populate a card's "Send to tab…" select with the CURRENT tab set. Called on every render,
  * so it never goes stale after a tab is added, removed, renamed, or reordered (#54 Phase 4).
  * Choosing the card's own tab is a no-op (sendCardToTab guards it), so no per-card pruning.
  */
@@ -262,7 +262,7 @@ function fillTabOptions(sel, label) {
   sel.setAttribute('aria-label', `Move ${label} to another tab`);
   const placeholder = document.createElement('option');
   placeholder.value = '';
-  placeholder.textContent = 'Move to…';
+  placeholder.textContent = 'Send to tab…';
   placeholder.disabled = true;
   placeholder.selected = true;
   sel.append(placeholder);
@@ -276,7 +276,7 @@ function fillTabOptions(sel, label) {
 
 /**
  * Inject (or refresh) each card's arrange controls into its `.list__head`: ↑/↓ reorder plus a
- * "Move to…" cross-tab select. Reuses an existing group so a control's identity — and the
+ * "Send to tab…" cross-tab select. Reuses an existing group so a control's identity — and the
  * focus on it — survives a refresh. Disables the first card's ↑ and the last card's ↓ (also
  * signals the bounds; a lone card disables both).
  */
@@ -332,6 +332,7 @@ function removeArrangeControls() {
  * reflects the stored value (e.g. a blanked entry snapping back to the default).
  */
 export function renameCardTitle(componentId, label) {
+  pushUndo();
   currentLayout = renameCard(currentLayout, componentId, label);
   saveLayout();
   applyLayout();
@@ -360,11 +361,16 @@ function restoreMoveFocus(componentId, delta) {
 
 /** Move a card up (delta -1) or down (delta +1) within its tab; persist and re-lay-out. */
 export function reorderCard(componentId, delta) {
+  // Moving the CARD abandons any half-finished tile move inside it: applyLayout re-appends the
+  // object nodes, which would leave the drop targets stranded in front of the tiles they were
+  // meant to sit between.
+  cancelPlacing({ silent: true });
   const pos = cardPosition(componentId);
   if (!pos) return;
   const target = pos.index + delta;
   if (target < 0 || target >= pos.count) return; // at an end — nothing to do
 
+  pushUndo();
   currentLayout = moveCard(currentLayout, pos.tabId, pos.index, target);
   saveLayout();
   applyLayout(); // relocates the card node; focus inside it is preserved by append
@@ -377,7 +383,7 @@ export function reorderCard(componentId, delta) {
 
 /**
  * Drop a dragged card immediately before `beforeId` in its tab (null → the tab's end), committing
- * via moveCard (#54 Phase 7). Drag is same-tab only — cross-tab stays the "Move to…" select — so
+ * via moveCard (#54 Phase 7). Drag is same-tab only — cross-tab stays the "Send to tab…" select — so
  * `beforeId` is always a sibling. No-op when the drop wouldn't change the order.
  */
 export function dropCard(componentId, beforeId) {
@@ -389,6 +395,7 @@ export function dropCard(componentId, beforeId) {
   let to = beforeId != null ? reduced.indexOf(beforeId) : reduced.length;
   if (to === -1) to = reduced.length;
   if (to === pos.index) return; // dropped in place
+  pushUndo();
   currentLayout = moveCard(currentLayout, pos.tabId, pos.index, to);
   saveLayout();
   applyLayout();
@@ -421,10 +428,12 @@ function restoreFocusAfterLeave(sourceTabId, vacatedIndex) {
  * or null when there was nothing to do.
  */
 export function sendCardToTab(componentId, toTabId) {
+  cancelPlacing({ silent: true }); // same reason as reorderCard: the card leaves, the gesture can't follow
   const pos = cardPosition(componentId);
   if (!pos || pos.tabId === toTabId) return null;
   const { tabId: sourceTabId, index: vacatedIndex } = pos;
 
+  pushUndo();
   currentLayout = moveCardToTab(currentLayout, componentId, toTabId);
   saveLayout();
   applyLayout(); // relocates the card node into the (currently hidden) destination panel
@@ -436,6 +445,65 @@ export function sendCardToTab(componentId, toTabId) {
   return toTabId;
 }
 
+/* ------------------------------------------------------------ undo (#73) */
+
+/*
+ * Every layout change used to commit instantly with nothing to step back to — `grep -rni 'undo'
+ * js/` found none — which made an accidental drag or a mistapped Hide something you unpicked by
+ * hand. This is a plain snapshot stack: the serialized layout as it was BEFORE each mutation.
+ *
+ * Deliberately session-only and un-persisted. A layout is a display preference, and reopening
+ * the app is itself a fresh start; persisting an undo history would outlive the mistake it
+ * exists to catch, and would have to be versioned alongside the layout schema.
+ *
+ * Snapshots are JSON strings, not object references: the layout mutators are immutable and
+ * return new objects, but a string can't be aliased by a later edit however that changes.
+ */
+const UNDO_LIMIT = 20;
+const undoStack = [];
+
+/** Record the pre-change layout. Called by every mutator, before it reassigns currentLayout. */
+function pushUndo() {
+  undoStack.push(JSON.stringify(currentLayout));
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+}
+
+export function canUndo() { return undoStack.length > 0; }
+
+/** Step back one layout change. Returns false when there is nothing left to undo. */
+export function undoLayout() {
+  const snapshot = undoStack.pop();
+  if (snapshot === undefined) return false;
+  cancelPlacing({ silent: true }); // a half-finished "tap where it goes" must not outlive the undo
+  try {
+    currentLayout = normalizeLayout(JSON.parse(snapshot));
+  } catch {
+    return false; // unreachable in practice: we serialized it ourselves one mutation ago
+  }
+  saveLayout();
+  applyLayout();
+  if (arranging) { renderArrangeControls(); renderObjectControls(); renderTabList(); }
+  announce(undoStack.length ? 'Undid the last layout change.' : 'Undid the last layout change. Nothing left to undo.');
+  return true;
+}
+
+/** Enable/disable the Undo button to match the stack. */
+function renderUndo() {
+  const btn = document.querySelector('[data-action="layout-undo"]');
+  if (btn) btn.disabled = !canUndo();
+}
+
+/* ------------------------------------------------- defaults and resetting */
+
+/** Whether the player has saved a default layout — decides if "Reset to my default" is offered. */
+function hasSavedDefault() {
+  try {
+    return Boolean(localStorage.getItem(LAYOUT_DEFAULT_KEY));
+  } catch {
+    return false;
+  }
+}
+
 /** Snapshot the current arrangement as the player's saved default (own key). */
 export function saveDefault() {
   try {
@@ -443,23 +511,43 @@ export function saveDefault() {
   } catch {
     // best-effort; a layout is reconstructible so a private-mode failure is silent
   }
+  renderTabList(); // "Reset to my default" becomes reachable the moment a default exists
   announce('Current layout saved as your default.');
 }
 
-/** Reset to the saved default if the player set one, else the factory default. */
-export function resetLayout() {
+/**
+ * Reset the arrangement. `factory: true` goes back to the shipped layout AND clears the saved
+ * default — the escape hatch #73 asked for.
+ *
+ * The trap it removes: this used to read LAYOUT_DEFAULT_KEY and fall back to the factory layout
+ * only when that key was ABSENT, and nothing ever cleared it. So one tap on "Set as default"
+ * with a bad arrangement was permanent short of clearing site data — the app could not undo it,
+ * and neither could the player.
+ */
+export function resetLayout({ factory = false } = {}) {
+  pushUndo();
   let raw = null;
-  try {
-    const text = localStorage.getItem(LAYOUT_DEFAULT_KEY);
-    if (text) raw = JSON.parse(text);
-  } catch {
-    raw = null;
+  if (factory) {
+    try {
+      localStorage.removeItem(LAYOUT_DEFAULT_KEY);
+    } catch {
+      // private mode: nothing was stored to clear, so the reset below is still correct
+    }
+  } else {
+    try {
+      const text = localStorage.getItem(LAYOUT_DEFAULT_KEY);
+      if (text) raw = JSON.parse(text);
+    } catch {
+      raw = null;
+    }
   }
   currentLayout = normalizeLayout(raw); // saved default if any, else a fresh factory default
   saveLayout();
   applyLayout();
   if (arranging) { renderArrangeControls(); renderObjectControls(); renderTabList(); }
-  announce('Layout reset to your default.');
+  announce(factory
+    ? 'Layout reset to the original, and your saved default cleared.'
+    : 'Layout reset to your default.');
 }
 
 /* --------------------------------------------------- object arrange controls */
@@ -483,10 +571,144 @@ export function getSelectedObject() { return selected; }
 
 /** Select an object (or clear with no args) and repaint the toolbar. */
 export function selectObject(cardId, objectId) {
+  if (placing) cancelPlacing({ silent: true }); // picking something else puts the old one down
   selected = cardId && objectId ? { cardId, objectId } : null;
   renderObjectControls();
   const reg = selected && OBJECT_REGISTRY[selected.objectId];
   if (reg) announce(`${reg.label} selected.`);
+}
+
+/* ------------------------------------------- "pick it up, tap where it goes" (#73) */
+
+/*
+ * Up/Down move one slot per tap, so the cost of a move scaled with its distance: eleven taps to
+ * bring the last of twelve Combat objects to the front. Mouse drag existed but was gated behind
+ * `@media (pointer: fine)` — native HTML5 drag does nothing on touch — so the better gesture was
+ * available only on the platform that needed it least.
+ *
+ * The fix reuses the selection this mode already has. Arm placement, and the gaps between
+ * objects become real 44px buttons; tap one and the selected object lands there. Two taps to
+ * anywhere. The same buttons are focusable, so keyboard and screen-reader users get the identical
+ * path rather than a pointer-only shortcut — which is why this, and not a touch drag, is the
+ * answer to "one consistent gesture".
+ *
+ * Cards keep Up/Down: a tab holds at most three of them, so no card move is more than two taps
+ * to begin with. Moving a card to ANOTHER tab keeps its select for a reason worth stating —
+ * you cannot tap a place you cannot see, and the destination tab is off screen.
+ */
+let placing = null; // { cardId, objectId, fromIndex }
+
+export function isPlacing() { return Boolean(placing); }
+
+/** Arm placement for the selected object: show the gaps as drop targets. */
+export function startPlacing() {
+  if (!selected) return;
+  const pos = objectPosition(selected.cardId, selected.objectId);
+  if (!pos || pos.count < 2) return; // nowhere else to go
+  placing = { ...selected, fromIndex: pos.index };
+  renderObjectControls();
+  const reg = OBJECT_REGISTRY[selected.objectId];
+  announce(`Moving ${reg ? reg.label : selected.objectId}. Choose a new position.`);
+  document.querySelector('.dropslot:not([disabled])')?.focus();
+}
+
+/** Put it back down without moving it. */
+export function cancelPlacing({ silent = false } = {}) {
+  if (!placing) return;
+  placing = null;
+  clearDropSlots();
+  if (!silent) {
+    renderObjectControls();
+    announce('Move cancelled.');
+    document.querySelector('[data-action="place-object-start"]')?.focus();
+  }
+}
+
+/**
+ * Drop the object into gap `gapIndex` (0 = before the first object, count = after the last).
+ *
+ * Gap indices are not list indices: `moveObject` splices the object OUT before inserting it, so
+ * every gap after the object's own position shifts down by one. Getting this wrong is an
+ * off-by-one that only shows up when moving downwards.
+ */
+export function placeObject(gapIndex) {
+  if (!placing) return;
+  const { cardId, objectId, fromIndex } = placing;
+  const toIndex = gapIndex <= fromIndex ? gapIndex : gapIndex - 1;
+  placing = null;
+  clearDropSlots();
+  if (toIndex !== fromIndex) {
+    pushUndo();
+    currentLayout = moveObject(currentLayout, cardId, fromIndex, toIndex);
+    saveLayout();
+    applyLayout();
+  }
+  renderObjectControls();
+  const reg = OBJECT_REGISTRY[objectId];
+  const after = objectPosition(cardId, objectId);
+  announce(after
+    ? `${reg ? reg.label : objectId} moved to position ${after.index + 1} of ${after.count}.`
+    : 'Moved.');
+  document.querySelector('[data-action="place-object-start"]')?.focus();
+}
+
+function clearDropSlots() {
+  for (const slot of document.querySelectorAll('.dropslot')) slot.remove();
+  for (const grid of document.querySelectorAll('.is-placing')) grid.classList.remove('is-placing');
+  for (const node of document.querySelectorAll('[data-object].is-lifted')) node.classList.remove('is-lifted');
+}
+
+/**
+ * Put a drop target in every gap of the card being placed into.
+ *
+ * The grid goes single-column for the duration (`.is-placing`). Objects are 1×/2×/full wide, so
+ * a full-width insertion line between two side-by-side tiles would otherwise be meaningless —
+ * and worse, it would silently reflow the grid anyway by adding cells. One column makes the
+ * order you are inserting into the order you can see. It lasts only as long as the gesture.
+ */
+function renderDropSlots() {
+  clearDropSlots();
+  if (!placing) return;
+  const cardNode = document.querySelector(`[data-editcard="${placing.cardId}"]`);
+  const first = cardNode && cardNode.querySelector('[data-object]');
+  const grid = first && first.parentElement;
+  if (!grid) return;
+  grid.classList.add('is-placing');
+
+  const card = currentLayout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === placing.cardId);
+  const objects = (card && card.objects) || [];
+  const movingLabel = (OBJECT_REGISTRY[placing.objectId] || {}).label || placing.objectId;
+
+  const slotAt = (gapIndex, beforeNode) => {
+    const slot = document.createElement('button');
+    slot.type = 'button';
+    slot.className = 'dropslot';
+    slot.dataset.action = 'place-object';
+    slot.dataset.gap = String(gapIndex);
+    // The two gaps either side of the object are where it already is.
+    const noop = gapIndex === placing.fromIndex || gapIndex === placing.fromIndex + 1;
+    slot.disabled = noop;
+    const neighbour = objects[gapIndex];
+    const where = neighbour
+      ? `before ${(OBJECT_REGISTRY[neighbour.componentId] || {}).label || neighbour.componentId}`
+      : 'at the end';
+    slot.setAttribute('aria-label', noop
+      ? `${movingLabel} is already here`
+      : `Move ${movingLabel} ${where}`);
+    slot.append(Object.assign(document.createElement('span'), {
+      className: 'dropslot__text',
+      textContent: noop ? 'Currently here' : 'Move here',
+    }));
+    grid.insertBefore(slot, beforeNode);
+    return slot;
+  };
+
+  objects.forEach((obj, i) => {
+    const node = grid.querySelector(`[data-object="${obj.componentId}"]`);
+    slotAt(i, node);
+    if (obj.componentId === placing.objectId && node) node.classList.add('is-lifted');
+  });
+  slotAt(objects.length, null); // the gap after the last object
 }
 
 function barButton(action, text) {
@@ -545,6 +767,8 @@ function renderObjectControls() {
     objNode.classList.toggle('is-selected', isSel);
   }
   renderObjectBar();
+  renderDropSlots();
+  renderUndo();
 }
 
 /** Build or refresh the selected object's controls in the arrange bar. */
@@ -570,6 +794,23 @@ function renderObjectBar() {
     return;
   }
 
+  // While placing, the toolbar stops offering edits and says what it is waiting for. Leaving
+  // Up/Down/Width/Hide live would let you resize a thing you are mid-way through moving.
+  if (placing) {
+    if (bar.dataset.obj !== `placing:${placing.objectId}`) {
+      const cancel = barButton('place-object-cancel', 'Cancel');
+      bar.replaceChildren(
+        Object.assign(document.createElement('span'), {
+          className: 'objbar__hint',
+          textContent: `Tap a “Move here” line to place ${reg.label}.`,
+        }),
+        cancel,
+      );
+      bar.dataset.obj = `placing:${placing.objectId}`;
+    }
+    return;
+  }
+
   // Rebuild only when the SELECTION changes. Refreshing in place otherwise keeps focus on the
   // button just used (so ↑ can be tapped repeatedly) and never overwrites the rename field
   // mid-type — the same reasoning as the old cluster's node reuse.
@@ -579,8 +820,7 @@ function renderObjectBar() {
     rename.className = 'obj-rename';
     bar.replaceChildren(
       rename,
-      barButton('move-object-up', '↑ Up'),
-      barButton('move-object-down', '↓ Down'),
+      barButton('place-object-start', 'Move to…'),
       barButton('resize-object', 'Width'),
       barButton('toggle-object-hide', 'Hide'),
       Object.assign(document.createElement('span'), { className: 'objbar__pos' }),
@@ -592,15 +832,13 @@ function renderObjectBar() {
   rename.setAttribute('aria-label', `Rename ${reg.label} tile`);
   if (document.activeElement !== rename) rename.value = pos.label || reg.label;
 
-  const up = bar.querySelector('[data-action="move-object-up"]');
-  const down = bar.querySelector('[data-action="move-object-down"]');
+  const move = bar.querySelector('[data-action="place-object-start"]');
   const resize = bar.querySelector('[data-action="resize-object"]');
   const hide = bar.querySelector('[data-action="toggle-object-hide"]');
 
-  up.disabled = pos.index === 0;
-  down.disabled = pos.index === pos.count - 1;
-  up.setAttribute('aria-label', `Move ${reg.label} up`);
-  down.setAttribute('aria-label', `Move ${reg.label} down`);
+  // A lone object has nowhere to go.
+  move.disabled = pos.count < 2;
+  move.setAttribute('aria-label', `Move ${reg.label} to a new position`);
   // The width is ON the button now, not only in its accessible name (#72): cycling
   // 1× → 2× → full used to give a sighted player no readout of where they were.
   resize.textContent = `Width: ${spanShort(pos.span)}`;
@@ -623,6 +861,8 @@ function focusBarButton(action, fallbackAction) {
 }
 
 function removeObjectControls() {
+  placing = null;
+  clearDropSlots();
   selected = null;
   const bar = document.getElementById('objbar');
   // `delete` rather than `= ''`: the empty string is renderObjectBar's "the hint is already up"
@@ -644,6 +884,7 @@ function removeObjectControls() {
  * the stored value.
  */
 export function renameObjectLabel(cardId, objectId, label) {
+  pushUndo();
   currentLayout = renameObject(currentLayout, cardId, objectId, label);
   saveLayout();
   applyLayout();
@@ -651,26 +892,18 @@ export function renameObjectLabel(cardId, objectId, label) {
   announce('Tile renamed.');
 }
 
-/** Move an object up/down within its card; persist, re-apply, keep focus. */
-export function reorderObject(cardId, objectId, delta) {
-  const pos = objectPosition(cardId, objectId);
-  if (!pos) return;
-  const target = pos.index + delta;
-  if (target < 0 || target >= pos.count) return;
-  currentLayout = moveObject(currentLayout, cardId, pos.index, target);
-  saveLayout();
-  applyLayout();
-  renderObjectControls();
-  const reg = OBJECT_REGISTRY[objectId];
-  const after = objectPosition(cardId, objectId);
-  if (after) announce(`Moved ${reg ? reg.label : objectId} to position ${after.index + 1} of ${after.count}.`);
-  // Keep focus on the button just used so a second nudge is another tap in the same place;
-  // if the object reached an end that button is now disabled, so fall to its opposite.
-  focusBarButton(
-    delta < 0 ? 'move-object-up' : 'move-object-down',
-    delta < 0 ? 'move-object-down' : 'move-object-up',
-  );
-}
+/*
+ * `reorderObject` (the ↑/↓ one-slot nudge) was removed here (#73).
+ *
+ * It was the third way to say "put this there", alongside mouse drag and — now — "Move to…",
+ * which is precisely what the issue's first complaint was about. It was also the one that
+ * scaled with distance: eleven taps to bring the last of twelve objects to the front, and only
+ * ever available as taps, since drag was gated to a fine pointer.
+ *
+ * "Move to…" replaces it at a flat two taps to anywhere, on every input. The cost is that a
+ * one-slot nudge is now two taps rather than one. Cards keep their ↑/↓ — a tab holds at most
+ * three of them, so no card is ever more than two nudges from where it should be.
+ */
 
 /**
  * Drop a dragged object immediately before `beforeObjectId` within its card (null → the card's
@@ -688,6 +921,7 @@ export function dropObject(cardId, objectId, beforeObjectId) {
   let to = beforeObjectId != null ? reduced.indexOf(beforeObjectId) : reduced.length;
   if (to === -1) to = reduced.length;
   if (to === from) return; // dropped in place
+  pushUndo();
   currentLayout = moveObject(currentLayout, cardId, from, to);
   saveLayout();
   applyLayout();
@@ -702,6 +936,7 @@ export function resizeObject(cardId, objectId) {
   const pos = objectPosition(cardId, objectId);
   if (!pos) return;
   const next = cycleSpan(pos.span);
+  pushUndo();
   currentLayout = setObjectSpan(currentLayout, cardId, objectId, next);
   saveLayout();
   applyLayout();
@@ -713,6 +948,7 @@ export function resizeObject(cardId, objectId) {
 
 /** Hide or show an object; persist, re-apply, refresh, announce. */
 export function toggleObject(cardId, objectId) {
+  pushUndo();
   currentLayout = toggleObjectHidden(currentLayout, cardId, objectId);
   saveLayout();
   applyLayout();
@@ -776,6 +1012,11 @@ function renderTabList() {
   add.dataset.action = 'tab-add';
   add.textContent = '+ Add tab';
   host.append(add);
+
+  // "Reset to my default" only means something once a default has been saved; before that it
+  // and "Reset to original" would do the same thing under two names.
+  const toDefault = document.querySelector('[data-action="arrange-reset"]');
+  if (toDefault) toDefault.hidden = !hasSavedDefault();
 }
 
 function clearTabList() {
@@ -789,6 +1030,7 @@ function clearTabList() {
 /** Add a new empty tab and focus its rename field so the player can name it right away. */
 export function tabAdd() {
   const id = newId();
+  pushUndo();
   currentLayout = addTab(currentLayout, id, 'New tab');
   saveLayout();
   applyLayout();
@@ -800,6 +1042,7 @@ export function tabAdd() {
 
 /** Remove a tab (its cards were re-homed by the pure removeTab); refresh + land focus. */
 export function tabRemove(tabId) {
+  pushUndo();
   currentLayout = removeTab(currentLayout, tabId);
   saveLayout();
   applyLayout();
@@ -811,20 +1054,22 @@ export function tabRemove(tabId) {
 
 /** Rename a tab. Does NOT rebuild the list (keeps the field the user is in); relabels the bar. */
 export function tabRename(tabId, label) {
+  pushUndo();
   currentLayout = renameTab(currentLayout, tabId, label);
   saveLayout();
   applyLayout();
-  renderArrangeControls(); // the cards' "Move to…" options carry tab labels — keep them fresh
+  renderArrangeControls(); // the cards' "Send to tab…" options carry tab labels — keep them fresh
   announce('Tab renamed.');
 }
 
 /** Reorder a tab; refresh the list and keep focus on the moved row's control. */
 export function tabMove(tabId, delta) {
+  pushUndo();
   currentLayout = moveTab(currentLayout, tabId, delta);
   saveLayout();
   applyLayout();
   renderTabList();
-  renderArrangeControls(); // refresh the cards' "Move to…" option order too
+  renderArrangeControls(); // refresh the cards' "Send to tab…" option order too
   announce('Tab moved.');
   const row = document.querySelector(`.tabrow[data-tab="${tabId}"]`);
   if (row) {
