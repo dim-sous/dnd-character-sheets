@@ -649,8 +649,14 @@ body.is-arranging [data-action="add-row"] { display: none; }
   align-items: center;
   gap: .3rem;
 }
+/* The three edit-only columns are a full --tap wide so the controls in them can carry a
+   44px target without colliding (#86). At the previous 2.4rem they sat 43.19px centre to
+   centre — 0.81px too close for two 44px hit areas, and overlapping targets silently steal
+   taps for whichever element paints last. At --tap the centres are 48.8px apart. The cost
+   is ~17px taken from the 1fr name column, which measurement says is there: the widest
+   label ("Saving Throw") still fits unclipped and the document does not overflow 390px. */
 .is-editing .skills__legend, .is-editing .skill {
-  grid-template-columns: 1fr 2.4rem 2.4rem 2.4rem 2.6rem;
+  grid-template-columns: 1fr var(--tap) var(--tap) var(--tap) 2.6rem;
 }
 /* One compact legend per ability group, sharing the skill grid so it can never
    misalign — and never scrolls far from the checkboxes it labels. */
@@ -684,9 +690,20 @@ body.is-arranging [data-action="add-row"] { display: none; }
 #panel-abilities .is-editing .inline-fields { display: flex; }
 
 .skill__prof, .skill__exp, .skill__bonus { justify-self: center; }
+
+/* The box stays 22px — the same idiom as .pip and .toggle — and ::after carries the 44px
+   target: (44-22)/2 = 11px on each side. The base `input[type=checkbox]` rule already sets
+   position:relative, and ::before is taken by the tick, so ::after is the free hook.
+   Grow the COLUMN to change the target, never the inset: the clearance to the neighbour is
+   half the gap plus half the spare column width, and widening the inset past that
+   re-introduces exactly the overlap this comment exists to prevent (see .pip). */
+.skill__prof::after, .skill__exp::after { content: ""; position: absolute; inset: -11px; }
+
 .skill__bonus {
-  /* input[type="number"] elsewhere sets width:100% — cap it to the column. */
-  width: 100%; max-width: 2.4rem;
+  /* input[type="number"] elsewhere sets width:100% — cap it to the column, which is now a
+     full --tap so the field clears the minimum on its short side too (#86; it measured
+     38.4px wide while its column was 2.4rem). */
+  width: 100%; max-width: var(--tap);
   font-size: .8rem;
 }
 .skill__marker {
