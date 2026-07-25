@@ -239,6 +239,12 @@
                 <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="attacks" aria-pressed="false">Edit</button>
               </div>
             </div>
+            <!-- Column names for the attack rows. Same grid template as each row's primary line
+                 (§ Multi-value rows), so the labels sit exactly above their fields. The empty
+                 first cell reserves the expand-caret column; hidden by CSS while the list is empty. -->
+            <div class="attacks-header" aria-hidden="true">
+              <span>Name</span><span>To hit</span><span>Damage</span>
+            </div>
             <ul class="rows" id="attacks"></ul>
           </section>
 
@@ -509,11 +515,16 @@
 
 <template id="tpl-attack">
   <li class="row row--attack">
-    <input type="text" data-bind-suffix="name" placeholder="Name" aria-label="Attack name">
-    <input type="text" class="row__narrow" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
-    <input type="text" data-bind-suffix="damage" placeholder="1d8+3 slashing" aria-label="Damage">
-    <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
-    <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
+    <!-- Primary line: the short, scannable fields, aligned into columns down the card.
+         Tapping anywhere on the row toggles the notes line below (main.js). -->
+    <div class="row__primary">
+      <input type="text" data-bind-suffix="name" placeholder="Name" aria-label="Attack name">
+      <input type="text" class="row__narrow" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
+      <input type="text" data-bind-suffix="damage" placeholder="1d8+3" aria-label="Damage">
+      <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
+    </div>
+    <!-- Notes wrap onto their own full-width line (attacks often have none; some have a lot). -->
+    <textarea rows="1" class="row__notes" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes"></textarea>
   </li>
 </template>
 
@@ -527,10 +538,15 @@
 
 <template id="tpl-inventory">
   <li class="row row--inventory">
-    <input type="text" data-bind-suffix="item" placeholder="Item" aria-label="Item">
-    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
-    <input type="text" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes">
-    <button type="button" class="row__remove" data-action="remove-row" data-list="inventory" aria-label="Remove item">✕</button>
+    <!-- Primary line: item name + quantity, aligned into columns down the card.
+         Tapping anywhere on the row toggles the notes line below (main.js). -->
+    <div class="row__primary">
+      <input type="text" data-bind-suffix="item" placeholder="Item" aria-label="Item">
+      <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
+      <button type="button" class="row__remove" data-action="remove-row" data-list="inventory" aria-label="Remove item">✕</button>
+    </div>
+    <!-- Items usually carry the most notes — full-width, wrapping line of its own. -->
+    <textarea rows="1" class="row__notes" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes"></textarea>
   </li>
 </template>
 

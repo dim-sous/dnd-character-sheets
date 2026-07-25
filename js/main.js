@@ -308,6 +308,17 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  // Collapsible notes (#64): in VIEW mode, tapping an attack/inventory entry reveals or hides its
+  // notes. Ephemeral UI state (a class on the row, like card edit mode): no character mutation,
+  // resets on the next structural render. Edit mode (fields tappable to type) and taps on the note
+  // itself are excluded; a note-less entry has nothing to reveal.
+  const entryRow = event.target.closest('.row--attack, .row--inventory');
+  if (entryRow && !entryRow.closest('.is-editing') && !event.target.closest('.row__notes')) {
+    const notes = entryRow.querySelector('.row__notes');
+    if (notes && notes.value.trim()) entryRow.classList.toggle('is-expanded');
+    return;
+  }
+
   const tabBtn = event.target.closest('[role="tab"]');
   if (tabBtn) {
     activateTab(tabBtn.id.replace('tab-', ''));
