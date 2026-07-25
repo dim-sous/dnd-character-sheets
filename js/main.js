@@ -18,7 +18,7 @@ import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
   clearNudge, showUpdatePrompt, showRecovery, activateTab, reactivateTab, clearCardEdits,
-  announcePlay,
+  announcePlay, showHpResult,
 } from './render.js';
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
@@ -106,28 +106,36 @@ function commitHpCurrent(el) {
   const char = state.getActive();
   if (!char) return;
   const before = char.hp;
-  const hp = rules.applyHpInput(before, el.value);
+  const raw = el.value; // captured BEFORE the repaint below overwrites what was typed
+  const hp = rules.applyHpInput(before, raw);
   state.updateActive('hp', hp);
   el.value = String(hp.current);
-  announceHp(before, hp);
+  reportHp(before, hp, raw);
 }
 
 /**
- * Say what actually happened (#100). A sighted player watches the number change; without this
- * a screen-reader user is told nothing — not the new total, not that temp HP swallowed part of
- * the hit, not that they just hit 0. Silent when nothing moved, so committing an unchanged
- * value (Enter on an untouched field, or the idempotent re-commit on blur) says nothing.
+ * Say what actually happened — once, to both audiences (#74, extending #100).
+ *
+ * The sentence itself is `rules.describeHpChange`, a pure function, so the wording is under test
+ * and the two audiences can never drift apart. #100 gave screen-reader users the spoken result;
+ * the visible line is the parity, because the field's two contracts were previously stated only
+ * in a `title` tooltip that a touch device never shows.
+ *
+ * An empty sentence means there was nothing to report (a blank entry, a blurred untouched field)
+ * — clear the line and stay silent rather than announcing emptiness.
  */
-function announceHp(before, after) {
-  const absorbed = Math.max(0, Number(before.temp) - Number(after.temp));
-  if (after.current === before.current && absorbed === 0) return;
-  const max = Number(after.max) > 0 ? ` of ${after.max}` : '';
-  const parts = [`Hit points ${after.current}${max}.`];
-  // Temp absorbing damage is invisible in the Current field, so it has to be said outright.
-  if (absorbed > 0) parts.push(`Temporary hit points absorbed ${absorbed}, ${after.temp} left.`);
-  // Pairs with the .is-dying treatment (#75) that a sighted player gets at the same moment.
-  if (Number(after.max) > 0 && after.current <= 0) parts.push('At 0 — make death saving throws.');
-  announcePlay(parts.join(' '));
+function reportHp(before, after, raw) {
+  const sentence = rules.describeHpChange(before, after, raw);
+  if (sentence) {
+    showHpResult(sentence);
+    announcePlay(sentence);
+    return;
+  }
+  // No sentence means nothing to report — but "nothing to report" has two causes, and only one
+  // of them should wipe the line. An emptied field is the player clearing it, so the caption
+  // goes too. The other is the idempotent re-commit that fires when the field blurs after Enter
+  // already committed; clearing there would erase the description of what they just did.
+  if (String(raw).trim() === '') showHpResult('');
 }
 
 // Two ways to register the change: tap away (blur → change) or press Enter.
@@ -142,7 +150,7 @@ document.addEventListener('keydown', (event) => {
   // focus on <body> and made the next Tab restart from the top of the document. Selecting the
   // result means the next entry overwrites it rather than appending to it. A `change` still
   // fires on the eventual real blur; re-committing the absolute value already in the field is
-  // a no-op, and announceHp stays silent because nothing moved.
+  // a no-op, and reportHp stays silent because nothing moved.
   commitHpCurrent(el);
   el.select();
 });
@@ -349,6 +357,9 @@ const ACTIONS = {
         `Long rest taken. Hit points ${char ? char.hp.current : 0}${max}. `
         + 'Temp HP, death saves and concentration cleared. Hit dice restored.',
       );
+      // A rest rewrites the numbers the HP line was describing, so leaving "Took 8. Temp
+      // absorbed 5…" under the tile would caption the wrong state (#74).
+      showHpResult('');
     }
     // Re-home focus (#100). The flush above blurs whatever was focused — including this very
     // button when it was activated by keyboard — and nothing put it back, so the next Tab
