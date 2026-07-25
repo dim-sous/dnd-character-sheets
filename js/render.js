@@ -365,7 +365,7 @@ function renderRows(char, listName) {
 
     // The same baking for a per-row DERIVED readout (#84): "attackHit" + the row index
     // becomes data-derived="attackHit.2", which derivedValue already parses — it splits the
-    // kind off the front and rejoins the rest, the multi-segment support `raw.hp.temp` added.
+    // kind off the front and rejoins the rest (the multi-segment split below).
     // Authoring a literal data-derived in the template instead would not work: it is invisible
     // to $$() inside <template>.content, then becomes visible with an index-less key the
     // moment it is cloned, silently rendering '' through the default case.
@@ -541,8 +541,8 @@ export function renderSheet(char) {
 /* ------------------------------------------------------ derived readouts */
 
 function derivedValue(char, key) {
-  // Multi-segment safe: `raw.hp.temp` → kind 'raw', arg 'hp.temp'. Single-segment keys
-  // (mod.str, save.dex …) are unaffected — rest is just the one segment.
+  // Multi-segment safe: a key like `kind.a.b` splits to kind + arg 'a.b'. Single-segment keys
+  // (mod.str, save.dex, attackHit.2 …) are unaffected — rest is just the one segment.
   const [kind, ...rest] = key.split('.');
   const arg = rest.join('.');
   switch (kind) {
@@ -577,12 +577,10 @@ function derivedValue(char, key) {
     // renderDerived alone (toggleCardEdit, clearCardEdits) cannot change a list's length.
     // An out-of-range index yields undefined → '' rather than throwing.
     case 'attackHit': return rules.attackHit(char, char.attacks[Number(arg)]);
-    // A tile's view-mode readout of a plain STORED value (AC, Speed…): no rules.js
-    // function, just echo the bound value so the field reads as text until Edit.
-    case 'raw': {
-      const v = getByPath(char, arg);
-      return v === null || v === undefined || v === '' ? '—' : String(v);
-    }
+    // `case 'raw'` was removed here (#76). It echoed a plain STORED value so a tile could read
+    // as text until Edit — the swap half of the card's second Edit-gating mechanism. AC was its
+    // only user and now flattens in place instead, so nothing produced a `raw.*` key any more.
+    // (Speed's tile keeps a derived readout, but that is `case 'speed'`, a real computation.)
     default: return '';
   }
 }
@@ -622,6 +620,20 @@ export function renderDerived(char) {
   paintPips($('#death-successes'), char.deathSaves.successes);
   paintPips($('#death-failures'), char.deathSaves.failures);
   paintPips($('#exhaustion'), char.exhaustion);
+
+  /*
+   * Mark the rows that actually expand (#76). Tapping an attack/inventory entry reveals its
+   * note — but only when there IS one (main.js), so the same gesture did something on one row
+   * and nothing on the neighbour, with no affordance either way. A caret says which is which.
+   * Feature/Feat rows always carry a detail block, so they are marked in the markup.
+   *
+   * Here rather than in renderRows because a note typed in Edit mode must gain its caret as
+   * soon as the card is locked again, and leaving Edit calls renderDerived, not a rebuild.
+   */
+  for (const row of $$('.row--attack, .row--inventory')) {
+    const notes = $('.row__notes', row);
+    row.classList.toggle('row--expandable', Boolean(notes && notes.value.trim()));
+  }
 
   for (const row of $$('#slots .slot')) {
     const level = row.dataset.level;

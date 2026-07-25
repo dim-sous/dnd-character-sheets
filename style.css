@@ -378,11 +378,39 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 }
 .tile__input:focus { background: var(--parchment); border-radius: 6px; }
 
-/* view ⇄ edit swap, driven by the card's .is-editing. No `display` on base input (it would
-   outrank class hides, as the checkbox bug proved); live inputs ([data-live]) always show. */
-.tile__input:not([data-live]) { display: none; }
-.is-editing .tile__value { display: none; }
-.is-editing .tile__input { display: block; }
+/* ---- what a tap reaches (#76) ------------------------------------------------------
+   The card used to run three editability rules behind one appearance, with two different
+   Edit-gating mechanisms inside it: AC and Speed hid their field and swapped in an <output>,
+   while Max HP stayed put and merely flattened. A locked Max HP was then indistinguishable
+   from a derived readout, and Initiative/PB blanked entirely on Edit with nothing to explain
+   why. One rule replaces all of that:
+
+     Edit-gated STORED value (AC, Max HP)   the field is always here. Flat + dashed underline
+                                            when locked, boxed when unlocked.
+     DERIVED readout (Initiative, PB,       no box, no underline, no field — ever. It no
+     Spell save DC, Spell attack)           longer disappears in Edit mode either; the
+                                            absence of an underline is what says "computed".
+     BOTH (Speed)                           the computed value stays on screen and Edit
+                                            reveals the base field beneath it.
+
+   For a player it is one sentence: underlined means Edit reaches it.
+   No `display` on the base input selector — that would outrank class hides, as the checkbox
+   bug proved; live inputs ([data-live]) always show regardless. */
+.tile__value--gated,
+.tile__input:read-only,
+.hp__max:read-only {
+  /* (0,2,0) beats the `input:read-only { border-color: transparent }` flattening at (0,1,1),
+     so the underline survives the flatten that removes the rest of the box. */
+  border-bottom: 1px dashed var(--line);
+  border-radius: 0;
+}
+/* Unlocked, the real input border says it already — a second underline would just be noise. */
+.is-editing .tile__value--gated { border-bottom-color: transparent; }
+
+/* Speed's base field is the one input still revealed rather than flattened, because its tile
+   already shows the derived value and two numbers in view mode would be a puzzle. */
+.tile__input--base { display: none; }
+.is-editing .tile__input--base { display: block; }
 
 /* --------------------------------------------------------------- cards */
 
@@ -944,6 +972,24 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row.is-expanded > .row__notes { display: block; }
 .is-editing .row--attack > .row__notes, .is-editing .row--inventory > .row__notes { display: block; min-height: var(--tap); }
 
+/* Which rows respond to a tap (#76). Tapping an entry reveals its hidden part — but an
+   attack/inventory row with no note has nothing to reveal, so the identical gesture worked on
+   one row and did nothing on the next. `.row--expandable` is set by renderDerived when a note
+   exists; Feature/Feat rows always have a detail block, so they carry the caret unconditionally.
+   The caret rotates when open, matching the Conditions disclosure marker. Edit mode shows every
+   hidden part anyway, so the affordance would be a lie there. */
+.row--expandable > .row__primary::after,
+.row--feature > .row__primary::after,
+.row--feat > .row__primary::after {
+  content: "▸";
+  flex: none; align-self: center;
+  margin-left: .1rem;
+  color: var(--ink-faint); font-size: .7rem;
+  transition: transform .12s;
+}
+.row.is-expanded > .row__primary::after { transform: rotate(90deg); }
+.is-editing .row > .row__primary::after { content: none; }
+
 /* #67: the same reveal for Features/Feats, whose hidden part is a BLOCK of fields (source /
    level / text) rather than one note — so it flexes rather than displaying as a block. */
 .row--feature > .row__detail, .row--feat > .row__detail { display: none; }
@@ -1216,6 +1262,9 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   .row--attack .row__bonus, .row--attack > .row__hitcalc { display: none !important; }
   /* #67: paper has no tap, so every collapsed detail block prints expanded. */
   .row--feature > .row__detail, .row--feat > .row__detail { display: flex !important; }
+  /* ...and for the same reason the #76 expand caret is noise on paper: there is nothing to
+     tap, and the content it would reveal is already printed above. */
+  .row > .row__primary::after { content: none !important; }
   .row__primary input { text-overflow: clip; }
 }
 
