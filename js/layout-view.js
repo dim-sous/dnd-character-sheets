@@ -464,13 +464,45 @@ export function resetLayout() {
 
 /* --------------------------------------------------- object arrange controls */
 
-function objButton(action, glyph) {
+/*
+ * The arrange toolbar acts on ONE selected object (#71/#72/#73). The controls used to be a
+ * 22px cluster pinned inside every tile: it could never reach the 44px minimum (four buttons
+ * need 176px in a ~72px tile — the CSS said so outright), and together with the rename field
+ * it covered ~45% of the thing you were arranging, repeated 12× on the Combat card.
+ *
+ * One shared set in the bar fixes the size and the occlusion at once, and buys room for text
+ * labels and a VISIBLE width readout — the span used to exist only in an aria-label, so a
+ * sighted player cycled 1×/2×/full blind.
+ *
+ * Selection is view state: never persisted, never part of the layout. Where you are, not what
+ * the sheet is.
+ */
+let selected = null; // { cardId, objectId }
+
+export function getSelectedObject() { return selected; }
+
+/** Select an object (or clear with no args) and repaint the toolbar. */
+export function selectObject(cardId, objectId) {
+  selected = cardId && objectId ? { cardId, objectId } : null;
+  renderObjectControls();
+  const reg = selected && OBJECT_REGISTRY[selected.objectId];
+  if (reg) announce(`${reg.label} selected.`);
+}
+
+function barButton(action, text) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'icon-btn';
+  btn.className = 'btn btn--small objbar__btn';
   btn.dataset.action = action;
-  btn.textContent = glyph;
+  btn.textContent = text;
   return btn;
+}
+
+/** The short width label that now appears ON the resize button, not just in its aria-label. */
+function spanShort(span) {
+  if (span === 'full') return 'Full';
+  if (span === 2) return '2×';
+  return '1×';
 }
 
 /** Where an object sits within its card: index, count, its hidden flag, and its span. */
@@ -493,58 +525,117 @@ function spanLabel(span) {
 }
 
 /**
- * Inject (or refresh) each object's arrange controls: ↑/↓ reorder within the card + a
- * hide/show toggle. Reuses an existing cluster so focus survives a refresh. Only registered
- * objects (Phase 5: the Combat card's tiles + status blocks) get controls.
+ * Make every registered object selectable, and paint the toolbar for whichever is selected.
+ * The tile itself is the target — no overlay to aim at and nothing covering its content.
  */
 function renderObjectControls() {
   for (const objNode of document.querySelectorAll('[data-object]')) {
-    const objectId = objNode.dataset.object;
-    const reg = OBJECT_REGISTRY[objectId];
+    const reg = OBJECT_REGISTRY[objNode.dataset.object];
     if (!reg) continue;
-    const pos = objectPosition(reg.card, objectId);
-    if (!pos) continue;
-
-    // Editable object title (#54): an opaque field overlaying the object's top; the static label
-    // text sits hidden beneath it (CSS), so you always see the name of what you're arranging.
-    let rename = objNode.querySelector('.obj-rename');
-    if (!rename) {
-      rename = document.createElement('input');
-      rename.type = 'text';
-      rename.className = 'obj-rename';
-      objNode.append(rename); // absolutely positioned, so DOM order doesn't matter
-    }
-    rename.setAttribute('aria-label', `Rename ${reg.label} tile`);
-    if (document.activeElement !== rename) rename.value = pos.label || reg.label;
-
-    let ctl = objNode.querySelector('.obj-ctl');
-    if (!ctl) {
-      ctl = document.createElement('div');
-      ctl.className = 'obj-ctl';
-      ctl.append(
-        dragGrip(),
-        objButton('move-object-up', '↑'),
-        objButton('move-object-down', '↓'),
-        objButton('resize-object', '↔'),
-        objButton('toggle-object-hide', '👁'),
-      );
-      objNode.append(ctl);
-    }
-    const [up, down, resize, hide] = ctl.querySelectorAll('button');
-    up.setAttribute('aria-label', `Move ${reg.label} up`);
-    down.setAttribute('aria-label', `Move ${reg.label} down`);
-    up.disabled = pos.index === 0;
-    down.disabled = pos.index === pos.count - 1;
-    resize.setAttribute('aria-label', `Resize ${reg.label} (${spanLabel(pos.span)})`);
-    hide.setAttribute('aria-label', pos.hidden ? `Show ${reg.label}` : `Hide ${reg.label}`);
-    hide.setAttribute('aria-pressed', String(pos.hidden));
-    hide.classList.toggle('is-off', pos.hidden);
+    const isSel = Boolean(selected) && selected.objectId === objNode.dataset.object;
+    // role=button + tabindex makes the tile reachable and operable by keyboard; aria-pressed
+    // reports which one the toolbar is currently acting on.
+    objNode.tabIndex = 0;
+    objNode.setAttribute('role', 'button');
+    objNode.setAttribute('aria-pressed', String(isSel));
+    objNode.setAttribute('aria-label', `Select ${reg.label} tile`);
+    // Drag starts on the tile now that the in-tile grip is gone. Still a mouse-only nicety —
+    // native HTML5 drag does nothing on touch, where the toolbar's Up/Down are the path.
+    objNode.draggable = true;
+    objNode.classList.toggle('is-selected', isSel);
   }
+  renderObjectBar();
+}
+
+/** Build or refresh the selected object's controls in the arrange bar. */
+function renderObjectBar() {
+  const bar = document.getElementById('objbar');
+  if (!bar) return;
+
+  const pos = selected && objectPosition(selected.cardId, selected.objectId);
+  const reg = selected && OBJECT_REGISTRY[selected.objectId];
+  // Nothing selected, or the selection went away (its card moved tab, a layout reset) — show
+  // the hint rather than leaving stale controls pointed at nothing. This is the only place the
+  // mode says what to do with a TILE; the bar's own label only ever described the card
+  // controls, which is #72's third complaint.
+  if (!pos || !reg) {
+    selected = null;
+    if (bar.dataset.obj !== '') {
+      bar.replaceChildren(Object.assign(document.createElement('span'), {
+        className: 'objbar__hint',
+        textContent: 'Tap a tile to move, resize or hide it.',
+      }));
+      bar.dataset.obj = '';
+    }
+    return;
+  }
+
+  // Rebuild only when the SELECTION changes. Refreshing in place otherwise keeps focus on the
+  // button just used (so ↑ can be tapped repeatedly) and never overwrites the rename field
+  // mid-type — the same reasoning as the old cluster's node reuse.
+  if (bar.dataset.obj !== selected.objectId) {
+    const rename = document.createElement('input');
+    rename.type = 'text';
+    rename.className = 'obj-rename';
+    bar.replaceChildren(
+      rename,
+      barButton('move-object-up', '↑ Up'),
+      barButton('move-object-down', '↓ Down'),
+      barButton('resize-object', 'Width'),
+      barButton('toggle-object-hide', 'Hide'),
+      Object.assign(document.createElement('span'), { className: 'objbar__pos' }),
+    );
+    bar.dataset.obj = selected.objectId;
+  }
+
+  const rename = bar.querySelector('.obj-rename');
+  rename.setAttribute('aria-label', `Rename ${reg.label} tile`);
+  if (document.activeElement !== rename) rename.value = pos.label || reg.label;
+
+  const up = bar.querySelector('[data-action="move-object-up"]');
+  const down = bar.querySelector('[data-action="move-object-down"]');
+  const resize = bar.querySelector('[data-action="resize-object"]');
+  const hide = bar.querySelector('[data-action="toggle-object-hide"]');
+
+  up.disabled = pos.index === 0;
+  down.disabled = pos.index === pos.count - 1;
+  up.setAttribute('aria-label', `Move ${reg.label} up`);
+  down.setAttribute('aria-label', `Move ${reg.label} down`);
+  // The width is ON the button now, not only in its accessible name (#72): cycling
+  // 1× → 2× → full used to give a sighted player no readout of where they were.
+  resize.textContent = `Width: ${spanShort(pos.span)}`;
+  resize.setAttribute('aria-label', `Resize ${reg.label} (${spanLabel(pos.span)})`);
+  hide.textContent = pos.hidden ? 'Show' : 'Hide';
+  hide.setAttribute('aria-label', pos.hidden ? `Show ${reg.label}` : `Hide ${reg.label}`);
+  hide.setAttribute('aria-pressed', String(pos.hidden));
+  hide.classList.toggle('is-off', pos.hidden);
+  bar.querySelector('.objbar__pos').textContent = `${pos.index + 1} of ${pos.count}`;
+}
+
+/** Put focus back on the toolbar button just used; fall to its sibling if it went disabled. */
+function focusBarButton(action, fallbackAction) {
+  const bar = document.getElementById('objbar');
+  if (!bar) return;
+  const wanted = bar.querySelector(`[data-action="${action}"]`);
+  if (wanted && !wanted.disabled) { wanted.focus(); return; }
+  const other = fallbackAction && bar.querySelector(`[data-action="${fallbackAction}"]`);
+  if (other && !other.disabled) other.focus();
 }
 
 function removeObjectControls() {
-  for (const ctl of document.querySelectorAll('.obj-ctl')) ctl.remove();
-  for (const input of document.querySelectorAll('.obj-rename')) input.remove();
+  selected = null;
+  const bar = document.getElementById('objbar');
+  // `delete` rather than `= ''`: the empty string is renderObjectBar's "the hint is already up"
+  // marker, so leaving it set would bring the mode back with a blank row.
+  if (bar) { bar.replaceChildren(); delete bar.dataset.obj; }
+  for (const objNode of document.querySelectorAll('[data-object]')) {
+    objNode.removeAttribute('tabindex');
+    objNode.removeAttribute('role');
+    objNode.removeAttribute('aria-pressed');
+    objNode.removeAttribute('aria-label');
+    objNode.draggable = false;
+    objNode.classList.remove('is-selected');
+  }
 }
 
 /**
@@ -573,13 +664,12 @@ export function reorderObject(cardId, objectId, delta) {
   const reg = OBJECT_REGISTRY[objectId];
   const after = objectPosition(cardId, objectId);
   if (after) announce(`Moved ${reg ? reg.label : objectId} to position ${after.index + 1} of ${after.count}.`);
-  const group = document.querySelector(`[data-object="${objectId}"] .obj-ctl`);
-  if (group) {
-    const [up, down] = group.querySelectorAll('button');
-    const wanted = delta < 0 ? up : down;
-    const t = wanted && !wanted.disabled ? wanted : (delta < 0 ? down : up);
-    if (t && !t.disabled) t.focus();
-  }
+  // Keep focus on the button just used so a second nudge is another tap in the same place;
+  // if the object reached an end that button is now disabled, so fall to its opposite.
+  focusBarButton(
+    delta < 0 ? 'move-object-up' : 'move-object-down',
+    delta < 0 ? 'move-object-down' : 'move-object-up',
+  );
 }
 
 /**
@@ -618,7 +708,7 @@ export function resizeObject(cardId, objectId) {
   renderObjectControls();
   const reg = OBJECT_REGISTRY[objectId];
   announce(`${reg ? reg.label : objectId} set to ${spanLabel(next)}.`);
-  document.querySelector(`[data-object="${objectId}"] .obj-ctl button[data-action="resize-object"]`)?.focus();
+  focusBarButton('resize-object');
 }
 
 /** Hide or show an object; persist, re-apply, refresh, announce. */
@@ -630,7 +720,7 @@ export function toggleObject(cardId, objectId) {
   const reg = OBJECT_REGISTRY[objectId];
   const pos = objectPosition(cardId, objectId);
   announce(`${reg ? reg.label : objectId} ${pos && pos.hidden ? 'hidden' : 'shown'}.`);
-  document.querySelector(`[data-object="${objectId}"] .obj-ctl button[data-action="toggle-object-hide"]`)?.focus();
+  focusBarButton('toggle-object-hide');
 }
 
 /* ------------------------------------------------------ tab-editing list */
@@ -691,6 +781,9 @@ function renderTabList() {
 function clearTabList() {
   const host = document.getElementById('tablist-edit');
   if (host) host.replaceChildren();
+  // Fold the rare-controls disclosure back up on the way out (#73), so the next visit starts
+  // small again rather than reopening at the ~290px it was left at.
+  document.querySelector('.arrange-more')?.removeAttribute('open');
 }
 
 /** Add a new empty tab and focus its rename field so the player can name it right away. */

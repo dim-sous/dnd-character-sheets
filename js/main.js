@@ -25,6 +25,7 @@ import {
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
   tabAdd, tabRemove, tabRename, tabMove, reorderObject, toggleObject, resizeObject,
   renameCardTitle, renameObjectLabel, dropCard, dropObject,
+  selectObject, getSelectedObject,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -180,13 +181,13 @@ document.addEventListener('change', (event) => {
   if (id) renameCardTitle(id, input.value);
 });
 
-// Object (tile) rename (#54): the arrange-mode label field on each object commits on `change`.
+// Object (tile) rename (#54): the field lives in the arrange bar now (#72), so it names the
+// SELECTED object rather than the one it sits inside. Commits on `change` (blur/Enter).
 document.addEventListener('change', (event) => {
   const input = event.target.closest && event.target.closest('.obj-rename');
   if (!input) return;
-  const cardId = cardIdOf(input);
-  const objectId = objIdOf(input);
-  if (cardId && objectId) renameObjectLabel(cardId, objectId, input.value);
+  const sel = getSelectedObject();
+  if (sel) renameObjectLabel(sel.cardId, sel.objectId, input.value);
 });
 
 /* -------------------------------------------------------------- actions */
@@ -196,9 +197,14 @@ function pipTarget(current, index) {
   return current === index + 1 ? index : index + 1;
 }
 
-/** The componentId of the card an arrange control lives in (its `data-editcard`). */
+/**
+ * The componentId of the card an arrange control lives in. Object controls now sit in the
+ * arrange BAR rather than inside the tile (#72), so they have no card ancestor to read —
+ * they fall back to the current selection. Card controls are still inside their card, so the
+ * fallback never fires for them.
+ */
 function cardIdOf(el) {
-  return el.closest('[data-editcard]')?.dataset.editcard;
+  return el.closest('[data-editcard]')?.dataset.editcard ?? getSelectedObject()?.cardId;
 }
 
 /** The tab id a tab-list control belongs to (its row's `data-tab`). */
@@ -208,7 +214,7 @@ function tabIdOf(el) {
 
 /** The object id an object control lives in (its `data-object`). */
 function objIdOf(el) {
-  return el.closest('[data-object]')?.dataset.object;
+  return el.closest('[data-object]')?.dataset.object ?? getSelectedObject()?.objectId;
 }
 
 const ACTIONS = {
@@ -349,6 +355,17 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  // Arrange mode (#72): the tile IS the target — tap one to point the toolbar at it. Only a
+  // tap that lands ON an object is swallowed; the tab bar, roster and drawer stay usable while
+  // arranging, which is why this doesn't return unconditionally.
+  if (isArranging()) {
+    const objNode = event.target.closest('[data-object]');
+    if (objNode) {
+      selectObject(cardIdOf(objNode), objNode.dataset.object);
+      return;
+    }
+  }
+
   // Collapsible notes (#64): in VIEW mode, tapping an attack/inventory entry reveals or hides its
   // notes. Ephemeral UI state (a class on the row, like card edit mode): no character mutation,
   // resets on the next structural render. Edit mode (fields tappable to type) and taps on the note
@@ -420,6 +437,16 @@ document.addEventListener('keydown', (event) => {
 document.addEventListener('keydown', (event) => {
   const inField = event.target.closest && event.target.closest('input, select, textarea');
   if (event.key === 'Escape' && isArranging() && !inField) { toggleArrange(); return; }
+
+  // A tile is role="button" while arranging (#72), so Enter/Space must select it — that is the
+  // keyboard equivalent of tapping it, and without this the toolbar is unreachable by keyboard.
+  if (isArranging() && (event.key === 'Enter' || event.key === ' ')
+      && event.target.matches?.('[data-object]')) {
+    event.preventDefault();
+    selectObject(cardIdOf(event.target), event.target.dataset.object);
+    return;
+  }
+
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
   const action = event.target.dataset && event.target.dataset.action;
   const delta = event.key === 'ArrowUp' ? -1 : 1;
@@ -473,14 +500,19 @@ function insertionRef(x, y) {
 }
 
 document.addEventListener('dragstart', (event) => {
+  if (!isArranging()) return;
   const grip = event.target.closest && event.target.closest('.drag-grip');
-  if (!grip || !isArranging()) return;
-  const objNode = grip.closest('[data-object]');
-  const cardNode = grip.closest('[data-editcard]');
+  // Objects drag from the TILE itself since the in-tile grip went away with the overlay (#72);
+  // cards still drag from the ⠿ in their head. Both remain mouse-only — native HTML5 drag does
+  // nothing on touch, where the toolbar's Up/Down is the path.
+  const objNode = grip ? null : (event.target.closest && event.target.closest('[data-object]'));
+  const cardNode = grip ? grip.closest('[data-editcard]') : null;
+  if (!objNode && !cardNode) return;
   if (objNode) {
     drag = {
       kind: 'object', attr: 'object', id: objNode.dataset.object,
-      cardId: cardNode && cardNode.dataset.editcard, container: objNode.parentElement, node: objNode,
+      cardId: objNode.closest('[data-editcard]')?.dataset.editcard,
+      container: objNode.parentElement, node: objNode,
     };
   } else if (cardNode) {
     drag = {

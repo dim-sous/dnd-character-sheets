@@ -16,6 +16,21 @@
 <script type="module">
 const out = document.getElementById('out');
 try {
+/*
+ * Clear the service worker FIRST. The app registers a cache-first worker, so a probe run in a
+ * reused browser profile will happily measure the PREVIOUS build — stale CSS, stale modules,
+ * and a "module does not provide export X" error for code you just wrote. Silently wrong
+ * measurements are worse than none, and this harness exists to be trusted.
+ */
+if (navigator.serviceWorker) {
+  const regs = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(regs.map((r) => r.unregister()));
+}
+if (window.caches) {
+  const keys = await caches.keys();
+  await Promise.all(keys.map((k) => caches.delete(k)));
+}
+
 const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
 const a = blankCharacter(); a.name='Alpha'; a.hp.max=30; a.hp.current=20; a.hp.temp=0;
 const b = blankCharacter(); b.name='Beta';  b.hp.max=50; b.hp.current=45; b.hp.temp=0;

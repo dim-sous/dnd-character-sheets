@@ -35,12 +35,15 @@ CHROME="/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
 
 `tools/probe.html` is the standing **touch-target audit**: it seeds a character through `blankCharacter()`, loads the app in a 390px iframe, walks every tab and edit/arrange mode, and reports any control whose hit area is under 44px. Extend it rather than writing throwaway probes. Read its header comment before changing it.
 
+The other `tools/probe-*.html` pages are targeted regression checks for behaviour the DOM-free suite can't reach — `probe-hp-commit.html` (an HP edit must survive a roster switch, #94) and `probe-arrange-fn.html` (arrange mode's select-a-tile wiring plus a **height budget** for the arrange bar, #71/#72/#73). They print `ALL PASS` or a list of failures; run them the same way as `probe.html`. Each reseeds `localStorage` — including the layout keys, which are `dnd-character-sheets:layout` and `:layout-default`, colons not hyphens — so runs don't inherit each other's mutations.
+
 Gotchas, all of them learned the hard way:
 
 - **`--user-data-dir` is required.** Without it Chrome forwards to the user's already-running desktop instance and your flags are silently ignored.
 - **Don't trust `--window-size` for viewport width** — Windows display scaling distorts it. Pin the width with a fixed-size `<iframe>` instead; that is what `probe.html` does.
 - **Use `setTimeout`, not `requestAnimationFrame`, to wait.** Under `--virtual-time-budget` timers are fast-forwarded reliably; an animation-frame loop is not guaranteed to be driven.
 - **Probe pages belong in `tools/`, never the repo root.** `tools/` is in `stamp-sw.py`'s `SKIP_DIRS`; a stray `.html` at the root **would** be precached and shipped to every player's phone.
+- **Kill the service worker before measuring, or you will measure the last build.** The app registers a cache-first worker, so a probe run in a reused `--user-data-dir` serves stale CSS and stale modules — it shows up as a change that "didn't apply", or a `does not provide an export named …` error for code you just wrote. Every committed probe unregisters it and clears `caches` before loading the app; do the same in any new one, or use a throwaway profile directory.
 - **Inactive tab panels carry `hidden`**, so a control measures 0×0 until you activate its tab. Some controls only exist in a card's edit mode (the spell-slot total is setup-only — play mode renders a count instead).
 - **Measure, don't infer.** This stylesheet has a recurring trap where a class rule (0,1,0) declares a size that the base `input[type=…]` / `.icon-btn` rule (0,1,1) outranks, so the control is *not* the size the CSS appears to say. Reading the stylesheet has already put wrong claims into three issues; measurement disproved them. The honest tap target is also not the border box — `.pip` and `.toggle` carry theirs on an absolutely-positioned `::after`, and `.chip` puts it on the wrapping `<label>`.
 

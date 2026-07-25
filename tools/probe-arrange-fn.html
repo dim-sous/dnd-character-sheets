@@ -1,0 +1,172 @@
+<!doctype html>
+<!--
+  TEMPORARY functional check (#71/#72/#73). The data layer is covered by tests.js; what is new
+  and untested here is the DOM wiring — a tap on a TILE now selects it, and the toolbar acts on
+  whatever is selected rather than on the tile it sits inside. Delete once the redesign lands.
+-->
+<meta charset="utf-8">
+<title>arrange fn probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5; c.hp.max = 32; c.hp.current = 32;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+  }));
+  // Colons, not hyphens (layout-view.js) — and both keys, or a run inherits the previous run's
+  // reordering and the assertions below drift with it.
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const frame = document.getElementById('frame');
+  await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+  await wait(1200);
+  const d = frame.contentDocument;
+
+  const ids = () => [...d.querySelectorAll('#panel-combat [data-object]')].map((n) => n.dataset.object);
+  const bar = () => d.getElementById('objbar');
+  const btn = (a) => bar().querySelector(`[data-action="${a}"]`);
+
+  d.querySelector('[data-action="arrange-toggle"]').click();
+  await wait(350);
+
+  ok('arrange mode is on', d.body.classList.contains('is-arranging'));
+  ok('hint shown before any selection', /Tap a tile/.test(bar().textContent), `"${bar().textContent.trim()}"`);
+  ok('no toolbar buttons yet', bar().querySelectorAll('button').length === 0);
+
+  /*
+   * Size budget (#73: "entering arrange mode for one small change doesn't reformat the whole
+   * app"). The bar shipped at 388px of an 844px screen — 46% — because the tab-editing list sat
+   * open permanently, leaving 2 of 12 Combat tiles visible. These ceilings are what stops it
+   * growing back; they are deliberately a little above the measured 143 / 219 so ordinary
+   * wording changes don't trip them, and far below where it came from.
+   */
+  const barH = () => d.getElementById('arrange-bar').getBoundingClientRect().height;
+  const vh = frame.contentWindow.innerHeight;
+  const topH = d.querySelector('.topbar').getBoundingClientRect().height;
+  const tabsH = d.querySelector('.tabbar').getBoundingClientRect().height;
+  const tiles = () => [...d.querySelectorAll('#panel-combat [data-object]')];
+  const visibleTiles = () => tiles().filter((n) => {
+    const r = n.getBoundingClientRect();
+    return r.top < vh - tabsH && r.bottom > barH() + topH;
+  }).length;
+  ok('bar is small with nothing selected', barH() <= 160,
+    `${Math.round(barH())}px of ${vh} (budget 160), ${visibleTiles()} of ${tiles().length} tiles visible`);
+
+  // --- selection -----------------------------------------------------------------------
+  const order0 = ids();
+  const second = d.querySelector(`#panel-combat [data-object="${order0[1]}"]`);
+  second.click();
+  await wait(250);
+  ok('tapping a tile selects it', second.classList.contains('is-selected'));
+  ok('selected tile reports aria-pressed', second.getAttribute('aria-pressed') === 'true');
+  ok('exactly one tile is selected', d.querySelectorAll('#panel-combat [data-object].is-selected').length === 1);
+  ok('toolbar names the selection', bar().querySelector('.obj-rename').value.length > 0,
+    `"${bar().querySelector('.obj-rename').value}"`);
+  ok('position readout is visible text', /2 of \d+/.test(bar().querySelector('.objbar__pos').textContent),
+    `"${bar().querySelector('.objbar__pos').textContent}"`);
+  ok('width is on the button, not just aria', /Width:/.test(btn('resize-object').textContent),
+    `"${btn('resize-object').textContent}"`);
+  ok('bar stays small with a tile selected', barH() <= 230, `${Math.round(barH())}px of ${vh} (budget 230)`);
+  // The symptom the bar's height causes, kept as its own check because it is what a player
+  // actually notices. Coupled to the DEFAULT Combat layout (Hit Points is full-width and first),
+  // so #75-style reordering can move it legitimately — the height budgets are the stable guard.
+  // Shipped build: 2 of 12.
+  ok('at least 3 tiles remain visible while arranging', visibleTiles() >= 3,
+    `${visibleTiles()} of ${tiles().length}`);
+
+  // --- the toolbar acts on the SELECTION, not on where it sits ------------------------
+  btn('move-object-up').click();
+  await wait(250);
+  ok('Up moves the selected tile', ids()[0] === order0[1], `${order0.slice(0, 2)} -> ${ids().slice(0, 2)}`);
+  ok('Up keeps the same tile selected',
+    d.querySelector(`#panel-combat [data-object="${order0[1]}"]`).classList.contains('is-selected'));
+  ok('Up disables itself at the top', btn('move-object-up').disabled);
+
+  const widthBefore = btn('resize-object').textContent;
+  btn('resize-object').click();
+  await wait(250);
+  ok('Width cycles and the readout follows', btn('resize-object').textContent !== widthBefore,
+    `${widthBefore} -> ${btn('resize-object').textContent}`);
+
+  btn('toggle-object-hide').click();
+  await wait(250);
+  ok('Hide flips to Show', btn('toggle-object-hide').textContent === 'Show');
+  btn('toggle-object-hide').click();
+  await wait(250);
+  ok('Show flips back to Hide', btn('toggle-object-hide').textContent === 'Hide');
+
+  // --- rename via the bar renames the SELECTED tile ------------------------------------
+  const rename = bar().querySelector('.obj-rename');
+  rename.focus();
+  d.execCommand('selectAll');
+  d.execCommand('insertText', false, 'Wounds');
+  rename.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+  await wait(300);
+  const renamed = d.querySelector(`#panel-combat [data-object="${order0[1]}"]`);
+  ok('rename reaches the selected tile', /Wounds/i.test(renamed.textContent),
+    `label now "${renamed.querySelector('.tile__label, .subhead')?.textContent.trim()}"`);
+
+  // --- the disclosure and the rest of the app still work -------------------------------
+  const more = d.querySelector('.arrange-more');
+  ok('disclosure starts closed', !more.open);
+  more.querySelector('summary').click();
+  await wait(250);
+  ok('summary opens the disclosure', more.open);
+  ok('tab rows live inside it', d.querySelectorAll('.arrange-more .tabrow').length > 0,
+    `${d.querySelectorAll('.arrange-more .tabrow').length} rows`);
+  ok('Set as default moved in with them', Boolean(d.querySelector('.arrange-more [data-action="arrange-set-default"]')));
+  ok('opening it did not change the selection',
+    d.querySelector(`#panel-combat [data-object="${order0[1]}"]`).classList.contains('is-selected'));
+
+  // Tab switching must survive the click interception — this broke once already.
+  const spellsTab = d.getElementById('tab-spells');   // tabs key off id + aria-controls, not data-tab
+  ok('the spells tab exists to click', Boolean(spellsTab));
+  spellsTab.click();
+  await wait(300);
+  ok('tab bar still switches while arranging',
+    d.getElementById('panel-spells').hidden === false,
+    `spells hidden=${d.getElementById('panel-spells').hidden}`);
+  d.getElementById('tab-combat').click();
+  await wait(250);
+
+  d.querySelector('.arrange-bar [data-action="arrange-toggle"]').click();
+  await wait(300);
+  ok('Done exits arrange mode', !d.body.classList.contains('is-arranging'));
+  ok('tiles lose their button role on exit',
+    [...d.querySelectorAll('[data-object]')].every((n) => !n.hasAttribute('role')));
+  ok('disclosure folds back up for next time', !d.querySelector('.arrange-more').open);
+
+  // Re-entry must show the hint again, not a blank row.
+  d.querySelector('#btn-arrange').click();
+  await wait(350);
+  ok('re-entry shows the hint again', /Tap a tile/.test(bar().textContent), `"${bar().textContent.trim()}"`);
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
+}
+</script>
