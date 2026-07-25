@@ -348,6 +348,9 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   /* Reserve two lines (#65 symptom 1) so a one-line label (AC) and a two-line one
      (Prof. Bonus) leave their tile bodies on the same baseline across a row. */
   min-height: 2.4em;
+  /* Arrange mode lets you rename any tile to arbitrary text, and a 1× tile is only ~4.5rem
+     wide — without this a single long word escapes the tile and scrolls the page sideways. */
+  overflow-wrap: anywhere;
 }
 .tile__body {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap;

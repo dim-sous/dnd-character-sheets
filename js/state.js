@@ -264,6 +264,7 @@ export function longRest() {
   char.hp.current = char.hp.max;
   char.hp.temp = 0;
   char.deathSaves = { successes: 0, failures: 0 };
+  char.concentration = false;   // #78: nothing you concentrate on survives 8 hours of rest
   char.hitDice = rules.restoreHitDice(char.hitDice);
   char.exhaustion = Math.max(0, char.exhaustion - 1);
   for (const slot of Object.values(char.spellcasting.slots)) slot.used = 0;

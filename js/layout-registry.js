@@ -63,8 +63,9 @@ export const CARD_ORDER = [
  * `data-object="<id>"`, the object analogue of `data-editcard`. `cost:'js'` objects contain a
  * render.js host, so they may be hidden (host stays present-but-hidden) but never detached.
  *
- * Phase 5 objectifies only the Combat card (its 7 tiles + 4 status blocks; Temp HP folded into
- * the Hit Points tile and the Adjust HP tile retired in #65); other cards stay whole.
+ * Phase 5 objectifies only the Combat card (its tiles + 4 status blocks; Temp HP folded into
+ * the Hit Points tile and the Adjust HP tile retired in #65, Concentration added in #78);
+ * other cards stay whole.
  * `cost:'js'` object hosts, for reference: hitdice→#hitDice, deathsaves→#death-successes
  * /#death-failures, exhaustion→#exhaustion, conditions→#conditions.
  *
@@ -81,6 +82,8 @@ export const OBJECT_REGISTRY = {
   speed: { card: 'combat', label: 'Speed', cost: 'markup', defaultSpan: 1 },
   pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup', defaultSpan: 1 },
   heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup', defaultSpan: 1 },
+  // #78. Label matches the static markup (see applyObjects) and is abbreviated to fit a 1× tile.
+  concentration: { card: 'combat', label: 'Conc.', cost: 'markup', defaultSpan: 1 },
   hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js', defaultSpan: 'full' },
   deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js', defaultSpan: 'full' },
   exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js', defaultSpan: 'full' },
@@ -97,7 +100,7 @@ export const OBJECT_SPANS = [1, 2, 'full'];
 /** Default object order per card (matches today's DOM). Only `combat` has objects this phase. */
 export const OBJECT_ORDER = {
   combat: [
-    'hp', 'rest', 'ac', 'initiative', 'speed', 'pb', 'heroic',
+    'hp', 'rest', 'ac', 'initiative', 'speed', 'pb', 'heroic', 'concentration',
     'hitdice', 'deathsaves', 'exhaustion', 'conditions',
   ],
   // #67. Registering the order is what objectifies a card: normalizeCard backfills any object
