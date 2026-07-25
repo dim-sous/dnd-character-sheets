@@ -815,6 +815,45 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row > textarea { flex-basis: 100%; }
 .row > .row__narrow { flex: 0 1 4.5rem; }
 
+/* Multi-value rows (#64): a PRIMARY line of three columns — name / to-hit / damage (item / qty
+   for inventory) — that line up down the card, each given enough width for real values (damage
+   was a squeezed fraction before, which is what cropped). Below it, a NOTES field hidden by
+   default and revealed by tapping the entry (main.js flips .is-expanded). No caret, no reflow:
+   the whole row is the tap target. */
+.row--attack, .row--inventory {
+  display: flex; flex-direction: column; align-items: stretch; gap: .35rem;
+}
+.row__primary { display: grid; align-items: center; gap: .5rem; }
+.row__primary > * { min-width: 0; }                /* let the flexible name column ellipsize, not overflow */
+/* Tight side padding (like .currency): the default .6rem inset ate ~20px per field and forced
+   short damage strings to ellipsize. */
+.row__primary input { text-overflow: ellipsis; padding-inline: .35rem; }
+.row__primary input:read-only { outline: none; }   /* view fields are display-only — no focus box on tap */
+
+/* Shared template so the Attacks header sits exactly above its columns, in view AND edit (the
+   trailing var(--tap) column is the edit-only remove ✕). name flexes; to-hit and damage are
+   fixed at widths that fit real values ("1d8+3 Piercing" etc. without cropping). */
+.attacks-header, .row--attack .row__primary { grid-template-columns: minmax(0, 1fr) 2.75rem 9.5rem; }
+.is-editing .attacks-header, .is-editing .row--attack .row__primary { grid-template-columns: minmax(0, 1fr) 2.75rem 9.5rem var(--tap); }
+.row--inventory .row__primary { grid-template-columns: minmax(0, 1fr) 4.5rem; }
+.is-editing .row--inventory .row__primary { grid-template-columns: minmax(0, 1fr) 4.5rem var(--tap); }
+
+/* Attacks column-name header; hidden while the list is empty. */
+.attacks-header {
+  display: grid; align-items: center; gap: .5rem;
+  margin-bottom: .4rem; padding: 0 .6rem;
+  font-size: .62rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-faint);
+}
+[data-editcard="attacks"]:has(.rows__empty) .attacks-header { display: none; }
+
+/* Notes: hidden by default; revealed when the entry is tap-expanded (.is-expanded), and always
+   shown in edit mode (still editable there). Neutralise the base `.row > textarea{flex-basis:100%}`
+   (it assumed a wrapping flex row; here the row is a column and it would blow the box up). */
+.row--attack > .row__notes, .row--inventory > .row__notes { flex: none; min-height: 0; display: none; }
+.row.is-expanded > .row__notes { display: block; }
+.is-editing .row--attack > .row__notes, .is-editing .row--inventory > .row__notes { display: block; min-height: var(--tap); }
+
 .row--hitdie { align-items: center; }
 .row__of { flex: none; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 
@@ -1040,6 +1079,11 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      Safari); where it isn't, the textarea prints at its natural height — no worse than
      before. break-inside keeps a note from splitting mid-line across a page. */
   textarea { field-sizing: content; height: auto; overflow: visible; break-inside: avoid; }
+  /* Multi-value rows (#64): the tap-collapsible notes must still print — reveal every note and
+     clip rather than ellipsize the single-line fields so a printed sheet carries the full entry,
+     not just what happened to be expanded on screen. */
+  .row--attack > .row__notes, .row--inventory > .row__notes { display: block !important; }
+  .row__primary input { text-overflow: clip; }
 }
 
 @media (prefers-reduced-motion: reduce) {
