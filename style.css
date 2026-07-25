@@ -110,6 +110,12 @@ textarea { min-height: 5rem; resize: vertical; line-height: 1.5; field-sizing: c
 /* Notes would otherwise collapse to the 5rem floor when empty; keep it roomy to write in. */
 #f-notes { min-height: 12rem; }
 
+/* The Proficiencies blobs run from "Light" to a five-item tool list, and the 5rem floor
+   gave all four the same 80px box — around 50px of dead space each for the short ones.
+   field-sizing was already growing them; this is what lets it shrink them. The floor stays
+   at one tap target, and `rows="2"` is still the height where field-sizing is unsupported. */
+[data-editcard="proficiencies"] textarea { min-height: var(--tap); }
+
 input[type="number"] { text-align: center; }
 
 /* The spinners are useless at this size and steal tap area. */
@@ -714,9 +720,33 @@ body.is-arranging .dropslot { pointer-events: auto; }
 body.is-arranging .card__edit,
 body.is-arranging [data-action="add-row"] { display: none; }
 
-/* auto-fit everywhere rather than a fixed column count: these cards sit in columns of
-   very different widths depending on breakpoint, and a fixed count clips. */
-.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: .6rem; }
+/* The Identity card: one field per row, labels in one column and values in the other.
+
+   Side-by-side fields cannot be made to line up here, and two goes at it proved it. The
+   original `auto-fit, minmax(6.5rem)` gave all eight the same 106px track at 390px, which
+   cropped four of them while Level — two digits — sat in a box it could never fill. Sizing
+   each field by its content instead (Name 4 tracks, Level 2, the rest 3) stopped the
+   cropping but broke the column: the right-hand field of the first row started at a
+   different x from every row below it. And in both, each value sat ~10px right of its own
+   label, because an input carries side padding that a bare <label> does not.
+
+   Two real columns end all three. `max-content` sizes the label column to the longest label
+   and hands the rest to the value — about 240px at 390px, against the 164px that cropped
+   "Emerald Enclave Captain" at eighteen characters. `display: contents` promotes each
+   field's label and input to grid items so the columns are real, with no wrapper markup and
+   nothing for renderSheet to know about. */
+.field-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: .3rem .8rem;
+  align-items: center;
+}
+.field-grid > .field { display: contents; }
+
+/* Every value in this card is a word, so the base centring for input[type=number] made
+   Level read as a different kind of field. Centred stays correct where the number IS the
+   value — ability scores, currency, the tiles. */
+.field-grid input[type="number"] { text-align: start; }
 
 .inline-fields { display: flex; flex-wrap: wrap; gap: .6rem; }
 .inline-fields > .field { flex: 1 1 7rem; }
@@ -1054,6 +1084,25 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 }
 .row__primary > input:first-child { flex: 1 1 4rem; min-width: 0; }  /* name / item: grows into the free space */
 .row__primary > input:not(:first-child) { flex: 0 0 auto; }          /* to-hit / damage / qty: exactly content width */
+
+/* An attack row is ONE line, and spends a second only when a name genuinely cannot fit on it.
+   The line has ~304px at 390px. "Starry Wisp" plus its numbers needs ~270 and fits with room;
+   "Longbow of the Deep Wood" needs 212 for the name alone, and against a to-hit and a damage
+   field it does not fit at any allocation — that row was rendering "Warham…".
+
+   flex-basis: min-content is what distinguishes the two cases. The name's hypothetical size
+   becomes its full text, so the flex line breaks only when the text really has nowhere to go;
+   below that threshold nothing changes and the row is the single line it has always been.
+   min-width stays 0, so a name too long even for a line of its own shrinks and ellipsizes
+   rather than pushing the document sideways.
+
+   Attacks only: an inventory row's second field is a 4-character quantity and always fits. */
+.row--attack .row__primary > input:first-child { flex: 1 1 min-content; }
+
+/* The numbers are one flex item, so the line can only break BEFORE them — never between the
+   to-hit and the damage, which is where it landed when they were loose children. */
+.row__stats { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+.row__stats > * { flex: 0 0 auto; }
 .row__primary input:read-only { outline: none; }   /* view fields are display-only — no focus box on tap */
 
 /* #84: to-hit as a derived readout. The <output> is a grandchild, so the `.row__primary >
