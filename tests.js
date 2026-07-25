@@ -9,7 +9,7 @@
  */
 import { blankCharacter, MAX_EXHAUSTION, SCHEMA_VERSION } from './js/constants.js';
 import * as rules from './js/rules.js';
-import { normalizeCharacter, parseStored, mergeCharacters } from './js/storage.js';
+import { normalizeCharacter, parseStored, mergeCharacters, characterFilename } from './js/storage.js';
 // state.js is safe to import: its module scope has no side effects (it does not call
 // init/load/localStorage), and only its PURE exports getByPath/setByPath are used here.
 // DO NOT call state.js mutators from this suite — they end in a debounced save() that,
@@ -432,6 +432,35 @@ is('write returns undefined', setByPath({ a: { b: 1 } }, 'a.b', 2), undefined);
 is('write to missing intermediate throws', (() => { try { setByPath({}, 'a.b', 1); return 'no-throw'; } catch (e) { return 'threw'; } })(), 'threw');
 
 /* ------------------------------------ normalizeCharacter clamp & coercion */
+
+describe('characterFilename (#70)');
+{
+  const D = '2026-07-25';
+  const fn = (name) => characterFilename({ name }, D);
+  is('plain name', fn('Aragorn'), `Aragorn_${D}.json`);
+  is('spaces become underscores', fn('Sir Reginald the Bold'), `Sir_Reginald_the_Bold_${D}.json`);
+  is('runs of whitespace collapse', fn('A   B\tC'), `A_B_C_${D}.json`);
+  is('path separators stripped', fn('Rogue/Bard'), `RogueBard_${D}.json`);
+  is('windows-illegal characters stripped', fn('a<b>c:d"e|f?g*h'), `abcdefgh_${D}.json`);
+  is('stripped character does not leave a double underscore', fn('Sir Reginald / the Bold'), `Sir_Reginald_the_Bold_${D}.json`);
+  is('hyphens and underscores kept', fn('Half-Elf_Ranger'), `Half-Elf_Ranger_${D}.json`);
+  is('non-ASCII letters kept', fn('Ñandú Þórr'), `Ñandú_Þórr_${D}.json`);
+  is('leading/trailing punctuation trimmed', fn('  ..Grog--  '), `Grog_${D}.json`);
+  is('empty name → unnamed', fn(''), `unnamed_${D}.json`);
+  is('whitespace-only name → unnamed', fn('   '), `unnamed_${D}.json`);
+  is('name of only illegal chars → unnamed', fn('///'), `unnamed_${D}.json`);
+  is('missing name → unnamed', characterFilename({}, D), `unnamed_${D}.json`);
+  is('missing character → unnamed', characterFilename(undefined, D), `unnamed_${D}.json`);
+  is('long name capped at 60', fn('x'.repeat(200)), `${'x'.repeat(60)}_${D}.json`);
+  is('cap does not leave trailing punctuation', fn(`${'y'.repeat(59)}   tail`), `${'y'.repeat(59)}_${D}.json`);
+
+  // The single-character envelope is the one readImportFile already accepts, so a
+  // one-character export must round-trip with no import changes (#70 note 2).
+  const one = { ...blankCharacter(), name: 'Solo' };
+  const payload = JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [one] });
+  is('single-character envelope round-trips', parseStored(payload).characters.length, 1);
+  is('round-trip preserves the name', parseStored(payload).characters[0].name, 'Solo');
+}
 
 describe('normalizeCharacter save bonuses (#68)');
 is('saveBonusAll missing → 0', normalizeCharacter({}).saveBonusAll, 0);

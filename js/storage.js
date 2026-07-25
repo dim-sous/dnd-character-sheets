@@ -262,6 +262,45 @@ export function exportToFile(characters) {
   );
 }
 
+/**
+ * The filename for a single-character export: `<name>_<date>.json` (#70).
+ *
+ * Character names are free-form, so strip what filesystems refuse (`<>:"/\|?*` and control
+ * characters), fold whitespace runs to underscores, and trim the leading/trailing punctuation
+ * that would make the file hidden or awkward. Length-capped so a pasted paragraph can't become
+ * a filename. An empty result falls back to `unnamed` — the date still tells the files apart.
+ *
+ * Letters outside ASCII are kept on purpose: "Ñandú" should export as itself, not as dashes.
+ * No Windows reserved-name guard is needed — the `_<date>` suffix means the base can never be
+ * bare `CON`/`NUL`/`AUX`.
+ *
+ * `dateStr` is injected rather than read from the clock so the tests don't depend on today.
+ */
+export function characterFilename(char, dateStr = today()) {
+  const cleaned = String(char?.name ?? '')
+    // Whitespace folds FIRST: tab and newline live inside the control range stripped
+    // below, so doing that first would delete them and glue the words together.
+    .replace(/\s+/g, '_')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
+    // A stripped character between two words would otherwise leave "A__B".
+    .replace(/_{2,}/g, '_')
+    .slice(0, 60)
+    .replace(/^[._-]+|[._-]+$/g, '');
+  return `${cleaned || 'unnamed'}_${dateStr}.json`;
+}
+
+/**
+ * Export ONE character (#70), wrapped in the very envelope readImportFile already accepts —
+ * a one-element `characters` list — so a single-character file round-trips with no import
+ * change and no second file shape to maintain.
+ */
+export function exportCharacterToFile(char) {
+  downloadFile(
+    JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [char] }, null, 2),
+    characterFilename(char),
+  );
+}
+
 /** Download the raw, unreadable stored text so a corrupt save can be recovered by hand. */
 export function exportRaw(raw) {
   downloadFile(raw ?? '', `dnd-characters-unreadable-${today()}.json`);

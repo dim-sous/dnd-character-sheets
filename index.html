@@ -34,11 +34,16 @@
         <button type="button" class="btn btn--danger" id="btn-delete">Delete</button>
       </div>
       <hr class="rule">
+      <!-- #70: "this" exports the open character as <name>_<date>.json; "all" is the
+           whole-roster backup the reminder (#32) counts on. -->
       <div class="btn-row">
-        <button type="button" class="btn" id="btn-export">Export</button>
+        <button type="button" class="btn" id="btn-export-one">Export this</button>
+        <button type="button" class="btn" id="btn-export">Export all</button>
+      </div>
+      <div class="btn-row">
         <button type="button" class="btn" id="btn-import">Import</button>
       </div>
-      <p class="hint">Characters are stored on this device only. Export is your backup.</p>
+      <p class="hint">Characters are stored on this device only. Export all is your backup.</p>
       <input type="file" id="file-import" accept=".json,application/json" hidden>
     </div>
   </aside>
