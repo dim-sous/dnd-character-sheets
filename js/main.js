@@ -9,7 +9,7 @@
 import * as rules from './rules.js';
 import * as state from './state.js';
 import { STORAGE_KEY } from './constants.js';
-import { exportToFile, readImportFile, exportRaw } from './storage.js';
+import { exportToFile, exportCharacterToFile, readImportFile, exportRaw } from './storage.js';
 import {
   shouldRemindBackup, shouldSuggestInstall, loadNudgeState,
   recordFirstSeen, recordBackup, snoozeBackup, snoozeInstall,
@@ -487,6 +487,20 @@ $('#btn-delete').addEventListener('click', () => {
   if (!char) return;
   const name = char.name || 'this unnamed character';
   if (confirm(`Delete ${name}? This cannot be undone.`)) state.deleteCharacter(char.id);
+});
+
+$('#btn-export-one').addEventListener('click', () => {
+  const char = state.getActive();
+  if (!char) {
+    showNotice('Open a character first.');
+    return;
+  }
+  state.flush();
+  exportCharacterToFile(char);
+  // Deliberately NOT recordBackup() (#70/#32): one character is not a backup of the roster,
+  // so the 14-day reminder keeps counting until an "Export all". Exporting the only character
+  // you have is a full backup in practice, but making the clock depend on the roster size
+  // would mean the same button silently means two different things.
 });
 
 $('#btn-export').addEventListener('click', () => {
