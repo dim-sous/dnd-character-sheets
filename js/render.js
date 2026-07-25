@@ -682,6 +682,23 @@ export function setSaved(message, tone) {
   el.dataset.tone = tone;
 }
 
+/**
+ * Announce a play event — the result of an HP change, a long rest (#100). Sighted players see
+ * the number repaint; without this, assistive tech is told nothing at all, even though the
+ * same action can move HP, drain temp and clear death saves at once.
+ *
+ * Called only from the handlers that perform those actions, never from a render: `renderDerived`
+ * runs on EVERY change, so announcing from there would narrate unrelated edits. Re-announces an
+ * identical message by clearing first — taking 8 damage twice in a row is two events, and a live
+ * region with unchanged text would otherwise stay silent on the second.
+ */
+export function announcePlay(message) {
+  const el = $('#play-status');
+  if (!el) return;
+  el.textContent = '';
+  el.textContent = message;
+}
+
 /*
  * The #banner is one live region shared by two kinds of message that used to erase each
  * other (#33): a successful import cleared a pending update prompt, and an update prompt

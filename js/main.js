@@ -18,6 +18,7 @@ import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
   clearNudge, showUpdatePrompt, showRecovery, activateTab, reactivateTab, clearCardEdits,
+  announcePlay,
 } from './render.js';
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
@@ -102,21 +103,46 @@ document.addEventListener('change', (event) => {
 function commitHpCurrent(el) {
   const char = state.getActive();
   if (!char) return;
-  const hp = rules.applyHpInput(char.hp, el.value);
+  const before = char.hp;
+  const hp = rules.applyHpInput(before, el.value);
   state.updateActive('hp', hp);
   el.value = String(hp.current);
+  announceHp(before, hp);
 }
 
-// Two ways to register the change: tap away (blur → change) or press Enter. A text field
-// doesn't fire `change` on Enter, so Enter blurs the field, which both commits and deselects.
+/**
+ * Say what actually happened (#100). A sighted player watches the number change; without this
+ * a screen-reader user is told nothing — not the new total, not that temp HP swallowed part of
+ * the hit, not that they just hit 0. Silent when nothing moved, so committing an unchanged
+ * value (Enter on an untouched field, or the idempotent re-commit on blur) says nothing.
+ */
+function announceHp(before, after) {
+  const absorbed = Math.max(0, Number(before.temp) - Number(after.temp));
+  if (after.current === before.current && absorbed === 0) return;
+  const max = Number(after.max) > 0 ? ` of ${after.max}` : '';
+  const parts = [`Hit points ${after.current}${max}.`];
+  // Temp absorbing damage is invisible in the Current field, so it has to be said outright.
+  if (absorbed > 0) parts.push(`Temporary hit points absorbed ${absorbed}, ${after.temp} left.`);
+  // Pairs with the .is-dying treatment (#75) that a sighted player gets at the same moment.
+  if (Number(after.max) > 0 && after.current <= 0) parts.push('At 0 — make death saving throws.');
+  announcePlay(parts.join(' '));
+}
+
+// Two ways to register the change: tap away (blur → change) or press Enter.
 document.addEventListener('change', (event) => {
   if (event.target.dataset?.hpCurrent) commitHpCurrent(event.target);
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && event.target.dataset?.hpCurrent) {
-    event.preventDefault();
-    event.target.blur();
-  }
+  const el = event.target;
+  if (event.key !== 'Enter' || !el.dataset?.hpCurrent) return;
+  event.preventDefault();
+  // Commit in place and KEEP focus (#100). Blurring used to BE the commit, which stranded
+  // focus on <body> and made the next Tab restart from the top of the document. Selecting the
+  // result means the next entry overwrites it rather than appending to it. A `change` still
+  // fires on the eventual real blur; re-committing the absolute value already in the field is
+  // a no-op, and announceHp stays silent because nothing moved.
+  commitHpCurrent(el);
+  el.select();
 });
 
 // Cross-tab card move (#54): the arrange-mode "Move to…" select. A <select> fires `change`,
@@ -281,7 +307,7 @@ const ACTIONS = {
     snoozeInstall();
     clearNudge('install');
   },
-  'long-rest': () => {
+  'long-rest': (el) => {
     // Current HP commits on blur (#65); flush a pending edit first so a still-focused HP field
     // can't blur *after* the rest and silently overwrite it back. No-op when nothing's focused.
     document.activeElement?.blur?.();
@@ -291,7 +317,22 @@ const ACTIONS = {
       'Take a long rest? Restores HP to max, recovers all your Hit Point Dice, reduces '
       + 'exhaustion by 1, clears temp HP and death saves, and resets spell slots.',
     );
-    if (ok) state.longRest();
+    if (ok) {
+      state.longRest();
+      // One rest rewrites HP, temp, hit dice, exhaustion, death saves and concentration at
+      // once; none of it was announced (#100). Lead with HP — it is what a player checks.
+      const char = state.getActive();
+      const max = char && Number(char.hp.max) > 0 ? ` of ${char.hp.max}` : '';
+      announcePlay(
+        `Long rest taken. Hit points ${char ? char.hp.current : 0}${max}. `
+        + 'Temp HP, death saves and concentration cleared. Hit dice restored.',
+      );
+    }
+    // Re-home focus (#100). The flush above blurs whatever was focused — including this very
+    // button when it was activated by keyboard — and nothing put it back, so the next Tab
+    // restarted from the top of the document. Also runs on cancel: focus should never be a
+    // casualty of changing your mind.
+    el?.focus?.();
   },
   'add-row': (el) => state.addRow(el.dataset.list),
   'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),

@@ -78,6 +78,13 @@
 
     <p class="banner" id="banner" role="status" aria-live="polite" aria-atomic="true" hidden></p>
 
+    <!-- Play events (#100): the outcome of an HP change or a long rest, for assistive tech.
+         Deliberately NOT #arrange-status — that one lives inside .arrange-bar, which is only
+         shown in arrange mode, so it cannot announce anything during play. Sits outside every
+         conditionally-hidden container for the same reason. aria-atomic so the whole sentence
+         is read as one utterance rather than just the words that changed. -->
+    <span class="visually-hidden" id="play-status" role="status" aria-live="polite" aria-atomic="true"></span>
+
     <section class="empty" id="empty" hidden>
       <h2>No characters yet</h2>
       <p>Create one to get started, or import a backup from another device.</p>
