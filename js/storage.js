@@ -94,6 +94,15 @@ export function normalizeCharacter(raw) {
     }
   }
 
+  // #68: the saving-throw twins of the two blocks above, same idioms.
+  char.saveBonusAll = num(raw.saveBonusAll, base.saveBonusAll);
+  char.saveBonuses = { ...base.saveBonuses };
+  if (raw.saveBonuses && typeof raw.saveBonuses === 'object') {
+    for (const key of Object.keys(base.saveBonuses)) {
+      char.saveBonuses[key] = num(raw.saveBonuses[key], base.saveBonuses[key]);
+    }
+  }
+
   char.ac = num(raw.ac, base.ac);
   char.initiativeBonus = num(raw.initiativeBonus, base.initiativeBonus);
   char.speed = num(raw.speed, base.speed);

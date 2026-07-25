@@ -267,6 +267,11 @@
                      or similar can grant a negative modifier just as easily as a positive one. -->
                 <input id="f-skill-bonus-all" type="number"
                        data-bind="skillBonusAll" data-type="number"></p>
+              <p class="field field--narrow"><label for="f-save-bonus-all">All-saves bonus</label>
+                <!-- #68: Paladin Aura of Protection, cloak of protection… Signed, same
+                     reasoning as the two fields above. -->
+                <input id="f-save-bonus-all" type="number"
+                       data-bind="saveBonusAll" data-type="number"></p>
             </div>
             <div class="abilities" id="abilities"></div>
             <div class="passive">
@@ -467,7 +472,10 @@
         <span class="skill__name">Saving Throw</span>
         <input type="checkbox" class="skill__prof">
         <span class="skill__exp" aria-hidden="true"></span>
-        <span class="skill__bonus" aria-hidden="true"></span>
+        <!-- #68: per-save misc bonus, the twin of tpl-skill's. Signed field: no
+             inputmode="numeric" (see the skill row below) — a save bonus can be negative,
+             and iOS's numeric keypad has no minus key. -->
+        <input type="number" class="skill__bonus" data-type="number">
         <span class="skill__marker"></span>
         <output class="skill__total"></output>
       </li>

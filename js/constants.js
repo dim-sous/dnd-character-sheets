@@ -85,6 +85,11 @@ export function blankCharacter() {
     // player retypes by hand when they change, same as every other stored field here.
     skillBonusAll: 0,
     skillBonuses: Object.fromEntries(SKILLS.map((s) => [s.key, 0])),
+    // #68: the same pair for saving throws — a flat bonus to every save (Paladin's Aura
+    // of Protection, a cloak of protection) and a per-save one. Same hand-maintained
+    // contract as the skill bonuses above: typed once, retyped when it changes.
+    saveBonusAll: 0,
+    saveBonuses: Object.fromEntries(ABILITIES.map((a) => [a.key, 0])),
 
     ac: 10,
     initiativeBonus: 0,

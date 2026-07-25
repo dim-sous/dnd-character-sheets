@@ -177,6 +177,13 @@ function renderAbilities(char) {
     saveBox.dataset.toggle = 'saveProficiencies';
     saveBox.dataset.value = ability.key;
     saveBox.setAttribute('aria-label', `${ability.label} saving throw proficiency`);
+    // #68: per-save misc bonus — same reasoning as the per-skill one below, a plain
+    // data-bind whose path varies per ability, so it is wired here not in the template.
+    const saveBonus = $('.skill__bonus', save);
+    saveBonus.dataset.bind = `saveBonuses.${ability.key}`;
+    saveBonus.dataset.type = 'number';
+    saveBonus.setAttribute('aria-label', `${ability.label} saving throw misc bonus`);
+
     $('.skill__total', save).dataset.derived = `save.${ability.key}`;
     $('.skill__marker', save).dataset.derived = `saveMark.${ability.key}`;
 

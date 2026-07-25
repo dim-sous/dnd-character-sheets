@@ -77,7 +77,12 @@ export function effectiveSpeed(char) {
 
 export function saveTotal(char, abilityKey) {
   const proficient = char.saveProficiencies.includes(abilityKey);
-  return modFor(char, abilityKey) + (proficient ? characterPB(char) : 0) + exhaustionPenalty(char);
+  let total = modFor(char, abilityKey) + (proficient ? characterPB(char) : 0);
+  // #68: hand-computed extras, the mirror of skillTotal's — flat across every save, plus
+  // a per-save one. Never recomputed from a formula, on purpose.
+  total += num(char.saveBonusAll) + num(char.saveBonuses[abilityKey]);
+  total += exhaustionPenalty(char);
+  return total;
 }
 
 export function skillTotal(char, skillKey) {
