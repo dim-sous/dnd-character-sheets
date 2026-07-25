@@ -359,11 +359,11 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 /* Action tiles (Rest): the body grows to the tile's stretched height (flex:1) and stretches
    its child on the cross axis, so the button fills the tile in BOTH dimensions instead of a
    lonely centred pill (#65 symptom 3). flex:1 1 auto on the button owns the width. */
-/* The button owns the tile's WIDTH but not its height (#75). `flex: 1; align-items: stretch`
-   here made it fill both dimensions, which turned Long Rest — a once-per-session, destructive
-   action — into the largest tap target on the card, next to the field tapped every round.
-   It keeps its 44px from the .btn base, so this is a weight change, not a target change. */
-.tile__body--actions { gap: .4rem; }
+/* The button fills the tile in BOTH dimensions rather than sitting as a lonely centred pill
+   (#65 symptom 3). #75 briefly removed `flex: 1` to de-emphasise Long Rest; that left a
+   half-empty tile next to full ones and was reverted — Long Rest is instead de-emphasised by
+   being ordered last. */
+.tile__body--actions { gap: .4rem; flex: 1; align-items: stretch; }
 .tile__body--actions .btn { flex: 1 1 auto; }
 .tile__value {
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
@@ -376,7 +376,11 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .tile__input {
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600; text-align: center;
 }
-.tile__input:focus { background: var(--parchment); border-radius: 6px; }
+/* The focus tint is for a field you are TYPING in. `:not(:read-only)` matters since #76 made
+   AC and Speed keep their field in view mode: locked, it still took focus on a tap and painted
+   `--parchment`, which in dark mode is the near-black page background — a black box filling the
+   tile. A locked value is display-only and must look identical focused or not. */
+.tile__input:not(:read-only):focus { background: var(--parchment); border-radius: 6px; }
 
 /* ---- what a tap reaches (#76) ------------------------------------------------------
    The card used to run three editability rules behind one appearance, with two different
@@ -396,16 +400,11 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    For a player it is one sentence: underlined means Edit reaches it.
    No `display` on the base input selector — that would outrank class hides, as the checkbox
    bug proved; live inputs ([data-live]) always show regardless. */
-.tile__value--gated,
-.tile__input:read-only,
-.hp__max:read-only {
-  /* (0,2,0) beats the `input:read-only { border-color: transparent }` flattening at (0,1,1),
-     so the underline survives the flatten that removes the rest of the box. */
-  border-bottom: 1px dashed var(--line);
-  border-radius: 0;
-}
-/* Unlocked, the real input border says it already — a second underline would just be noise. */
-.is-editing .tile__value--gated { border-bottom-color: transparent; }
+/* No marker on Edit-gated values. #76 added a dashed underline under AC, Speed and Max HP to
+   say "Edit reaches this"; it read as clutter on a sheet that is meant to look like a sheet,
+   and was reverted. The flatten-in-place treatment itself stays: a locked value is flat text,
+   Edit gives it a box. What responds to a tap is therefore still not signposted in view mode
+   — see #76's first acceptance bullet, deliberately left open rather than solved with dashes. */
 
 /* Speed's base field is the one input still revealed rather than flattened, because its tile
    already shows the derived value and two numbers in view mode would be a puzzle. */
@@ -1056,6 +1055,13 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    HP, currency, hit-dice current, heroic inspiration, conditions) are never locked, so they
    keep their editable boxes. Selects/checkboxes ignore readOnly, so they lock via :disabled;
    -webkit-text-fill-color keeps disabled values legible on iOS. */
+/* A locked field is display-only, so tapping one must not paint a focus ring — an accent box
+   around a value you cannot change reads as an error, and it appeared on AC, Speed, Max HP and
+   the Hit Dice total. `.row__primary input:read-only` already made this call for entry rows;
+   this is the same rule everywhere. Nothing is lost for keyboard users: there is nothing to
+   type into a read-only field, and its value is still announced. */
+input:read-only:focus-visible, textarea:read-only:focus-visible { outline: none; }
+
 input:read-only, textarea:read-only, select:disabled {
   border-color: transparent;
   background: none;
@@ -1104,12 +1110,9 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   font-family: var(--serif); font-weight: 700; font-size: 1.4rem;
   text-align: center; line-height: 1.1;
 }
-/* ...but not one SIZE (#75). #65 flattened Current to its siblings' 1.4rem, which left the
-   most-read and most-mutated number on the sheet rendering at exactly the scale of Prof.
-   Bonus — a value that never changes in play — and of its own Edit-gated Max. Current is the
-   number you look for first, so it gets the display size back. Max and Temp stay at 1.4rem:
-   the contrast is the point, and the shared family/weight keeps the row coherent. */
-.hp__cur { font-size: 1.9rem; }
+/* Current / Max / Temp share ONE size on purpose. #75 briefly gave Current a 1.9rem display
+   size to weight it above its siblings; it read as unbalanced against the rest of the card and
+   was reverted. Frequency-of-use is encoded by ORDER and by tile span, not by type scale. */
 
 /* Current HP reddens at or below half — and, since #75, does NOT switch off at 0. isBloodied
    required current > 0, so the app's only HP-conditional cue vanished at exactly the moment

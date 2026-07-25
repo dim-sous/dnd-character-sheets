@@ -179,12 +179,11 @@
               <!-- Speed is the one tile that is BOTH derived and editable: the readout is
                    base − 5ft per Exhaustion level (#63) while the field holds the base. So the
                    computed value is always on screen — flattening it away would lose the
-                   Exhaustion penalty — and Edit reveals the base underneath it. The dashed
-                   underline marks it reachable, exactly like AC and Max HP. -->
+                   Exhaustion penalty — and Edit reveals the base underneath it. -->
               <div class="tile" data-object="speed">
                 <span class="tile__label">Speed</span>
                 <div class="tile__body">
-                  <output class="tile__value tile__value--gated" data-derived="speed">—</output>
+                  <output class="tile__value" data-derived="speed">—</output>
                   <input class="tile__input tile__input--base" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number" aria-label="Speed (base, before Exhaustion)">
                 </div>
               </div>
