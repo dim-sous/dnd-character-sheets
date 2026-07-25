@@ -823,29 +823,20 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row--attack, .row--inventory {
   display: flex; flex-direction: column; align-items: stretch; gap: .35rem;
 }
-.row__primary { display: grid; align-items: center; gap: .5rem; }
-.row__primary > * { min-width: 0; }                /* let the flexible name column ellipsize, not overflow */
-/* Tight side padding (like .currency): the default .6rem inset ate ~20px per field and forced
-   short damage strings to ellipsize. */
-.row__primary input { text-overflow: ellipsis; padding-inline: .35rem; }
-.row__primary input:read-only { outline: none; }   /* view fields are display-only — no focus box on tap */
-
-/* Shared template so the Attacks header sits exactly above its columns, in view AND edit (the
-   trailing var(--tap) column is the edit-only remove ✕). name flexes; to-hit and damage are
-   fixed at widths that fit real values ("1d8+3 Piercing" etc. without cropping). */
-.attacks-header, .row--attack .row__primary { grid-template-columns: minmax(0, 1fr) 2.75rem 9.5rem; }
-.is-editing .attacks-header, .is-editing .row--attack .row__primary { grid-template-columns: minmax(0, 1fr) 2.75rem 9.5rem var(--tap); }
-.row--inventory .row__primary { grid-template-columns: minmax(0, 1fr) 4.5rem; }
-.is-editing .row--inventory .row__primary { grid-template-columns: minmax(0, 1fr) 4.5rem var(--tap); }
-
-/* Attacks column-name header; hidden while the list is empty. */
-.attacks-header {
-  display: grid; align-items: center; gap: .5rem;
-  margin-bottom: .4rem; padding: 0 .6rem;
-  font-size: .62rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--ink-faint);
+/* The primary line lays its fields out by CONTENT width — each takes only what its value needs
+   (field-sizing, exactly as the notes textarea already does) and the NAME/item absorbs whatever
+   is left, so a short damage ("1d8 Radiant") hands its slack to a long name instead of reserving
+   a fixed column that starves it. name grows into free space and ellipsizes only when a row
+   genuinely has none. Tight side padding (like .currency) reclaims the default .6rem inset. The
+   `size` attrs on to-hit/damage/qty are the width fallback where field-sizing is unsupported. */
+.row__primary { display: flex; align-items: center; gap: .5rem; }
+.row__primary input {
+  field-sizing: content; width: auto; min-width: 2.5rem;   /* width:auto so field-sizing wins over the base input{width:100%} */
+  text-overflow: ellipsis; padding-inline: .35rem;
 }
-[data-editcard="attacks"]:has(.rows__empty) .attacks-header { display: none; }
+.row__primary > input:first-child { flex: 1 1 4rem; min-width: 0; }  /* name / item: grows into the free space */
+.row__primary > input:not(:first-child) { flex: 0 0 auto; }          /* to-hit / damage / qty: exactly content width */
+.row__primary input:read-only { outline: none; }   /* view fields are display-only — no focus box on tap */
 
 /* Notes: hidden by default; revealed when the entry is tap-expanded (.is-expanded), and always
    shown in edit mode (still editable there). Neutralise the base `.row > textarea{flex-basis:100%}`
