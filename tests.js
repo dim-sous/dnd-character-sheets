@@ -462,6 +462,17 @@ describe('characterFilename (#70)');
   is('round-trip preserves the name', parseStored(payload).characters[0].name, 'Solo');
 }
 
+describe('normalizeCharacter proficiencies (#69)');
+is('missing → all four empty', normalizeCharacter({}).proficiencies, { weapons: '', armor: '', tools: '', languages: '' });
+is('values preserved', normalizeCharacter({ proficiencies: { weapons: 'Simple, Martial' } }).proficiencies.weapons, 'Simple, Martial');
+is('non-string value → ""', normalizeCharacter({ proficiencies: { tools: 42 } }).proficiencies.tools, '');
+is('unknown key dropped', 'bogus' in normalizeCharacter({ proficiencies: { bogus: 'x' } }).proficiencies, false);
+is('non-object ignored', normalizeCharacter({ proficiencies: 'nope' }).proficiencies, { weapons: '', armor: '', tools: '', languages: '' });
+is('round-trips through parseStored', parseStored(JSON.stringify({
+  schemaVersion: SCHEMA_VERSION,
+  characters: [{ ...blankCharacter(), proficiencies: { weapons: 'Longsword', armor: '', tools: "Thieves' tools", languages: 'Common' } }],
+})).characters[0].proficiencies.tools, "Thieves' tools");
+
 describe('normalizeCharacter save bonuses (#68)');
 is('saveBonusAll missing → 0', normalizeCharacter({}).saveBonusAll, 0);
 is('saveBonusAll garbage → 0', normalizeCharacter({ saveBonusAll: 'x' }).saveBonusAll, 0);
@@ -677,6 +688,21 @@ describe('normalizeLayout');
     JS_CARDS.every((id) => count(placed(noCards), id) === 1), true);
   is('omitted cards land at their home tab',
     cardsOf(noCards, 'combat'), CARD_IDS.filter((id) => CARD_REGISTRY[id].home === 'combat'));
+
+  // #69: a layout saved BEFORE a card existed must gain it, at its home tab — this is the
+  // whole reason adding a card needs no character migration. Simulated by dropping one.
+  const preProficiencies = {
+    layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
+    tabs: TAB_IDS.map((id) => ({
+      id,
+      cards: CARD_IDS.filter((c) => CARD_REGISTRY[c].home === id && c !== 'proficiencies')
+        .map((componentId) => ({ componentId })),
+    })),
+  };
+  is('a card absent from a saved layout is re-injected',
+    cardsOf(normalizeLayout(preProficiencies), 'character').includes('proficiencies'), true);
+  is('re-injection does not duplicate it',
+    count(placed(normalizeLayout(preProficiencies)), 'proficiencies'), 1);
 
   // Idempotence + JSON round-trip on a non-trivial (reordered, partial) layout.
   const partial = {

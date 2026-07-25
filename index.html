@@ -404,6 +404,24 @@
             </div>
           </section>
 
+          <!-- proficiencies (#69): four free-text blobs, comma- or line-separated. No list
+               machinery and no validation — the sheet records what you wrote, it does not
+               know what a "martial weapon" is. -->
+          <section class="card" data-editcard="proficiencies">
+            <div class="list__head">
+              <h2 class="card__title">Proficiencies</h2>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="proficiencies" aria-pressed="false">Edit</button>
+            </div>
+            <p class="field"><label for="f-prof-weapons">Weapons</label>
+              <textarea id="f-prof-weapons" rows="2" data-bind="proficiencies.weapons"></textarea></p>
+            <p class="field"><label for="f-prof-armor">Armor</label>
+              <textarea id="f-prof-armor" rows="2" data-bind="proficiencies.armor"></textarea></p>
+            <p class="field"><label for="f-prof-tools">Tools</label>
+              <textarea id="f-prof-tools" rows="2" data-bind="proficiencies.tools"></textarea></p>
+            <p class="field"><label for="f-prof-languages">Languages</label>
+              <textarea id="f-prof-languages" rows="2" data-bind="proficiencies.languages"></textarea></p>
+          </section>
+
           <!-- notes -->
           <section class="card" data-editcard="notes">
             <div class="list__head">
