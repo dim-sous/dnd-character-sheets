@@ -219,7 +219,11 @@
               <div class="tile" data-object="speed">
                 <span class="tile__label">Speed</span>
                 <div class="tile__body">
-                  <output class="tile__value" data-derived="speed">—</output>
+                  <!-- Edit swaps these rather than stacking them: the Exhaustion-adjusted
+                       readout and the base field are two different numbers for one row, and
+                       showing 20 above 30 while editing was a puzzle, not a disclosure. The
+                       derived value comes back the moment you tap Done. -->
+                  <output class="tile__value tile__value--effective" data-derived="speed">—</output>
                   <input class="tile__input tile__input--base" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number" aria-label="Speed (base, before Exhaustion)">
                 </div>
               </div>
@@ -254,24 +258,31 @@
 
               <!-- Status blocks are full-width objects inside the SAME grid (#54 Phase 5),
                    so they reorder/hide alongside the tiles. Their hosts keep their ids. -->
+              <!-- No `.list__head` here: the label is this tile's header like every other
+                   tile's, and + Add belongs after the pools it appends to rather than wedged
+                   between the header and them. It is display:none outside Edit, so view mode
+                   is the label and the pools, nothing else. -->
               <div class="tile status__block" data-object="hitdice">
-                <div class="list__head">
-                  <h3 class="tile__label">Hit Point Dice</h3>
-                  <button type="button" class="btn btn--small" data-action="add-row" data-list="hitDice">+ Add</button>
-                </div>
+                <h3 class="tile__label">Hit Point Dice</h3>
                 <ul class="rows rows--tight" id="hitDice"></ul>
+                <button type="button" class="btn btn--small tile__add" data-action="add-row" data-list="hitDice">+ Add</button>
               </div>
 
               <div class="tile status__block" data-object="deathsaves">
                 <h3 class="tile__label">Death Saves</h3>
+                <!-- Two columns rather than two labelled rows: side by side the tile is one row
+                     of pips tall instead of two, and both groups read against the same centred
+                     header like every other tile. The labels stay real text above their own
+                     group — the pips carry the meaning and a colour difference alone would not
+                     say which is which. -->
                 <div class="deathsaves">
-                  <div class="deathsaves__row">
-                    <span class="deathsaves__label">Successes</span>
-                    <div class="pips" id="death-successes" role="group" aria-label="Death save successes"></div>
+                  <div class="deathsaves__col">
+                    <span class="deathsaves__label" id="death-successes-label">Successes</span>
+                    <div class="pips" id="death-successes" role="group" aria-labelledby="death-successes-label"></div>
                   </div>
-                  <div class="deathsaves__row">
-                    <span class="deathsaves__label">Failures</span>
-                    <div class="pips pips--bad" id="death-failures" role="group" aria-label="Death save failures"></div>
+                  <div class="deathsaves__col">
+                    <span class="deathsaves__label" id="death-failures-label">Failures</span>
+                    <div class="pips pips--bad" id="death-failures" role="group" aria-labelledby="death-failures-label"></div>
                   </div>
                 </div>
               </div>
@@ -700,16 +711,20 @@
 </template>
 
 <template id="tpl-hitdie">
+  <!-- Remaining / total FIRST, die size after. What you read mid-session is "how many do I have
+       left", and the pool's size is the qualifier — it used to lead, pushing the two numbers
+       that matter into the middle of a left-packed row with the tile's whole right half empty.
+       The row centres now, like every other tile's body. -->
   <li class="row row--hitdie">
-    <select class="row__narrow" data-bind-suffix="size" aria-label="Hit die size">
+    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="remaining" data-type="number" placeholder="0" aria-label="Hit Point Dice remaining" data-live>
+    <span class="row__of" aria-hidden="true">/</span>
+    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="total" data-type="number" placeholder="0" aria-label="Hit Point Dice total">
+    <select class="row__narrow row__die" data-bind-suffix="size" aria-label="Hit die size">
       <option value="d6">d6</option>
       <option value="d8">d8</option>
       <option value="d10">d10</option>
       <option value="d12">d12</option>
     </select>
-    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="remaining" data-type="number" placeholder="0" aria-label="Hit Point Dice remaining" data-live>
-    <span class="row__of" aria-hidden="true">/</span>
-    <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="total" data-type="number" placeholder="0" aria-label="Hit Point Dice total">
     <button type="button" class="row__remove" data-action="remove-row" data-list="hitDice" aria-label="Remove Hit Point Dice pool">✕</button>
   </li>
 </template>

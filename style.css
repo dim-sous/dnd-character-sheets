@@ -342,8 +342,25 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 /* Object width (1× / 2× / full) is owned by the layout config (#54 Phase 6): applyObjects
    writes `grid-column` inline per object, so there is no static width class here anymore. */
 .tile__label {
+  /* Explicitly sans, because half these labels are <h3> and half are <span>, and the global
+     `h1, h2, h3 { font-family: var(--serif) }` was silently giving Death Saves, Conditions,
+     Hit Point Dice and Exhaustion a serif face while Hit Points, AC, Initiative, Speed and the
+     rest stayed sans. Same size, same weight, same tracking — different typeface, in one row of
+     tiles. The class outranks the element selector, so this is all it takes. */
+  font-family: var(--sans);
+  /* Half these labels are <h3>, which carries the UA's `1em 0` block margin — ~20px of extra
+     height on Death Saves, Conditions, Hit Point Dice and Exhaustion that the <span> labels
+     never had. Third silent difference between the two, after the typeface and the centring. */
+  margin: 0;
   font-size: .62rem; font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
+  /* Deliberately NO `width: 100%` here. A tile's direct children already get it from
+     `.tile > *:not(.visually-hidden)`, and they are blockified as flex items so `text-align`
+     centres against the tile. Setting it on the class instead defeats that `:not()`: the Rest
+     and Conditions labels are `.visually-hidden`, i.e. `position: absolute` with no positioned
+     ancestor, so 100% resolves against the VIEWPORT — two invisible 375px boxes off the right
+     edge and the whole document scrolling sideways into empty space. The label that genuinely
+     needs stretching is the one inside a `.list__head`, handled there as a flex basis. */
   text-align: center; line-height: 1.2;
   /* Reserve two lines (#65 symptom 1) so a one-line label (AC) and a two-line one
      (Prof. Bonus) leave their tile bodies on the same baseline across a row. */
@@ -407,9 +424,13 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    — see #76's first acceptance bullet, deliberately left open rather than solved with dashes. */
 
 /* Speed's base field is the one input still revealed rather than flattened, because its tile
-   already shows the derived value and two numbers in view mode would be a puzzle. */
+   already shows the derived value and two numbers in view mode would be a puzzle. Editing
+   SWAPS them for the same reason: the tile showed the Exhaustion-adjusted 20 stacked above the
+   base 30, two numbers for one row with nothing saying which was which. Base is what you edit;
+   the derived readout returns on Done. */
 .tile__input--base { display: none; }
 .is-editing .tile__input--base { display: block; }
+.is-editing .tile__value--effective { display: none; }
 
 /* --------------------------------------------------------------- cards */
 
@@ -448,6 +469,21 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   display: flex; align-items: center; justify-content: space-between;
   gap: .5rem; margin-bottom: .5rem;
 }
+/* A head that belongs to a TILE rather than a card (Features, Feats). Its label is that tile's
+   header and has to read like every other tile's — full width, centred — so it claims its own
+   line and the + Add button drops below it, centred too. Left as a flex child it centred inside
+   its own ~92px box at the left edge of a 310px tile, which is the "some headers are on the
+   left" half of the uniformity problem. */
+.tile > .list__head { flex-wrap: wrap; justify-content: center; }
+.tile > .list__head > .tile__label { flex: 1 0 100%; }
+/* Hit Point Dice drops the head entirely: its + Add sits after the pools it appends to. The
+   tile is already a flex column, so centring is one property and the button's existing
+   display:none gating removes it (and its margin) outside Edit.
+
+   Selector written as `.tile > .tile__add`, not `.tile__add`: `.tile > *:not(.visually-hidden)`
+   forces every tile child to `width: 100%` and scores (0,2,0), so a bare class loses to it and
+   the button stretches the full tile with `align-self: center` having nothing left to centre. */
+.tile > .tile__add { align-self: center; width: auto; margin-top: .4rem; }
 .list__head .card__title { margin: 0; border: 0; padding: 0; }
 .list__head .subhead { margin: 0; }
 
@@ -828,6 +864,11 @@ body.is-arranging [data-action="add-row"] { display: none; }
 /* ---------------------------------------------------------------- pips */
 
 .pips { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* Centred only inside a TILE, where a left-packed pip row sits under a centred header and reads
+   as crooked. Spell-slot pips are deliberately excluded: they live in a labelled row beside
+   their level and total, not under a centred tile header, and centring them there was scope
+   creep — the request was about the status tiles. */
+.tile > .pips, .deathsaves .pips { justify-content: center; }
 
 .pip {
   position: relative;
@@ -849,11 +890,16 @@ body.is-arranging [data-action="add-row"] { display: none; }
 .pips--bad .pip.is-on { background: var(--bad); border-color: var(--bad); }
 .pips--slot .pip.is-on { background: var(--gold); border-color: var(--gold); }
 
-.deathsaves { display: flex; flex-direction: column; gap: .5rem; }
-.deathsaves__row { display: flex; align-items: center; gap: .75rem; }
+/* Successes and Failures side by side (was label-left / pips-right, stacked). Each column is
+   its own centred stack, so the tile is one pip row tall instead of two and nothing sits off
+   to one side under a centred header. Wraps back to two rows if the tile is made narrow. */
+.deathsaves { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.25rem; }
+.deathsaves__col {
+  flex: 1 1 8rem; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: .35rem;
+}
 .deathsaves__label {
-  width: 5.5rem; flex: none;
-  font-size: .78rem; color: var(--ink-soft);
+  font-size: .72rem; letter-spacing: .04em; color: var(--ink-soft);
 }
 
 /* ---------------------------------------------------------------- chips */
@@ -890,8 +936,11 @@ body.is-arranging [data-action="add-row"] { display: none; }
 /* Conditions disclosure inside the Combat card (#14): closed, the summary line
    lists the active conditions. Print always shows exactly that line — full and
    wrapped, never the chip grid — see the @media print block. */
+/* Centred like every other tile header. The marker, the title and the active-conditions
+   summary travel as one centred group rather than packing left — this tile was the last
+   header still sitting on the left edge under the uniformity pass. */
 .conditions__summary {
-  display: flex; align-items: center; gap: .45rem;
+  display: flex; align-items: center; justify-content: center; gap: .45rem;
   min-height: var(--tap); cursor: pointer; list-style: none;
 }
 .conditions__summary::-webkit-details-marker { display: none; }
@@ -906,7 +955,10 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    this inline summary, so drop it here. */
 .conditions__summary .tile__label { min-height: 0; }
 .conditions__active {
-  flex: 1; min-width: 0;
+  /* `0 1 auto`, not `1`: growing to fill the row would push the marker and title back to the
+     left edge and undo the centring above. It still shrinks and ellipsizes when a lot of
+     conditions are active, which is the case this readout exists for. */
+  flex: 0 1 auto; min-width: 0;
   font-size: .78rem; color: var(--ink-soft);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -987,7 +1039,14 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    a fixed column that starves it. name grows into free space and ellipsizes only when a row
    genuinely has none. Tight side padding (like .currency) reclaims the default .6rem inset. The
    `size` attrs on to-hit/damage/qty are the width fallback where field-sizing is unsupported. */
-.row__primary { display: flex; align-items: center; gap: .5rem; }
+/* `flex-wrap` + `min-width: 0` so a long name can never push the page sideways.
+   A flex item defaults to `min-width: auto`, which refuses to shrink below min-content — and
+   this line's min-content is the name's full text (`field-sizing: content`) plus a to-hit and a
+   damage field that are both `flex: 0 0 auto`. Measured at 390px: "Longbow of the Deep Wood"
+   made the line 386px inside a 304px row, so the document scrolled to 423 against a 375px
+   viewport, past the right edge of every card, into empty space. Wrapping spends a line instead
+   of the viewport, and never truncates the name to do it. */
+.row__primary { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
 .row__primary input {
   /* 2.75rem = 44px: the floor is a touch target, not just a legibility minimum (#77). */
   field-sizing: content; width: auto; min-width: 2.75rem;  /* width:auto so field-sizing wins over the base input{width:100%} */
@@ -1074,7 +1133,27 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    textarea is a grandchild, and it should take the whole second line of the detail block. */
 .row__detail > textarea { flex: 1 1 100%; min-height: 0; }
 
-.row--hitdie { align-items: center; }
+/* Centred and content-width, not left-packed across the tile. The three controls total ~220px
+   in a 310px tile, so left-packing left a third of the row empty on the right — the "fuck ton
+   of empty space" half of this tile's problem. `flex: 0 1 auto` stops the numbers stretching.
+
+   The slab goes too. `.row` paints `var(--parchment)` with a border and padding because it is
+   built for list items that need to read as separate cards — but this row is one line of three
+   controls inside a tile that is already a bounded box, so the treatment nested a card in a
+   card. In dark mode `--parchment` is the near-black PAGE background against a lighter
+   `--card` tile, which is what made it read as a black box rather than as a panel. */
+.row--hitdie {
+  align-items: center; justify-content: center;
+  padding: 0; background: none; border: 0;
+}
+.row--hitdie > .row__narrow { flex: 0 1 3.6rem; }
+/* The size is the qualifier, not the value: quieter than the counts it follows, and read-only
+   in play (it is not `data-live`), so it flattens to plain text there like Max HP does. */
+.row--hitdie > .row__die { flex: 0 1 4.2rem; color: var(--ink-soft); }
+/* Drop the `margin-left: auto` that pins ✕ to the right on list rows: here it ate all the free
+   space, so `justify-content: center` had none left and the numbers packed left again. On a
+   one-line row the remove button travels with the group it removes. */
+.row--hitdie > .row__remove { margin-left: 0; }
 .row__of { flex: none; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 
 /* `.row__prepared` was removed here (#87): it styled the spell row's "prepared" checkbox,
