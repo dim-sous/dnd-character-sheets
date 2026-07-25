@@ -162,6 +162,15 @@ export function normalizeCharacter(raw) {
     }
   }
 
+  // #69: same fixed-key-object idiom as `currency` above, but string-valued — unknown keys
+  // dropped, missing keys default to ''. Backfills every character created before the card.
+  char.proficiencies = { ...base.proficiencies };
+  if (raw.proficiencies && typeof raw.proficiencies === 'object') {
+    for (const key of Object.keys(base.proficiencies)) {
+      char.proficiencies[key] = str(raw.proficiencies[key], '');
+    }
+  }
+
   return char;
 }
 
