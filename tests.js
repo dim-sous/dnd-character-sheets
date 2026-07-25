@@ -94,6 +94,40 @@ describe('saveTotal');
   is('non-proficient DEX 10 → +0', rules.saveTotal(c, 'dex'), 0);
 }
 
+describe('saveTotal misc bonuses (#68)');
+{
+  const flat = char({ saveBonusAll: 2 });
+  is('flat saveBonusAll adds to a save with no proficiency', rules.saveTotal(flat, 'dex'), 2);
+
+  const flatWithProf = char({
+    level: 3,
+    abilities: { ...blankCharacter().abilities, str: 16 },
+    saveProficiencies: ['str'],
+    saveBonusAll: 2,
+  });
+  is('flat saveBonusAll stacks on top of proficiency', rules.saveTotal(flatWithProf, 'str'), 7);
+
+  const perSave = char({
+    abilities: { ...blankCharacter().abilities, con: 14 },
+    saveBonuses: { ...blankCharacter().saveBonuses, con: 3 },
+  });
+  is('per-save saveBonuses adds only to the listed save', rules.saveTotal(perSave, 'con'), 5);
+  is('per-save saveBonuses leaves other saves untouched', rules.saveTotal(perSave, 'dex'), 0);
+
+  const combined = char({
+    abilities: { ...blankCharacter().abilities, con: 14 },
+    saveBonusAll: -1,
+    saveBonuses: { ...blankCharacter().saveBonuses, con: 3 },
+  });
+  is('saveBonusAll and saveBonuses combine additively', rules.saveTotal(combined, 'con'), 4);
+  // Unlike skillTotal, saveTotal has no unknown-key early return: an unknown ability
+  // yields a +0 modifier, so only the flat bonus lands. Pinned so it stays deliberate.
+  is('unknown ability key → flat bonus only', rules.saveTotal(combined, 'basketweaving'), -1);
+
+  // #63 interaction: the exhaustion penalty and the misc bonus both apply, and cancel.
+  is('save bonus and exhaustion penalty stack', rules.saveTotal({ ...flat, exhaustion: 1 }, 'dex'), 0);
+}
+
 /* ---------------------------------------------------------- skill total */
 
 describe('skillTotal');
@@ -398,6 +432,16 @@ is('write returns undefined', setByPath({ a: { b: 1 } }, 'a.b', 2), undefined);
 is('write to missing intermediate throws', (() => { try { setByPath({}, 'a.b', 1); return 'no-throw'; } catch (e) { return 'threw'; } })(), 'threw');
 
 /* ------------------------------------ normalizeCharacter clamp & coercion */
+
+describe('normalizeCharacter save bonuses (#68)');
+is('saveBonusAll missing → 0', normalizeCharacter({}).saveBonusAll, 0);
+is('saveBonusAll garbage → 0', normalizeCharacter({ saveBonusAll: 'x' }).saveBonusAll, 0);
+is('saveBonusAll preserved', normalizeCharacter({ saveBonusAll: -2 }).saveBonusAll, -2);
+is('saveBonuses missing → all six zeroed', normalizeCharacter({}).saveBonuses, blankCharacter().saveBonuses);
+is('saveBonuses coerces strings', normalizeCharacter({ saveBonuses: { con: '3' } }).saveBonuses.con, 3);
+is('saveBonuses garbage → 0', normalizeCharacter({ saveBonuses: { con: 'x' } }).saveBonuses.con, 0);
+is('saveBonuses unknown key dropped', 'bogus' in normalizeCharacter({ saveBonuses: { bogus: 9 } }).saveBonuses, false);
+is('saveBonuses non-object ignored', normalizeCharacter({ saveBonuses: 'nope' }).saveBonuses, blankCharacter().saveBonuses);
 
 describe('normalizeCharacter clamping');
 is('deathSaves.successes clamps high', normalizeCharacter({ deathSaves: { successes: 9 } }).deathSaves.successes, 3);
