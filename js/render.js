@@ -513,7 +513,20 @@ export function renderSheet(char) {
   for (const listName of Object.keys(ROW_TEMPLATE_IDS)) renderRows(char, listName);
 
   // Write every bound field exactly once. From here on, these flow DOM -> state only.
+  //
+  // ...except the field the user is currently inside — the same guard renderDerived carries
+  // below (#94). Current HP commits on `change`, not per keystroke, and iOS does not blur a
+  // focused input when a button is tapped, so a pending "-8" exists only in the DOM until
+  // then. Without this skip any structural render (+ Add, remove row) repaints the field
+  // from unchanged state and the damage vanishes silently, caret still sitting in it.
+  //
+  // Opening a DIFFERENT character is the exception and must repaint everything, or the
+  // outgoing character's value would survive in whatever field held focus. `renderedCharId`
+  // is still the previously rendered id at this point — syncActiveTab updates it below.
+  // (The switch path also flushes the pending edit first, in main.js, so it is not lost.)
+  const sameCharacter = char.id === renderedCharId;
   for (const el of $$('[data-bind]')) {
+    if (sameCharacter && el === document.activeElement) continue;
     const value = getByPath(char, el.dataset.bind);
     if (el.type === 'checkbox') el.checked = Boolean(value);
     else el.value = value === null || value === undefined ? '' : value;
