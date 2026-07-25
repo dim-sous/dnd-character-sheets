@@ -1,14 +1,18 @@
 <!doctype html>
 <!--
-  Regression check for #74: the Current HP field's result line.
+  Regression check for the Hit Points tile: the result line (#74) and what a long rest does to
+  HP (#106).
 
-  The pure sentence is covered by tests.js (`describeHpChange`). What only a browser can prove is
-  the wiring: that a real keystroke reaches it, that the visible line and the #play-status live
-  region get the SAME sentence, that the line disappears again when there is nothing to say, and
-  that a real minus sign — which this field's own tooltip used to tell players to type — is no
-  longer silently swallowed.
+  The arithmetic is covered by tests.js (`describeHpChange`, `restoreHp`). What only a browser
+  can prove is the wiring and the reachability: that a real keystroke reaches the sentence, that
+  the visible line and the #play-status live region get the SAME one, that a real minus sign —
+  which this field's own tooltip used to tell players to type — is no longer swallowed, and that
+  the ordinary "never opened Edit, so Max is still 0" path no longer loses all your hit points
+  to a rest.
 
-  Run it the same way as probe.html; prints ALL PASS or the failing checks.
+  Run it the same way as probe.html; prints ALL PASS or the failing checks. The last two blocks
+  reload the iframe to reseed, so they run LAST and bind their own document — anything appended
+  after them must do the same rather than reusing `d`/`w`.
 -->
 <meta charset="utf-8">
 <title>hp result probe</title>
@@ -168,6 +172,63 @@ try {
     await wait(250);
   }
   ok('an unrelated edit does not resurrect the line', line().hidden, `text="${line().textContent}"`);
+
+  /*
+   * #106, end to end. The pure rule is covered in tests.js; what only the browser shows is that
+   * the ordinary path reaches it — Max HP is Edit-gated (no `data-live`), so a player who never
+   * opens Edit is tracking Current against a max of 0, and a rest used to assign that 0 over it.
+   * Silently, because the `.is-dying` cue requires max > 0.
+   */
+  /*
+   * Reseed and reload. Blank the frame FIRST and wait: the outgoing document flushes its
+   * debounced save on unload, which lands AFTER a straight `setItem` + navigate and quietly
+   * restores the previous character over the seed. That produced two failures whose message
+   * ("current 17 max 20") described a character this block never asked for.
+   */
+  const reseed = async (mutate) => {
+    await new Promise((res) => { frame.onload = res; frame.src = 'about:blank'; });
+    await wait(500);
+    const c = blankCharacter();
+    mutate(c);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+    }));
+    await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+    await wait(1000);
+  };
+
+  await reseed((c) => { c.name = 'Gamma'; c.hp.max = 0; c.hp.current = 14; c.hp.temp = 3; });
+  const d2 = frame.contentDocument;
+  const w2 = frame.contentWindow;
+  const cur2 = () => Number(d2.getElementById('f-hp-current').value);
+  const temp2 = () => Number(d2.getElementById('f-hp-temp').value);
+  ok('seeded with Max never set', cur2() === 14 && Number(d2.getElementById('f-hp-max').value) === 0,
+    `current ${cur2()} max ${d2.getElementById('f-hp-max').value}`);
+  ok('Max really is Edit-gated', d2.getElementById('f-hp-max').readOnly);
+  w2.confirm = () => true;
+  d2.querySelector('[data-action="long-rest"]').click();
+  await wait(400);
+  ok('a rest with Max unset does NOT zero current HP', cur2() === 14, `current ${cur2()}`);
+  ok('and still clears temp', temp2() === 0, `temp ${temp2()}`);
+  ok('and does not render as dying', !d2.body.classList.contains('is-dying'));
+
+  // A hand-set current above max must survive too — a rest is a heal, and heals never subtract.
+  await reseed((c) => { c.name = 'Delta'; c.hp.max = 20; c.hp.current = 30; c.hp.temp = 0; });
+  const d3 = frame.contentDocument;
+  // Capture what the dialog actually says, rather than asserting against the button's label —
+  // the promise the player agrees to has to match what the rest now does.
+  let confirmText = '';
+  frame.contentWindow.confirm = (msg) => { confirmText = String(msg); return true; };
+  d3.querySelector('[data-action="long-rest"]').click();
+  await wait(400);
+  ok('a rest does not lower a hand-set current above max',
+    Number(d3.getElementById('f-hp-current').value) === 30,
+    `current ${d3.getElementById('f-hp-current').value}`);
+  ok('the confirm no longer promises "HP to max"', !/HP to max/.test(confirmText),
+    JSON.stringify(confirmText));
+  ok('it promises what actually happens', /Restores lost HP/.test(confirmText),
+    JSON.stringify(confirmText));
+
 
   const failed = results.filter((r) => r.startsWith('FAIL')).length;
   out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;

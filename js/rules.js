@@ -242,6 +242,30 @@ export function applyHealing(hp, amount) {
 }
 
 /**
+ * What a long rest does to hit points: every lost point back, temp HP cleared (#106).
+ *
+ * Two things it deliberately does NOT do, both of which the old inline `hp.current = hp.max`
+ * in state.js got wrong:
+ *
+ * 1. **Max 0 means "not tracked", never "a ceiling of zero."** Max HP is Edit-gated and starts
+ *    at 0, so a player noting their current HP without ever opening Edit is the ordinary path,
+ *    not a corner case — and resting used to drop them to 0. Worse, silently: the `.is-dying`
+ *    cue requires `max > 0`, so nothing on screen flagged it. `applyHealing` already treats an
+ *    unset max as unbounded rather than as a cap; this now agrees with it.
+ * 2. **It never lowers a current that sits above max.** That is exactly `applyHealing`'s rule
+ *    ("healing only ever raises current"), and a rest is the largest heal in the game — it
+ *    should not be the one healing effect that can cost you hit points. A hand-set 30 with a
+ *    max of 20 is a deliberate override, and there is no undo for character data (#107).
+ *
+ * Returns a new hp object; never mutates.
+ */
+export function restoreHp(hp) {
+  const max = num(hp.max);
+  const current = num(hp.current);
+  return { ...hp, current: Math.max(current, max), temp: 0 };
+}
+
+/**
  * Interpret what a player typed into the Current HP field — the sole HP-change control now
  * that the +/- steppers and the Damage/Heal buttons are gone. A *signed* value is a delta:
  * `-8` takes 8 damage (through temp first, via applyDamage), `+5` heals 5 (capped at max, via

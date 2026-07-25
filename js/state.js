@@ -252,17 +252,20 @@ export function setSlotsUsed(level, used) {
 }
 
 /**
- * A long rest applies the full 2024 recovery: HP to max, temp HP and death saves
+ * A long rest applies the full 2024 recovery: lost HP back, temp HP and death saves
  * cleared, all spent Hit Point Dice back, exhaustion down one, all spell slots reset.
  * Every field stays hand-editable afterwards — this automates the common case, it does
  * not take the ruling away from the player. Confirmed at the call site (main.js).
+ *
+ * The HP half is `rules.restoreHp`, not an inline assignment: it has two edge cases worth
+ * stating and testing (an unset max, and a hand-set current above max), and the rest of the
+ * recovery arithmetic already lives in the pure module for exactly that reason.
  */
 export function longRest() {
   const char = getActive();
   if (!char) return;
 
-  char.hp.current = char.hp.max;
-  char.hp.temp = 0;
+  char.hp = rules.restoreHp(char.hp);
   char.deathSaves = { successes: 0, failures: 0 };
   char.concentration = false;   // #78: nothing you concentrate on survives 8 hours of rest
   char.hitDice = rules.restoreHitDice(char.hitDice);
