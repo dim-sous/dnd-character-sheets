@@ -113,6 +113,9 @@ export function blankCharacter() {
     features: [],
     inventory: [],
     currency: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+    // #69: free text, one blob per kind — a tracker records what you're proficient with,
+    // it does not model weapon/armour categories. Fixed key set, normalized like `currency`.
+    proficiencies: { weapons: '', armor: '', tools: '', languages: '' },
     notes: '',
   };
 }

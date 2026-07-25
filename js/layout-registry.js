@@ -48,12 +48,14 @@ export const CARD_REGISTRY = {
   inventory: { label: 'Inventory', home: 'gear', cost: 'js', sel: '[data-editcard="inventory"]' },
   features: { label: 'Features & Traits', home: 'gear', cost: 'js', sel: '[data-editcard="features"]' },
   identity: { label: 'Identity', home: 'character', cost: 'markup', sel: '[data-editcard="identity"]' },
+  proficiencies: { label: 'Proficiencies', home: 'character', cost: 'markup', sel: '[data-editcard="proficiencies"]' },
   notes: { label: 'Notes', home: 'character', cost: 'markup', sel: '[data-editcard="notes"]' },
 };
 
 /** Card ids in a stable default order (matches today: combat→attacks, inventory→features, …). */
 export const CARD_ORDER = [
-  'combat', 'attacks', 'abilities', 'spellcasting', 'inventory', 'features', 'identity', 'notes',
+  'combat', 'attacks', 'abilities', 'spellcasting', 'inventory', 'features',
+  'identity', 'proficiencies', 'notes',
 ];
 
 /**
