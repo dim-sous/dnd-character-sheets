@@ -188,6 +188,20 @@
                 </div>
               </div>
 
+              <!-- #78: same shape as Heroic Insp. — a lone data-live toggle, so it stays tappable
+                   in view mode (concentration breaks mid-combat, never behind an Edit press).
+                   Label abbreviated like its neighbours: a 1× tile is ~4.5rem, and unbroken
+                   "CONCENTRATION" is nearly twice that — the full word stays in aria-label, so
+                   screen readers never hear the abbreviation. The visible text MUST match the
+                   object's registry label: applyObjects rewrites this node from the registry
+                   on every layout apply, so a mismatch would silently overwrite it. -->
+              <div class="tile" data-object="concentration">
+                <span class="tile__label">Conc.</span>
+                <div class="tile__body">
+                  <input type="checkbox" class="toggle" id="f-concentration" data-bind="concentration" data-type="checkbox" data-live aria-label="Concentration">
+                </div>
+              </div>
+
               <!-- Status blocks are full-width objects inside the SAME grid (#54 Phase 5),
                    so they reorder/hide alongside the tiles. Their hosts keep their ids. -->
               <div class="tile status__block" data-object="hitdice">

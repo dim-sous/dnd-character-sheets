@@ -198,6 +198,6 @@ The two behaviours it *does* encode, both overridable by hand:
 
 - Damage is taken from temporary hit points first, then real ones, and current HP floors
   at zero.
-- **Long rest** (behind a confirm) applies the full 2024 recovery: HP to max, temp HP and
-  death saves cleared, all spent Hit Point Dice back, exhaustion down one, and all spell
-  slots reset. Every field stays hand-editable — the DM rules, not the app.
+- **Long rest** (behind a confirm) applies the full 2024 recovery: HP to max, temp HP,
+  death saves and concentration cleared, all spent Hit Point Dice back, exhaustion down
+  one, and all spell slots reset. Every field stays hand-editable — the DM rules, not the app.

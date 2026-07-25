@@ -74,6 +74,10 @@ export function blankCharacter() {
     background: '',
     alignment: '',
     heroicInspiration: false,
+    // #78: one of the highest-frequency caster states in play, and the only one with no home —
+    // it is not a condition (it is not on the CONDITIONS list, and the 2024 rules do not make it
+    // one), so it gets its own flag and its own tile rather than being smuggled in there.
+    concentration: false,
 
     abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
     saveProficiencies: [],

@@ -519,6 +519,11 @@ is('name non-string → empty', normalizeCharacter({ name: 42 }).name, '');
 is('name string passes', normalizeCharacter({ name: 'Aria' }).name, 'Aria');
 is('heroicInspiration truthy → true', normalizeCharacter({ heroicInspiration: 1 }).heroicInspiration, true);
 is('heroicInspiration missing → false', normalizeCharacter({}).heroicInspiration, false);
+// #78. The second boolean flag on the character, and the interesting case is the pre-#78
+// export: it has no `concentration` key at all and must load as "not concentrating".
+is('concentration truthy → true', normalizeCharacter({ concentration: 'yes' }).concentration, true);
+is('concentration missing → false', normalizeCharacter({}).concentration, false);
+is('a pre-#78 character gains the flag', 'concentration' in normalizeCharacter({ name: 'Old' }), true);
 is('ac coercion', normalizeCharacter({ ac: '16' }).ac, 16);
 is('speed garbage → base 30', normalizeCharacter({ speed: 'x' }).speed, 30);
 is('id string preserved', normalizeCharacter({ id: 'abc' }).id, 'abc');
@@ -878,7 +883,9 @@ describe('moveCardToTab');
   const tweaked = renameCard(moveObject(DEFAULT_LAYOUT, 'combat', 0, 5), 'combat', 'War');
   const combatMoved = moveCardToTab(tweaked, 'combat', 'character');
   const combatCard = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
-  is('moved card keeps its objects', combatCard(combatMoved).objects.length, 11);
+  // Count from the registry, not a literal — adding a tile (#78) shouldn't fail an
+  // assertion about card moves that has nothing to say about how many objects there are.
+  is('moved card keeps its objects', combatCard(combatMoved).objects.length, OBJECT_ORDER.combat.length);
   is('moved card keeps its reordered object state',
     combatCard(combatMoved).objects.map((o) => o.componentId), combatCard(tweaked).objects.map((o) => o.componentId));
   is('moved card keeps its custom label', combatCard(combatMoved).label, 'War');
@@ -978,7 +985,13 @@ describe('normalizeLayout: objects');
 
   const objSpan = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id).span;
 
-  is('default combat carries all 11 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
+  is('default combat carries all 12 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
+  // #78: a layout saved before the Concentration tile existed must gain it, same backfill the
+  // features card relies on below — otherwise the tile renders but arrange mode can't see it.
+  is('a pre-#78 combat card gains the concentration object', objIds(normalizeLayout({
+    layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
+    tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: COMBAT_OBJS.filter((id) => id !== 'concentration') }] }],
+  })).includes('concentration'), true);
   is('default objects all visible', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.hidden === false), true);
   is('a non-objectified card (attacks) has no objects field', 'objects' in card(DEFAULT_LAYOUT, 'attacks'), false);
 
@@ -1054,7 +1067,8 @@ describe('moveObject / toggleObjectHidden');
   is('move down: hp (0) → 1', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 0, 1)).slice(0, 2), ['rest', 'hp']);
   is('move up: rest (1) → 0', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 1, 0)).slice(0, 2), ['rest', 'hp']);
   is('clamp at top is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 0, -1), DEFAULT_LAYOUT);
-  is('clamp at bottom is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 10, 11), DEFAULT_LAYOUT);
+  const lastObj = OBJECT_ORDER.combat.length - 1;   // registry-derived, see the note at 'moved card keeps its objects'
+  is('clamp at bottom is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', lastObj, lastObj + 1), DEFAULT_LAYOUT);
   is('out-of-range fromIndex is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 99, 0), DEFAULT_LAYOUT);
   is('unknown card is a no-op', moveObject(DEFAULT_LAYOUT, 'attacks', 0, 1), DEFAULT_LAYOUT);
   is('a moved-objects layout survives normalize unchanged',

@@ -64,6 +64,7 @@ export function normalizeCharacter(raw) {
   }
   char.level = num(raw.level, base.level);
   char.heroicInspiration = Boolean(raw.heroicInspiration);
+  char.concentration = Boolean(raw.concentration);   // #78, same contract: any truthy value → true
 
   char.abilities = { ...base.abilities };
   if (raw.abilities && typeof raw.abilities === 'object') {
