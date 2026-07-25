@@ -357,15 +357,30 @@
           </section>
 
           <!-- features -->
+          <!-- #67: two independently arrange-able lists in one card — the second objectified
+               card after Combat. Each block owns its own render host + "+ Add"; the card's
+               Edit button unlocks both. Same .tiles grid + data-object shape as Combat. -->
           <section class="card" data-editcard="features">
             <div class="list__head">
-              <h2 class="card__title">Features &amp; Traits</h2>
-              <div class="head-actions">
-                <button type="button" class="btn btn--small" data-action="add-row" data-list="features">+ Add</button>
-                <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="features" aria-pressed="false">Edit</button>
+              <h2 class="card__title">Features &amp; Feats</h2>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="features" aria-pressed="false">Edit</button>
+            </div>
+            <div class="tiles">
+              <div class="tile status__block" data-object="features">
+                <div class="list__head">
+                  <h3 class="tile__label">Features</h3>
+                  <button type="button" class="btn btn--small" data-action="add-row" data-list="features">+ Add</button>
+                </div>
+                <ul class="rows" id="features"></ul>
+              </div>
+              <div class="tile status__block" data-object="feats">
+                <div class="list__head">
+                  <h3 class="tile__label">Feats</h3>
+                  <button type="button" class="btn btn--small" data-action="add-row" data-list="feats">+ Add</button>
+                </div>
+                <ul class="rows" id="feats"></ul>
               </div>
             </div>
-            <ul class="rows" id="features"></ul>
           </section>
 
         </section>
@@ -548,11 +563,33 @@
   </li>
 </template>
 
+<!-- #67: collapsed to the name; tapping the entry reveals source / level / text. Same
+     .row__primary + tap-to-expand mechanic the attack and inventory rows use (#64), so the
+     sheet has ONE collapse idiom rather than two. -->
 <template id="tpl-feature">
   <li class="row row--feature">
-    <input type="text" data-bind-suffix="name" placeholder="Feature name" aria-label="Feature name">
-    <textarea rows="2" data-bind-suffix="text" placeholder="What it does" aria-label="Feature description"></textarea>
-    <button type="button" class="row__remove" data-action="remove-row" data-list="features" aria-label="Remove feature">✕</button>
+    <div class="row__primary">
+      <input type="text" data-bind-suffix="name" placeholder="Feature name" aria-label="Feature name">
+      <button type="button" class="row__remove" data-action="remove-row" data-list="features" aria-label="Remove feature">✕</button>
+    </div>
+    <div class="row__detail">
+      <input type="text" size="12" data-bind-suffix="source" placeholder="Source" aria-label="Feature source">
+      <input type="text" class="row__level" size="3" data-bind-suffix="level" placeholder="Lvl" aria-label="Feature level">
+      <textarea rows="2" data-bind-suffix="text" placeholder="What it does" aria-label="Feature description"></textarea>
+    </div>
+  </li>
+</template>
+
+<template id="tpl-feat">
+  <li class="row row--feat">
+    <div class="row__primary">
+      <input type="text" data-bind-suffix="name" placeholder="Feat name" aria-label="Feat name">
+      <button type="button" class="row__remove" data-action="remove-row" data-list="feats" aria-label="Remove feat">✕</button>
+    </div>
+    <div class="row__detail">
+      <input type="text" size="12" data-bind-suffix="source" placeholder="Source" aria-label="Feat source">
+      <textarea rows="2" data-bind-suffix="text" placeholder="What it does" aria-label="Feat description"></textarea>
+    </div>
   </li>
 </template>
 

@@ -506,6 +506,32 @@ is('inventory qty garbage → template 1', normalizeCharacter({ inventory: [{ it
 is('spell prepared → boolean', normalizeCharacter({ spellcasting: { spells: [{ name: 'X', prepared: 1 }] } }).spellcasting.spells[0].prepared, true);
 is('spell level coercion', normalizeCharacter({ spellcasting: { spells: [{ level: '2' }] } }).spellcasting.spells[0].level, 2);
 
+describe('features + feats rows (#67)');
+{
+  // The migration that matters: a pre-#67 export holds features as {name,text} and no feats
+  // at all. normalizeRow is template-driven, so the new keys backfill with no migration code.
+  const old = normalizeCharacter({ features: [{ name: 'Second Wind', text: 'Regain HP' }] });
+  is('old feature row keeps its data', [old.features[0].name, old.features[0].text], ['Second Wind', 'Regain HP']);
+  is('old feature row backfills source/level', [old.features[0].source, old.features[0].level], ['', '']);
+  is('feats absent → []', old.feats, []);
+
+  is('feature garbage row → template', normalizeCharacter({ features: ['nope'] }).features[0],
+    { name: '', source: '', level: '', text: '' });
+  is('feat garbage row → template', normalizeCharacter({ feats: ['nope'] }).feats[0],
+    { name: '', source: '', text: '' });
+  is('feats non-array → []', normalizeCharacter({ feats: {} }).feats, []);
+  is('feat row preserved', normalizeCharacter({ feats: [{ name: 'Alert', source: 'Origin', text: '+5 init' }] }).feats[0],
+    { name: 'Alert', source: 'Origin', text: '+5 init' });
+  // level is free text on purpose — "3", "3rd" and "" are all things a player might type.
+  is('feature level stays a string', normalizeCharacter({ features: [{ level: 3 }] }).features[0].level, '3');
+  is('feature level free text kept', normalizeCharacter({ features: [{ level: '3rd' }] }).features[0].level, '3rd');
+
+  // A pre-#67 backup must still import, and a post-#67 file must round-trip.
+  const preFile = JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [{ name: 'Old', features: [{ name: 'F', text: 'T' }] }] });
+  is('pre-#67 backup imports without crashing', parseStored(preFile).characters[0].features[0].source, '');
+  is('pre-#67 backup gains an empty feats list', parseStored(preFile).characters[0].feats, []);
+}
+
 /* ------------------------------------- normalizeCharacter spell slots */
 
 describe('normalizeCharacter slots');
@@ -926,6 +952,24 @@ describe('normalizeLayout: objects');
   is('default combat carries all 11 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
   is('default objects all visible', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.hidden === false), true);
   is('a non-objectified card (attacks) has no objects field', 'objects' in card(DEFAULT_LAYOUT, 'attacks'), false);
+
+  // #67 objectifies a SECOND card. The arrange machinery is registry-driven, so this is the
+  // test that it generalises past Combat rather than being hardcoded to it.
+  const featCard = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'features');
+  const featObjIds = (layout) => featCard(layout).objects.map((o) => o.componentId);
+  is('features card is objectified', featObjIds(DEFAULT_LAYOUT), ['features', 'feats']);
+  is('features objects default to full span',
+    featCard(DEFAULT_LAYOUT).objects.every((o) => o.span === 'full'), true);
+  // A layout saved before #67 has a features card with NO objects array — both must appear.
+  const preObjects = normalizeLayout({
+    layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
+    tabs: [{ id: 'gear', cards: [{ componentId: 'features' }] }],
+  });
+  is('a pre-#67 features card gains both objects', featObjIds(preObjects), ['features', 'feats']);
+  is('an object belonging to another card is rejected', featObjIds(normalizeLayout({
+    layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
+    tabs: [{ id: 'gear', cards: [{ componentId: 'features', objects: [{ componentId: 'exhaustion' }, { componentId: 'feats' }] }] }],
+  })), ['feats', 'features']);
 
   // Span (#54 Phase 6): every object carries its registry default span; the small vitals are 1×,
   // HP and the status blocks are full-width — reproducing today's layout.

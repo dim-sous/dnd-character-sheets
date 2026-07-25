@@ -46,7 +46,7 @@ export const CARD_REGISTRY = {
   abilities: { label: 'Abilities & Skills', home: 'abilities', cost: 'js', sel: '[data-editcard="abilities"]' },
   spellcasting: { label: 'Spellcasting', home: 'spells', cost: 'js', sel: '[data-editcard="spellcasting"]' },
   inventory: { label: 'Inventory', home: 'gear', cost: 'js', sel: '[data-editcard="inventory"]' },
-  features: { label: 'Features & Traits', home: 'gear', cost: 'js', sel: '[data-editcard="features"]' },
+  features: { label: 'Features & Feats', home: 'gear', cost: 'js', sel: '[data-editcard="features"]' },
   identity: { label: 'Identity', home: 'character', cost: 'markup', sel: '[data-editcard="identity"]' },
   proficiencies: { label: 'Proficiencies', home: 'character', cost: 'markup', sel: '[data-editcard="proficiencies"]' },
   notes: { label: 'Notes', home: 'character', cost: 'markup', sel: '[data-editcard="notes"]' },
@@ -85,6 +85,10 @@ export const OBJECT_REGISTRY = {
   deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js', defaultSpan: 'full' },
   exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js', defaultSpan: 'full' },
   conditions: { card: 'combat', label: 'Conditions', cost: 'js', defaultSpan: 'full' },
+  // #67: the second objectified card. Both own a render.js host (#features / #feats), so
+  // cost:'js' — hiding one keeps the host in the DOM, it is never detached.
+  features: { card: 'features', label: 'Features', cost: 'js', defaultSpan: 'full' },
+  feats: { card: 'features', label: 'Feats', cost: 'js', defaultSpan: 'full' },
 };
 
 /** The valid object spans, in cycle order — the ↔ resize control steps 1 → 2 → full → 1. */
@@ -96,4 +100,7 @@ export const OBJECT_ORDER = {
     'hp', 'rest', 'ac', 'initiative', 'speed', 'pb', 'heroic',
     'hitdice', 'deathsaves', 'exhaustion', 'conditions',
   ],
+  // #67. Registering the order is what objectifies a card: normalizeCard backfills any object
+  // missing from a saved layout, so every existing character gains both tiles with no migration.
+  features: ['features', 'feats'],
 };
