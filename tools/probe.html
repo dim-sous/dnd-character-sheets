@@ -32,6 +32,21 @@ const VIEWPORT = 390;           // the phone width this app is designed at
 const out = document.getElementById('out');
 
 try {
+  /*
+   * Clear the service worker FIRST. The app registers a cache-first worker, so a probe run in a
+   * reused browser profile will happily measure the PREVIOUS build — stale CSS, stale modules,
+   * and a "module does not provide export X" error for code you just wrote. Silently wrong
+   * measurements are worse than none, and this harness exists to be trusted.
+   */
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
 
   // Seed through the app's own canonical shape so the probe can never drift from the real
@@ -92,7 +107,7 @@ try {
   // Anything a finger is meant to land on.
   const SELECTOR = [
     'button', 'input:not([type="hidden"])', 'select', 'textarea',
-    '[role="tab"]', 'summary', '[data-action]', '.chip',
+    '[role="tab"]', '[role="button"]', 'summary', '[data-action]', '.chip',
   ].join(',');
 
   /*
@@ -178,7 +193,22 @@ try {
   await tab('combat');
   d.querySelector('[data-action="arrange-toggle"]')?.click();
   await settle(250);
-  report.scenes.push(auditScene('arrange'));
+  report.scenes.push(auditScene('arrange / nothing selected'));
+
+  /*
+   * Three arrange scenes, because the mode's controls are no longer all on screen at once
+   * (#72/#73). The object toolbar exists only once a tile is selected, and tab editing plus the
+   * two layout-default buttons live behind a disclosure — auditing only the landing state would
+   * silently skip most of the mode's controls and still report PASS.
+   */
+  d.querySelector('#panel-combat [data-object]')?.click();
+  await settle(250);
+  report.scenes.push(auditScene('arrange / tile selected'));
+
+  d.querySelector('.arrange-more')?.setAttribute('open', '');
+  await settle(250);
+  report.scenes.push(auditScene('arrange / tabs & defaults open'));
+
   d.querySelector('.arrange-bar [data-action="arrange-toggle"]')?.click();
   await settle();
 

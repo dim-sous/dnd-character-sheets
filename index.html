@@ -65,14 +65,34 @@
     <!-- Layout arrange toolbar (#54). Shown only in arrange mode via body.is-arranging — no
          `hidden` attribute, so it never fights the global [hidden] kill-switch. -->
     <div class="arrange-bar" id="arrange-bar" role="region" aria-label="Layout arrange controls">
-      <span class="arrange-bar__label">Arranging layout — reorder cards, switch tabs below.</span>
+      <span class="arrange-bar__label">Arranging layout</span>
       <div class="arrange-bar__actions">
-        <button type="button" class="btn btn--small" data-action="arrange-set-default">Set as default</button>
-        <button type="button" class="btn btn--small" data-action="arrange-reset">Reset</button>
         <button type="button" class="btn btn--small btn--primary" data-action="arrange-toggle">Done</button>
       </div>
-      <!-- The tab-editing list (rename / reorder / remove / add) — filled in arrange mode. -->
-      <div class="tablist-edit" id="tablist-edit"></div>
+      <!-- #72: the selected tile's controls. One full-size set here instead of a 22px cluster
+           pinned inside all twelve tiles, so nothing covers the thing being arranged and every
+           control clears 44px. Filled by layout-view; holds a one-line hint until a tile is
+           picked, so the bar's height doesn't jump the moment you tap something. -->
+      <div class="objbar" id="objbar"></div>
+
+      <!-- #73: everything rare lives behind this disclosure — renaming/reordering/removing tabs,
+           and the two destructive layout actions. Open, it is ~290px of an 844px phone screen;
+           it used to be open permanently, which left 2 of 12 tiles visible while you arranged
+           them. Set-as-default and Reset sit here rather than beside Done for the second reason
+           #73 gives: there is no undo, and "Set as default" is one mistap from permanent. -->
+      <details class="arrange-more">
+        <summary class="arrange-more__summary">
+          <span class="arrange-more__marker" aria-hidden="true">▸</span>Tabs &amp; defaults
+        </summary>
+        <div class="arrange-more__body">
+          <!-- The tab-editing list (rename / reorder / remove / add) — filled in arrange mode. -->
+          <div class="tablist-edit" id="tablist-edit"></div>
+          <div class="arrange-more__actions">
+            <button type="button" class="btn btn--small" data-action="arrange-set-default">Set as default</button>
+            <button type="button" class="btn btn--small" data-action="arrange-reset">Reset</button>
+          </div>
+        </div>
+      </details>
       <span class="visually-hidden" id="arrange-status" role="status" aria-live="polite"></span>
     </div>
 

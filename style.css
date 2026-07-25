@@ -494,10 +494,28 @@ body.is-arranging .arrange-bar {
   background: color-mix(in srgb, var(--accent) 10%, var(--card));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
 }
-.arrange-bar__label { flex: 1; min-width: 8rem; font-size: .8rem; color: var(--ink-soft); }
+/* `flex: 0 1 auto` (not `1` with an 8rem floor) so the label and Done share ONE row instead of
+   being forced apart — the mode name doesn't need to claim a line of a phone screen (#73). */
+.arrange-bar__label { flex: 0 1 auto; min-width: 0; font-size: .8rem; color: var(--ink-soft); }
 .arrange-bar__actions { display: flex; gap: .5rem; margin-left: auto; }
 
-/* The dedicated tab-editing list — its own full-width row within the arrange bar. */
+/* The rare half of arrange mode, folded away (#73). Tab editing alone is ~290px — 75% of what
+   the bar used to be — for work you do once and then never again, and it sat open the whole
+   time you were nudging tiles. */
+.arrange-more { flex-basis: 100%; }
+.arrange-more__summary {
+  display: flex; align-items: center; gap: .45rem;
+  min-height: var(--tap); cursor: pointer; list-style: none;
+  font-size: .8rem; color: var(--ink-soft);
+}
+.arrange-more__summary::-webkit-details-marker { display: none; }
+/* A real element (aria-hidden in the markup) rather than generated content, so the glyph can't
+   leak into the summary's accessible name — same reasoning as `.conditions__marker`. */
+.arrange-more__marker { display: inline-block; color: var(--ink-faint); transition: transform .12s; }
+.arrange-more[open] > .arrange-more__summary .arrange-more__marker { transform: rotate(90deg); }
+.arrange-more__body { padding-bottom: .3rem; }
+.arrange-more__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+
 .tablist-edit { flex-basis: 100%; }
 .tablist-edit__rows { list-style: none; margin: 0 0 .4rem; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
 .tabrow { display: flex; align-items: center; gap: .3rem; }
@@ -513,43 +531,54 @@ body.is-arranging .arrange-bar {
 }
 .tabrow .icon-btn:disabled { opacity: .3; cursor: default; }
 
-/* Per-object controls (#54 Phase 5): a small overlay at an object's top-right, in arrange
-   mode. Objects get position:relative to anchor it; card content is pointer-inert while
-   arranging, so the controls re-enable themselves. */
-body.is-arranging [data-object] { position: relative; }
-.obj-ctl {
-  /* Anchored to the BOTTOM so it never covers the object's top label/heading — you always
-     see what you're moving. Fixed narrow width wraps the four buttons into a 2×2 block that
-     fits the narrowest single-column tile (~72px) without overflow. */
-  position: absolute; bottom: 2px; right: 2px; z-index: 2;
-  display: flex; flex-wrap: wrap; justify-content: flex-end; width: 47px; gap: 1px; padding: 1px;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+/* Per-object arrange controls (#71/#72/#73). They used to be a 22px cluster and a rename
+   field pinned INSIDE each tile: the cluster could not reach 44px (four buttons need 176px in
+   a ~72px tile, which the old comment stated outright) and the two together covered ~45% of
+   the tile you were arranging, twelve times over on the Combat card.
+
+   Now the tile itself is the target — tap to select — and one full-size control set lives in
+   the arrange bar. Nothing overlays the content, every control clears 44px, and there is room
+   for words instead of `↑ ↓ ↔ 👁` plus a visible width readout. */
+body.is-arranging [data-object] {
+  position: relative;
+  /* The card is pointer-inert while arranging; objects opt back in so a tap can select one. */
+  pointer-events: auto;
+  cursor: pointer;
+}
+body.is-arranging [data-object]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The selected tile reads as picked without hiding anything: an accent ring plus a faint wash. */
+body.is-arranging [data-object].is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+}
+
+.objbar {
+  flex-basis: 100%;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+}
+/* Shown until a tile is picked, so the mode opens saying what to do rather than showing an empty
+   strip. It is also the only place the OBJECT controls are explained — the bar's own label only
+   ever described the card ones, which is #72's third complaint. */
+.objbar__hint { font-size: .8rem; color: var(--ink-soft); }
+/* `flex-basis: 100%` puts the rename field on its own line so the four action buttons stay
+   together on the next one. At `8rem` it shared row 1 with Up and Down and pushed Width and
+   Hide onto row 2 — same total height, but the four controls read as two unrelated pairs. */
+.objbar .obj-rename {
+  /* `flex-basis: 100%` claims the row; `max-width` stops it stretching to 1100px of empty field
+     on a laptop, where arrange mode still forces the single-column phone layout. */
+  flex: 1 1 100%; min-width: 6rem; max-width: 24rem; min-height: var(--tap);
+  padding: 0 .5rem; font-size: .9rem; font-weight: 600;
+  color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
-body.is-arranging .obj-ctl, body.is-arranging .obj-ctl * { pointer-events: auto; }
-.obj-ctl .icon-btn { width: 22px; height: 22px; flex: none; font-size: .75rem; border-radius: 6px; }
-.obj-ctl .icon-btn:disabled { opacity: .3; cursor: default; }
-.obj-ctl .icon-btn.is-off { opacity: .55; } /* the hide toggle once the object is hidden */
-
-/* Editable object (tile) title (#54): an opaque field overlaying the object's top while arranging.
-   The static label(s) sit hidden beneath — `visibility` keeps their box so nothing shifts — so the
-   field simply shows (and edits) the name of whatever you're arranging. */
-body.is-arranging [data-object] .tile__label,
-body.is-arranging [data-object] .subhead { visibility: hidden; }
-/* Position and typography only. The HEIGHT comes from the base `input[type="text"]` rule:
-   at (0,1,1) it outranks this (0,1,0), and its `min-height: var(--tap)` beats a `height`
-   here whatever the specificity. This used to declare `height: 20px; min-height: 20px` —
-   neither ever applied, the field measures 44px, and #71 filed that declared 20px as a
-   touch-target violation on the strength of reading it (#87). Removing the dead code is
-   what stops that being re-filed; the 44px overlay it really is belongs to #72. */
-.obj-rename {
-  position: absolute; top: 2px; left: 2px; right: 2px; z-index: 2;
-  padding: 0 .3rem;
-  font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-  color: var(--ink); background: var(--card);
-  border: 1px solid var(--line); border-radius: 6px;
+.objbar__btn { flex: 0 1 auto; }
+.objbar__btn:disabled { opacity: .35; cursor: default; }
+.objbar__btn.is-off { border-style: dashed; }   /* the hide toggle once the object is hidden */
+.objbar__pos {
+  flex: none; margin-left: auto;
+  font-size: .72rem; color: var(--ink-soft); font-variant-numeric: tabular-nums;
 }
-body.is-arranging .obj-rename { pointer-events: auto; }
 
 /* Drag-and-drop reorder (#54 Phase 7). The ⠿ grip is a MOUSE affordance — hidden by default and
    revealed only on a fine pointer, since native HTML5 drag doesn't work on touch (arrows remain
@@ -565,7 +594,12 @@ body.is-arranging .obj-rename { pointer-events: auto; }
   }
   body.is-arranging .card__move .drag-grip { width: var(--tap); height: var(--tap); font-size: 1rem; }
   body.is-arranging .drag-grip:active { cursor: grabbing; }
-  .obj-ctl { width: 68px; }
+}
+/* Objects drag from the tile itself now, so the cursor has to say so (mouse only — native
+   drag does nothing on touch, where Up/Down in the toolbar is the path). */
+@media (pointer: fine) {
+  body.is-arranging [data-object] { cursor: grab; }
+  body.is-arranging [data-object]:active { cursor: grabbing; }
 }
 
 /* The item being dragged dims; the drop target shows an accent bar on the edge where it will land
@@ -1227,7 +1261,9 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 @media print {
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
-  .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename, .obj-ctl, .obj-rename { display: none !important; }
+  /* .obj-ctl / .obj-rename dropped here (#72): the in-tile overlay is gone, and the object
+     controls now live inside .arrange-bar, which this line already hides. */
+  .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }
   /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */
