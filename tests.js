@@ -379,6 +379,52 @@ is('does not mutate its input', (() => {
   rules.applyHpInput(hp, '-8');
   return hp;
 })(), { max: 30, current: 20, temp: 5 });
+// #74: formatMod prints U+2212 all over the sheet, and this field's own tooltip spelled its
+// example "−8 for damage" with it — which /^[+-]/ never matched and Number() turned to NaN. The
+// app silently rejected the exact string it told the player to type.
+is('real minus sign (U+2212) damages like a hyphen',
+   rules.applyHpInput({ max: 30, current: 20, temp: 5 }, '−8'),
+   rules.applyHpInput({ max: 30, current: 20, temp: 5 }, '-8'));
+is('real minus sign is not read as a bare number',
+   rules.applyHpInput({ max: 30, current: 20, temp: 0 }, '−8').current, 12);
+is('a trailing minus sign is still garbage', rules.applyHpInput({ max: 30, current: 20, temp: 0 }, '8−').current, 20);
+
+/* ------------------------------------- describeHpChange (the one sentence, #74) */
+
+describe('describeHpChange');
+const desc = (hp, raw) => rules.describeHpChange(hp, rules.applyHpInput(hp, raw), raw);
+// The whole point of the sentence: the two contracts have to say which one fired.
+is('a delta names the temp absorption', desc({ max: 20, current: 12, temp: 5 }, '-8'),
+   'Took 8. Temp absorbed 5, 3 off hit points. Now 9 of 20.');
+is('an absolute set discloses that temp was left alone', desc({ max: 20, current: 12, temp: 5 }, '19'),
+   'Set to 19. Temp 5 unchanged. Now 19 of 20.');
+is('no temp, no temp clause', desc({ max: 20, current: 12, temp: 0 }, '-3'), 'Took 3. Now 9 of 20.');
+is('temp swallowing the whole hit reads as such', desc({ max: 20, current: 12, temp: 10 }, '-8'),
+   'Took 8. Temp absorbed all of it, 2 left. Now 12 of 20, temp 2.');
+// Reports what was ENTERED, not what landed — "Took 3" for a typed -9 reads as a misheard entry.
+is('damage past 0 reports the amount entered', desc({ max: 20, current: 3, temp: 0 }, '-9'),
+   'Took 9. Now 0 of 20. At 0 — make death saving throws.');
+is('healing at full is still worth saying', desc({ max: 20, current: 20, temp: 0 }, '+5'),
+   'No change. Now 20 of 20.');
+// The field repaints to the absolute result, so blurring after Enter re-commits that number as
+// a bare entry. Narrating it would replace "Took 8. Temp absorbed 5…" with "No change." — the
+// sentence describing what the player actually did, overwritten a moment later by a phantom.
+is('a bare re-commit of the same value says nothing', desc({ max: 20, current: 9, temp: 0 }, '9'), '');
+is('but a delta that moved nothing still speaks', desc({ max: 20, current: 20, temp: 0 }, '+0'),
+   'No change. Now 20 of 20.');
+is('unreadable input says so instead of nothing', desc({ max: 20, current: 12, temp: 0 }, 'abc'),
+   'Couldn’t read “abc”. Hit points unchanged.');
+is('blank says nothing at all', desc({ max: 20, current: 12, temp: 0 }, ''), '');
+is('no max set drops the denominator', desc({ max: 0, current: 14, temp: 0 }, '-4'), 'Took 4. Now 10.');
+// The case that makes the disclosure load-bearing: at temp 5 / current 3 a 7-point hit leaves
+// you standing on 1, but a player doing the subtraction themselves types 0 and trips death saves.
+is('the death-threshold case is spelled out', desc({ max: 20, current: 3, temp: 5 }, '-7'),
+   'Took 7. Temp absorbed 5, 2 off hit points. Now 1 of 20.');
+is('is pure — describing does not mutate', (() => {
+  const hp = { max: 20, current: 12, temp: 5 };
+  rules.describeHpChange(hp, rules.applyHpInput(hp, '-8'), '-8');
+  return hp;
+})(), { max: 20, current: 12, temp: 5 });
 
 /* ------------------------------------------------ restoreHitDice (long rest) */
 

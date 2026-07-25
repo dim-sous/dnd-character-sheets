@@ -161,7 +161,7 @@
                          input), so a signed delta isn't written as a literal value mid-type. -->
                     <input class="hp__cur" id="f-hp-current" type="text" inputmode="text"
                            data-bind="hp.current" data-live data-hp-current="true"
-                           placeholder="0" title="Type a number to set, or −8 for damage / +5 to heal"
+                           placeholder="0" title="Type a number to set, or -8 for damage / +5 to heal"
                            aria-describedby="hp-current-hint">
                     <span id="hp-current-hint" class="visually-hidden">Type a number to set current hit points, or a signed value such as minus 8 to take damage or plus 5 to heal.</span>
                   </span>
@@ -176,6 +176,13 @@
                     <input class="hp__temp" id="f-hp-temp" type="number" inputmode="numeric" data-bind="hp.temp" data-type="number" data-live>
                   </span>
                 </div>
+                <!-- #74: what the last entry actually did. The field runs two contracts — a bare
+                     number sets, a signed one is a delta through temp — and used to say which one
+                     fired only in a `title` tooltip that never fires on touch. This is the exact
+                     sentence #play-status speaks, so the screen and assistive tech agree; it is
+                     aria-hidden precisely because that live region already announces it, and two
+                     copies would be read twice. Empty until something is entered. -->
+                <p class="hp__result" id="hp-result" aria-hidden="true"></p>
               </div>
 
               <div class="tile" data-object="rest">

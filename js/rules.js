@@ -250,7 +250,7 @@ export function applyHealing(hp, amount) {
  * Returns a new hp object; never mutates.
  */
 export function applyHpInput(hp, raw) {
-  const text = String(raw).trim();
+  const text = hpInputText(raw);
   if (text === '') return { ...hp };
   const n = Number(text);
   if (!Number.isFinite(n)) return { ...hp };
@@ -259,6 +259,85 @@ export function applyHpInput(hp, raw) {
     return n < 0 ? applyDamage(hp, -n) : applyHealing(hp, n);
   }
   return { ...hp, current: n };
+}
+
+/**
+ * Trim, and accept a real minus sign (U+2212) as a hyphen — the same normalization
+ * `adjustedBonusText` does, and for a sharper reason here.
+ *
+ * `formatMod` prints U+2212 on every modifier readout on the sheet, and the Current HP field's
+ * own tooltip used to spell its example "−8 for damage" with it. `/^[+-]/` below does not match
+ * U+2212 and `Number('−8')` is NaN, so the app rejected the exact string it told the player to
+ * type — silently: the field repainted the old value and nothing was announced (#74).
+ */
+function hpInputText(raw) {
+  return String(raw ?? '').trim().replace(/^−/, '-');
+}
+
+/**
+ * One sentence describing what an HP entry just did — for the screen AND for assistive tech.
+ *
+ * #74's remaining defects are all silence, not arithmetic: the field runs two contracts (a bare
+ * number sets, a signed one is a delta through temp) and never says which one fired, so `19` and
+ * `-1` quietly disagree whenever temp is up. #100 gave screen-reader users a spoken result; this
+ * is the same string, so a sighted player gets the same disclosure instead of a hover tooltip.
+ *
+ * Pure, and it takes the raw entry as well as the before/after so it can distinguish "nothing
+ * changed" from "I could not read that" — the second being the failure the U+2212 bug produced.
+ * Returns '' when there is genuinely nothing to say, which the caller treats as "announce
+ * nothing" rather than as an empty message.
+ */
+export function describeHpChange(before, after, raw = '') {
+  const text = hpInputText(raw);
+  const wasDelta = /^[+-]/.test(text);
+  const curBefore = num(before.current);
+  const curAfter = num(after.current);
+  const tempBefore = num(before.temp);
+  const tempAfter = num(after.temp);
+  const max = num(after.max);
+  const total = max > 0 ? `${curAfter} of ${max}` : `${curAfter}`;
+
+  // Blank is not a mistake — it is a field the player cleared, or blurred without typing.
+  if (text === '') return '';
+  if (!Number.isFinite(Number(text))) return `Couldn’t read “${String(raw).trim()}”. Hit points unchanged.`;
+
+  const absorbed = Math.max(0, tempBefore - tempAfter);
+  const lost = curBefore - curAfter;
+  const gained = curAfter - curBefore;
+  // Report the amount ENTERED, then the result — so the sentence reads "what you asked for,
+  // what you got", and a clamp shows up as the gap between them. Reporting the effect instead
+  // says "Took 3" when you typed -9 at 3 hit points, which reads as the app mishearing you.
+  const entered = Math.abs(Number(text));
+
+  let what;
+  if (curAfter === curBefore && absorbed === 0) {
+    /*
+     * A DELTA that moved nothing is worth saying — healing at full hit points looks exactly
+     * like the app ignoring you otherwise.
+     *
+     * A bare number that changed nothing is not. It is overwhelmingly the idempotent re-commit
+     * that fires when the field blurs after Enter already committed: the handler repaints the
+     * field to the absolute result, so the eventual `change` arrives carrying that number.
+     * Narrating it would replace "Took 8. Temp absorbed 5…" with "No change." a moment later.
+     */
+    if (!wasDelta) return '';
+    what = 'No change.';
+  } else if (wasDelta && (lost > 0 || absorbed > 0)) {
+    if (absorbed === 0) what = `Took ${entered}.`;
+    else if (lost === 0) what = `Took ${entered}. Temp absorbed all of it, ${tempAfter} left.`;
+    else what = `Took ${entered}. Temp absorbed ${absorbed}, ${lost} off hit points.`;
+  } else if (wasDelta) {
+    what = `Healed ${entered}.`;
+  } else {
+    // The disclosure that closes #74's second acceptance bullet: an absolute set leaves temp
+    // alone, which is exactly where it diverges from the delta contract.
+    what = tempAfter > 0 ? `Set to ${curAfter}. Temp ${tempAfter} unchanged.` : `Set to ${curAfter}.`;
+  }
+
+  const parts = [what, `Now ${total}${tempAfter > 0 && wasDelta ? `, temp ${tempAfter}` : ''}.`];
+  // Matches the `.is-dying` treatment a sighted player gets at the same moment (render.js).
+  if (max > 0 && curAfter <= 0) parts.push('At 0 — make death saving throws.');
+  return parts.join(' ');
 }
 
 /**

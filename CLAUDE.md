@@ -40,6 +40,12 @@ The other `tools/probe-*.html` pages are targeted regression checks for behaviou
 - `probe-hp-commit.html` — an HP edit must survive a roster switch (#94).
 - `probe-arrange-fn.html` — arrange mode's select-a-tile wiring, plus a **height budget** for the arrange bar (#71/#72/#73). The budget is the thing that stops the bar creeping back toward the 388px it shipped at; if you add a control to the bar, expect to argue with it.
 - `probe-arrange-place.html` — the "Move to…" reorder gesture, layout undo, and the factory reset (#73). Separate from the above because it deliberately wrecks the layout and saves it as the default to prove the escape hatch works.
+- `probe-hp-result.html` — the Current HP result line (#74): that a real keystroke reaches it, that the visible line and `#play-status` get the *same* sentence, and that the blur re-commit doesn't overwrite it.
+
+Two traps these probes exist to catch, both of which have produced silently-passing checks here:
+
+- **`localStorage` is debounced 400ms.** Reading the store straight after a commit returns the *previous* value. Assert against the DOM (the field, the readout) and only read storage after a wait longer than the debounce.
+- **A script-assigned `.value` doesn't set the input's dirty flag**, so no `change` fires and the handler under test never runs — while the probe reports PASS. Type with `document.execCommand('insertText')` instead.
 
 Gotchas, all of them learned the hard way:
 
