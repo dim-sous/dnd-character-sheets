@@ -15,6 +15,35 @@ There is **no build, no bundler, no package manager, no lint step** — and that
 - **Tests:** `node tools/run-tests.mjs` runs the full suite headless (Node ≥ 22.7 — no browser, no deps, no `package.json`), or open `tests.html` in a browser for the same assertions. The suite lives in `tests.js`, imported by both. No per-test filter — comment others out to isolate one. CI runs the runner on every pull request, so a broken calculation blocks the merge.
 - **Deploy:** merge/push to `main` → `.github/workflows/deploy.yml` runs `tools/stamp-sw.py` (stamps the service-worker cache version + precache list from the deployed files) and publishes to GitHub Pages. Re-runnable from the Actions tab via `workflow_dispatch`. Production URL: https://dim-sous.github.io/dnd-character-sheets/
 
+## Measuring the running app
+
+**There IS a browser available in this WSL environment — do not assume otherwise, and do not hand a UI check back to the user as unverifiable.** Windows Chrome is reachable through WSL interop, runs headless, executes ES modules and JS, and can be measured. Node also exists even when it is not on `PATH` (the VS Code server ships one).
+
+```bash
+# node, when `node` is not on PATH (this is what runs the test suite)
+NODE=$(ls -d ~/.vscode-server/bin/*/node | head -1); "$NODE" tools/run-tests.mjs
+
+# 1. serve the repo (Windows Chrome reaches WSL's localhost directly)
+python3 -m http.server 8000 --bind 127.0.0.1 &
+
+# 2. drive Chrome headless and print the page's post-JS DOM
+CHROME="/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
+"$CHROME" --headless=new --disable-gpu --no-first-run --no-default-browser-check \
+  --user-data-dir='C:\Temp\cc-probe-profile' --force-device-scale-factor=1 \
+  --virtual-time-budget=25000 --dump-dom "http://localhost:8000/tools/probe.html"
+```
+
+`tools/probe.html` is the standing **touch-target audit**: it seeds a character through `blankCharacter()`, loads the app in a 390px iframe, walks every tab and edit/arrange mode, and reports any control whose hit area is under 44px. Extend it rather than writing throwaway probes. Read its header comment before changing it.
+
+Gotchas, all of them learned the hard way:
+
+- **`--user-data-dir` is required.** Without it Chrome forwards to the user's already-running desktop instance and your flags are silently ignored.
+- **Don't trust `--window-size` for viewport width** — Windows display scaling distorts it. Pin the width with a fixed-size `<iframe>` instead; that is what `probe.html` does.
+- **Use `setTimeout`, not `requestAnimationFrame`, to wait.** Under `--virtual-time-budget` timers are fast-forwarded reliably; an animation-frame loop is not guaranteed to be driven.
+- **Probe pages belong in `tools/`, never the repo root.** `tools/` is in `stamp-sw.py`'s `SKIP_DIRS`; a stray `.html` at the root **would** be precached and shipped to every player's phone.
+- **Inactive tab panels carry `hidden`**, so a control measures 0×0 until you activate its tab. Some controls only exist in a card's edit mode (the spell-slot total is setup-only — play mode renders a count instead).
+- **Measure, don't infer.** This stylesheet has a recurring trap where a class rule (0,1,0) declares a size that the base `input[type=…]` / `.icon-btn` rule (0,1,1) outranks, so the control is *not* the size the CSS appears to say. Reading the stylesheet has already put wrong claims into three issues; measurement disproved them. The honest tap target is also not the border box — `.pip` and `.toggle` carry theirs on an absolutely-positioned `::after`, and `.chip` puts it on the wrapping `<label>`.
+
 ## Architecture
 
 **Unidirectional loop, single source of truth:**
