@@ -7,7 +7,9 @@
  * result. That is the entire argument for keeping the arithmetic separate from the
  * rendering, and the reason the same file can run in either place with no test framework.
  */
-import { blankCharacter, MAX_EXHAUSTION, SCHEMA_VERSION } from './js/constants.js';
+import {
+  blankCharacter, MAX_EXHAUSTION, SCHEMA_VERSION, ROW_TEMPLATES,
+} from './js/constants.js';
 import * as rules from './js/rules.js';
 import { normalizeCharacter, parseStored, mergeCharacters, characterFilename } from './js/storage.js';
 // state.js is safe to import: its module scope has no side effects (it does not call
@@ -232,6 +234,57 @@ describe('spellcasting');
   is('is a caster', rules.isSpellcaster(caster), true);
   is('DC = 8 + 3 + 4 → 15', rules.spellSaveDC(caster), 15);
   is('attack = 3 + 4 → +7', rules.spellAttackBonus(caster), 7);
+}
+
+/* ---------------------------------------------------------- attack to-hit */
+
+describe('attack to-hit (#84)');
+{
+  const row = (over = {}) => ({ ...ROW_TEMPLATES.attacks(), ...over });
+  const fighter = char({
+    level: 5, // PB +3
+    abilities: { str: 18, dex: 14, con: 14, int: 10, wis: 10, cha: 10 }, // STR +4, DEX +2
+  });
+
+  // The ability picker is the mode switch: no ability = Custom, the free text stands.
+  is('a blank row is Custom, not derived', rules.isDerivedAttack(row()), false);
+  is('an ability key makes it derived', rules.isDerivedAttack(row({ ability: 'str' })), true);
+  is('an unknown ability stays Custom', rules.isDerivedAttack(row({ ability: 'luck' })), false);
+  is('a missing row is not derived', rules.isDerivedAttack(undefined), false);
+
+  const longsword = row({ ability: 'str', proficient: true });
+  is('STR +4 with PB +3 → +7', rules.attackToHit(fighter, longsword), 7);
+  is('not proficient drops PB → +4', rules.attackToHit(fighter, { ...longsword, proficient: false }), 4);
+  is('a +1 weapon adds its misc bonus → +8', rules.attackToHit(fighter, { ...longsword, miscBonus: 1 }), 8);
+  is('a negative misc bonus subtracts → +5', rules.attackToHit(fighter, { ...longsword, miscBonus: -2 }), 5);
+  is('the same row set to DEX (finesse) → +5', rules.attackToHit(fighter, { ...longsword, ability: 'dex' }), 5);
+  // The point of deriving rather than storing: a level-up moves it unattended (5 → 9 is PB +4).
+  is('PB follows a level-up → +8', rules.attackToHit({ ...fighter, level: 9 }, longsword), 8);
+  // A weapon attack is a D20 Test, so it moves with Exhaustion like every other total (#63).
+  is('exhaustion 2 takes 4 off a derived to-hit', rules.attackToHit({ ...fighter, exhaustion: 2 }, longsword), 3);
+  is('the derived readout is formatted', rules.attackHit(fighter, longsword), '+7');
+  is('a derived total can go negative', rules.attackHit({ ...fighter, exhaustion: 6 }, longsword), '−5');
+  // One authoritative contract: choosing an ability wins over whatever text is still stored.
+  is('an ability beats a stale typed bonus', rules.attackHit(fighter, { ...longsword, bonus: '+99' }), '+7');
+
+  // Custom mode gets the Speed treatment: the STORED string is never rewritten, only the
+  // readout moves, so dropping the exhaustion level restores it exactly.
+  const typed = row({ bonus: '+5' });
+  is('typed +5, rested → +5', rules.attackHit(fighter, typed), '+5');
+  is('typed +5 at exhaustion 2 → +1', rules.attackHit({ ...fighter, exhaustion: 2 }, typed), '+1');
+  is('the stored string is not mutated by the readout', typed.bonus, '+5');
+  is('a bare 5 is still a number', rules.attackHit({ ...fighter, exhaustion: 1 }, row({ bonus: '5' })), '+3');
+  is('a real minus sign round-trips back in', rules.attackHit(fighter, row({ bonus: '−1' })), '−1');
+  is('surrounding space is tolerated', rules.attackHit(fighter, row({ bonus: ' +5 ' })), '+5');
+
+  // Anything we cannot do arithmetic on is echoed verbatim rather than coerced — those are
+  // exactly the rows whose text carries the most information.
+  const worn = { ...fighter, exhaustion: 3 };
+  is('"+5 (adv)" echoes verbatim', rules.attackHit(worn, row({ bonus: '+5 (adv)' })), '+5 (adv)');
+  is('"+5/+0" echoes verbatim', rules.attackHit(worn, row({ bonus: '+5/+0' })), '+5/+0');
+  is('"1d20+5" echoes verbatim', rules.attackHit(worn, row({ bonus: '1d20+5' })), '1d20+5');
+  is('blank stays blank, never a confident +0', rules.attackHit(worn, row()), '');
+  is('a missing row renders nothing', rules.attackHit(worn, undefined), '');
 }
 
 /* ------------------------------------------------------------- exhaustion */
@@ -533,11 +586,33 @@ is('id missing → generated non-empty string', typeof normalizeCharacter({}).id
 
 describe('normalizeCharacter rows');
 is('attack number → string coercion', normalizeCharacter({ attacks: [{ bonus: 5 }] }).attacks[0].bonus, '5');
-is('attack garbage row → template', normalizeCharacter({ attacks: ['nope'] }).attacks[0], { name: '', bonus: '', damage: '', notes: '' });
+is('attack garbage row → template', normalizeCharacter({ attacks: ['nope'] }).attacks[0],
+  { name: '', ability: '', proficient: true, miscBonus: 0, bonus: '', damage: '', notes: '' });
 is('attacks non-array → []', normalizeCharacter({ attacks: {} }).attacks, []);
+{
+  // #84: a pre-#84 row carries only name/bonus/damage/notes. normalizeRow is template-driven,
+  // so the new keys backfill with no migration — and they backfill into Custom mode, which is
+  // exactly what keeps the typed to-hit standing instead of silently deriving something else.
+  const legacy = normalizeCharacter({
+    attacks: [{ name: 'Longsword', bonus: '+5 (adv)', damage: '1d8+3' }],
+  }).attacks[0];
+  is('a pre-#84 row keeps its typed bonus', legacy.bonus, '+5 (adv)');
+  is('a pre-#84 row backfills to Custom', legacy.ability, '');
+  is('a pre-#84 row backfills proficient', legacy.proficient, true);
+  is('a pre-#84 row backfills miscBonus', legacy.miscBonus, 0);
+  is('a pre-#84 row reads as Custom, not derived', rules.isDerivedAttack(legacy), false);
+  is('attack miscBonus garbage → 0', normalizeCharacter({ attacks: [{ miscBonus: 'x' }] }).attacks[0].miscBonus, 0);
+  is('attack miscBonus coercion', normalizeCharacter({ attacks: [{ miscBonus: '-2' }] }).attacks[0].miscBonus, -2);
+  is('attack proficient → boolean', normalizeCharacter({ attacks: [{ proficient: 0 }] }).attacks[0].proficient, false);
+  is('a nonsense ability degrades to Custom',
+    rules.isDerivedAttack(normalizeCharacter({ attacks: [{ ability: 'luck' }] }).attacks[0]), false);
+}
 is('inventory qty coercion', normalizeCharacter({ inventory: [{ item: 'Rope', qty: '3' }] }).inventory[0].qty, 3);
 is('inventory qty garbage → template 1', normalizeCharacter({ inventory: [{ item: 'Rope', qty: 'x' }] }).inventory[0].qty, 1);
 is('spell prepared → boolean', normalizeCharacter({ spellcasting: { spells: [{ name: 'X', prepared: 1 }] } }).spellcasting.spells[0].prepared, true);
+// A missing boolean takes its TEMPLATE default, not a blanket false (#84) — here that default
+// is false, so this pins the unchanged half of that rule alongside `proficient`'s true above.
+is('spell prepared missing → template false', normalizeCharacter({ spellcasting: { spells: [{ name: 'X' }] } }).spellcasting.spells[0].prepared, false);
 is('spell level coercion', normalizeCharacter({ spellcasting: { spells: [{ level: '2' }] } }).spellcasting.spells[0].level, 2);
 
 describe('features + feats rows (#67)');

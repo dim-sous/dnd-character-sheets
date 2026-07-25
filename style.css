@@ -862,6 +862,46 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row__primary > input:not(:first-child) { flex: 0 0 auto; }          /* to-hit / damage / qty: exactly content width */
 .row__primary input:read-only { outline: none; }   /* view fields are display-only — no focus box on tap */
 
+/* #84: to-hit as a derived readout. The <output> is a grandchild, so the `.row__primary >
+   input` sizing above skips it — give it the same fixed-width, tabular treatment by hand. */
+.row__hit {
+  flex: 0 0 auto; min-width: 2.25rem;
+  padding-inline: .35rem; text-align: center;
+  font-variant-numeric: tabular-nums; font-weight: 600;
+}
+
+/* The ability picker is the MODE SWITCH, so exactly one of the readout and the free-text
+   field is ever on the primary line — there is never a visible field whose value is silently
+   ignored (the two-write-contracts shape logged in #74). option[value=""]:checked tracks the
+   select live, so this costs no JS and no extra render pass.
+   Order matters: the baseline is "edit mode shows the typed field", and :has() only REFINES
+   it. Where :has() is unsupported both rules simply drop and edit mode shows the field plus
+   the readout — cluttered, never unreachable. */
+.row__bonus { display: none; }
+.is-editing .row--attack .row__bonus { display: inline-block; }
+/* Ability chosen → the number is derived; the typed field would be dead, so hide it. */
+.is-editing .row--attack:not(:has(.row__ability option[value=""]:checked)) .row__bonus { display: none; }
+/* Custom → the typed field IS the to-hit; it takes the readout's place while editing. */
+.is-editing .row--attack:has(.row__ability option[value=""]:checked) .row__hit { display: none; }
+
+/* What the to-hit is derived from: edit-only, like the per-skill prof/exp/misc controls.
+   Not `.row__detail` on purpose — that class is what makes main.js expand a row on tap, and
+   these are editing controls, not content worth revealing in view mode.
+   flex-basis, not width: `select`/`input[type=number]` are width:100% from the base rule, so
+   a width here would lose to it — the same trap noted on .skill__bonus. */
+.row--attack > .row__hitcalc { display: none; }
+/* wrap, not shrink: these three are fixed-basis, so a narrower phone must drop one to a
+   second line rather than squeeze "Custom" out of the picker. */
+.is-editing .row--attack > .row__hitcalc {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+}
+.row__ability { flex: 0 0 6.25rem; }   /* fits "Custom" plus the dropdown arrow at 16px */
+.row__misc { flex: 0 0 3.5rem; }
+.row__prof {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: .3rem;
+  min-height: var(--tap); font-size: .8rem; color: var(--ink-faint);
+}
+
 /* Notes: hidden by default; revealed when the entry is tap-expanded (.is-expanded), and always
    shown in edit mode (still editable there). Neutralise the base `.row > textarea{flex-basis:100%}`
    (it assumed a wrapping flex row; here the row is a column and it would blow the box up). */
@@ -1110,6 +1150,11 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      clip rather than ellipsize the single-line fields so a printed sheet carries the full entry,
      not just what happened to be expanded on screen. */
   .row--attack > .row__notes, .row--inventory > .row__notes { display: block !important; }
+  /* #84: paper always gets the derived readout — never the raw `bonus` field (in derived mode
+     it holds a stale string) and never the derivation controls, which are a screen affordance.
+     Unconditional, so a card left in Edit mode still prints the finished sheet. */
+  .row--attack .row__hit { display: inline-block !important; }
+  .row--attack .row__bonus, .row--attack > .row__hitcalc { display: none !important; }
   /* #67: paper has no tap, so every collapsed detail block prints expanded. */
   .row--feature > .row__detail, .row--feat > .row__detail { display: flex !important; }
   .row__primary input { text-overflow: clip; }

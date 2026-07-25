@@ -33,7 +33,11 @@ function normalizeRow(listName, raw) {
   for (const [key, fallback] of Object.entries(template)) {
     const value = raw[key];
     if (typeof fallback === 'number') out[key] = num(value, fallback);
-    else if (typeof fallback === 'boolean') out[key] = Boolean(value);
+    // A MISSING boolean takes the template's default, the way the number and string branches
+    // already do — a bare Boolean(value) made every absent key false and so quietly discarded
+    // a `true` default (#84's `proficient`). A key that IS present is still coerced, so a
+    // hand-edited 0/null/"" still reads as false.
+    else if (typeof fallback === 'boolean') out[key] = value === undefined ? fallback : Boolean(value);
     // A hand-edited file may hold "bonus": 5 where the app stores "+5". Coercing
     // rather than str()-ing keeps the number instead of silently blanking it.
     else if (typeof value === 'number') out[key] = String(value);

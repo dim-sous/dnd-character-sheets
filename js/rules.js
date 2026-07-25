@@ -6,9 +6,10 @@
  * and it is the reason none of this arithmetic is ever stored.
  */
 
-import { SKILLS } from './constants.js';
+import { ABILITIES, SKILLS } from './constants.js';
 
 const SKILL_BY_KEY = new Map(SKILLS.map((s) => [s.key, s]));
+const ABILITY_KEYS = new Set(ABILITIES.map((a) => a.key));
 
 /** Coerce anything the user typed into a usable number. */
 function num(value, fallback = 0) {
@@ -150,6 +151,63 @@ export function spellSaveDC(char) {
 export function spellAttackBonus(char) {
   if (!isSpellcaster(char)) return null;
   return characterPB(char) + modFor(char, char.spellcasting.ability) + exhaustionPenalty(char);
+}
+
+/* ------------------------------------------------------------ attack to-hit (#84) */
+
+/**
+ * An attack row derives its to-hit only when it names a governing ability. '' is Custom —
+ * the mode every pre-existing row backfills into — where the free-text `bonus` stands.
+ *
+ * An unrecognised string (a hand-edited file, a key we later rename) is read as Custom
+ * rather than derived: modFor would happily return +0 for it, and quietly showing +0 in
+ * place of what the player typed is the one outcome worth ruling out by construction.
+ */
+export function isDerivedAttack(attack) {
+  return Boolean(attack) && ABILITY_KEYS.has(attack.ability);
+}
+
+/**
+ * A weapon attack is a D20 Test, so it takes the Exhaustion penalty like every other total
+ * this sheet derives. The governing ability is per-row DATA, not static metadata the way a
+ * skill's is — a rapier is DEX for one character and STR for the next — so unlike
+ * skillTotal(char, key) this takes the row itself.
+ *
+ * `proficient` is deliberately per-row arithmetic and does NOT read #69's free-text weapon
+ * proficiencies: that field records WHAT you are proficient with in the player's own words,
+ * which the app cannot match against an attack named "Dagger (offhand)". One is prose, one
+ * is a number — only this one is authoritative for the total.
+ */
+export function attackToHit(char, attack) {
+  return modFor(char, attack.ability)
+    + (attack.proficient ? characterPB(char) : 0)
+    + num(attack.miscBonus)
+    + exhaustionPenalty(char);
+}
+
+/**
+ * The Speed treatment for a to-hit the player typed by hand: a plain signed integer is
+ * arithmetic we can safely do, so the Exhaustion penalty lands on it; anything else
+ * ("+5 (adv)", "+5/+0", "1d20+5") is echoed verbatim, exactly as render's `raw` case does.
+ * The STORED string is never rewritten — dropping the exhaustion level restores it exactly.
+ */
+function adjustedBonusText(char, bonus) {
+  const text = String(bonus ?? '').trim();
+  // formatMod prints a real minus sign, so accept one back: a value copied out of a readout
+  // must not stop being a number the moment it is pasted into the field.
+  const signed = text.replace(/^−/, '-');
+  if (!/^[+-]?\d+$/.test(signed)) return text;
+  return formatMod(Number(signed) + exhaustionPenalty(char));
+}
+
+/**
+ * What a row's to-hit readout shows, in either mode — the one string render.js asks for.
+ * Blank stays blank: a row with no to-hit yet should read as empty, not as a confident +0.
+ */
+export function attackHit(char, attack) {
+  if (!attack) return '';
+  if (isDerivedAttack(attack)) return formatMod(attackToHit(char, attack));
+  return adjustedBonusText(char, attack.bonus);
 }
 
 /**

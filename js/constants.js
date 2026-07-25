@@ -126,7 +126,21 @@ export function blankCharacter() {
 }
 
 export const ROW_TEMPLATES = {
-  attacks: () => ({ name: '', bonus: '', damage: '', notes: '' }),
+  // #84: `ability` is the MODE SWITCH for to-hit. '' is Custom — the free-text `bonus` the
+  // player typed stands (Exhaustion-adjusted in the readout when it parses as a plain number,
+  // exactly the split `speed`/`effectiveSpeed` uses). Any ability key derives it instead:
+  // mod + PB (if proficient) + miscBonus − Exhaustion, so a level-up or an exhaustion level
+  // reaches weapon attacks the way it already reaches saves, skills and spell attacks.
+  //
+  // `bonus` therefore STAYS in the template. normalizeRow builds its output solely from
+  // template keys, so dropping it would discard every stored to-hit string on load and the
+  // debounced save would then persist the loss — and "just retype it as a number" silently
+  // zeroes exactly the rows carrying the most information ("+5 (adv)", "1d20+5", "+5/+0").
+  // Defaulting `ability` to '' is also what backfills every pre-existing row into Custom
+  // mode with no migration and no SCHEMA_VERSION bump.
+  attacks: () => ({
+    name: '', ability: '', proficient: true, miscBonus: 0, bonus: '', damage: '', notes: '',
+  }),
   spells: () => ({ name: '', level: 0, prepared: false }),
   // #67: source (Species / Background / Class / Other) and level stay FREE TEXT — the sheet
   // records where a feature came from, it doesn't model class progression. Old rows carry only

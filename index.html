@@ -573,9 +573,32 @@
          Tapping anywhere on the row toggles the notes line below (main.js). -->
     <div class="row__primary">
       <input type="text" data-bind-suffix="name" placeholder="Name" aria-label="Attack name">
-      <input type="text" class="row__narrow" size="4" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
+      <!-- #84: to-hit is a DERIVED readout now (renderRows bakes the row index into
+           data-derived-suffix). With an ability chosen it is mod + PB + misc − Exhaustion;
+           in Custom mode it echoes the typed bonus below, Exhaustion-adjusted when that is a
+           plain number. Exactly one of the two is ever on this line — see style.css. -->
+      <output class="row__hit" data-derived-suffix="attackHit" aria-label="To hit"></output>
+      <input type="text" class="row__bonus" size="4" data-bind-suffix="bonus" placeholder="+5" aria-label="Attack bonus">
       <input type="text" size="16" data-bind-suffix="damage" placeholder="1d8+3" aria-label="Damage">
       <button type="button" class="row__remove" data-action="remove-row" data-list="attacks" aria-label="Remove attack">✕</button>
+    </div>
+    <!-- Edit-only second line: what the to-hit is derived FROM. It cannot join the primary
+         line — at 390px a select + checkbox + number would starve the name field to nothing —
+         so it gets its own line, revealed by Edit like the per-skill prof/exp/misc controls. -->
+    <div class="row__hitcalc">
+      <select class="row__ability" data-bind-suffix="ability" aria-label="Attack ability">
+        <option value="">Custom</option>
+        <option value="str">STR</option>
+        <option value="dex">DEX</option>
+        <option value="con">CON</option>
+        <option value="int">INT</option>
+        <option value="wis">WIS</option>
+        <option value="cha">CHA</option>
+      </select>
+      <label class="row__prof"><input type="checkbox" data-bind-suffix="proficient" data-type="checkbox"> Prof</label>
+      <!-- Signed field: no inputmode="numeric" (see the skill misc bonus) — a to-hit modifier
+           can be negative and iOS's numeric keypad has no minus key. -->
+      <input type="number" class="row__misc" data-bind-suffix="miscBonus" data-type="number" placeholder="0" aria-label="Attack misc bonus">
     </div>
     <!-- Notes wrap onto their own full-width line (attacks often have none; some have a lot). -->
     <textarea rows="1" class="row__notes" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes"></textarea>
