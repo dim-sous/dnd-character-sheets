@@ -57,7 +57,24 @@ try {
   c.ac = 15; c.speed = 30;
   c.spellcasting.ability = 'int';
   c.spellcasting.slots[1] = { total: 4, used: 1 };
-  c.attacks = [{ name: 'Dagger', ability: 'dex', proficient: true, damage: '1d4', notes: '' }];
+  /*
+   * One short row and one deliberately LONG one. The short row is the common case; the long one
+   * is the fixture that was missing when a 24-character name pushed the primary line to 386px
+   * inside a 304px row and scrolled the whole document to 423 against a 375px viewport. With
+   * only "Dagger" in here the probe reported PASS through all of it.
+   *
+   * Long free-text values are the general case worth seeding — every field in this app is
+   * free-form and unvalidated, so "what a real player types" is the load, not the placeholder.
+   */
+  c.attacks = [
+    { name: 'Dagger', ability: 'dex', proficient: true, damage: '1d4', notes: '' },
+    { name: 'Longbow of the Deep Wood', ability: 'dex', proficient: true, damage: '1d8+2 piercing', notes: 'Range 150/600' },
+  ];
+  c.inventory = [{ name: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
+  c.proficiencies = {
+    armor: 'Light, medium, heavy, shields', weapons: 'Simple, martial',
+    tools: 'Smith’s tools, dice set', languages: 'Common, Dwarvish, Undercommon',
+  };
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
 
   const fr = document.getElementById('fr');
@@ -224,9 +241,28 @@ try {
   report.totalFailures = report.scenes.reduce(
     (n, s) => n + s.failures.reduce((m, f) => m + f.count, 0), 0,
   );
-  report.verdict = report.totalFailures === 0
-    ? `PASS — every measured control has a >=${TAP}px hit area at ${VIEWPORT}px`
-    : `FAIL — ${report.totalFailures} control(s) under ${TAP}px`;
+
+  /*
+   * Sideways scroll is a FAILURE, not a footnote. `overflows` was already measured per scene,
+   * but the verdict only counted touch targets — so the probe printed PASS while the document
+   * scrolled 655px against a 375px viewport, and anyone reading just the verdict line (me) saw
+   * a green light. CLAUDE.md forbids body horizontal scroll; the probe now says so.
+   *
+   * Two ways it has actually happened here, both invisible on screen: a row whose content
+   * cannot shrink (a long attack name against a `flex: 0 0 auto` damage field), and a
+   * `.visually-hidden` element given `width: 100%` — absolutely positioned with no positioned
+   * ancestor, so it resolves against the viewport and hangs a 375px empty box off the edge.
+   */
+  report.overflowScenes = report.scenes
+    .filter((s) => s.overflows)
+    .map((s) => `${s.scene}: scrollWidth ${s.scrollWidth} > ${s.viewport}`);
+
+  const parts = [];
+  if (report.totalFailures) parts.push(`${report.totalFailures} control(s) under ${TAP}px`);
+  if (report.overflowScenes.length) parts.push(`${report.overflowScenes.length} scene(s) scroll sideways`);
+  report.verdict = parts.length === 0
+    ? `PASS — every measured control has a >=${TAP}px hit area at ${VIEWPORT}px, and nothing scrolls sideways`
+    : `FAIL — ${parts.join('; ')}`;
   out.textContent = JSON.stringify(report, null, 1);
 } catch (err) {
   out.textContent = `PROBE ERROR\n${err && err.stack || err}`;
