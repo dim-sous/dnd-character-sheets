@@ -158,10 +158,13 @@
                 </div>
               </div>
 
+              <!-- #76: AC is a plain Edit-gated STORED value, so it flattens in place like Max
+                   HP — the field is always here, flat and dashed-underlined when locked, boxed
+                   when unlocked. Its view-mode <output data-derived="raw.ac"> is gone: it was
+                   the swap half of the card's second Edit-gating mechanism. -->
               <div class="tile" data-object="ac">
                 <span class="tile__label">AC</span>
                 <div class="tile__body">
-                  <output class="tile__value" data-derived="raw.ac">—</output>
                   <input class="tile__input" id="f-ac" type="number" inputmode="numeric" data-bind="ac" data-type="number" aria-label="Armor Class">
                 </div>
               </div>
@@ -173,11 +176,16 @@
                 </div>
               </div>
 
+              <!-- Speed is the one tile that is BOTH derived and editable: the readout is
+                   base − 5ft per Exhaustion level (#63) while the field holds the base. So the
+                   computed value is always on screen — flattening it away would lose the
+                   Exhaustion penalty — and Edit reveals the base underneath it. The dashed
+                   underline marks it reachable, exactly like AC and Max HP. -->
               <div class="tile" data-object="speed">
                 <span class="tile__label">Speed</span>
                 <div class="tile__body">
-                  <output class="tile__value" data-derived="speed">—</output>
-                  <input class="tile__input" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number" aria-label="Speed">
+                  <output class="tile__value tile__value--gated" data-derived="speed">—</output>
+                  <input class="tile__input tile__input--base" id="f-speed" type="number" inputmode="numeric" data-bind="speed" data-type="number" aria-label="Speed (base, before Exhaustion)">
                 </div>
               </div>
 
