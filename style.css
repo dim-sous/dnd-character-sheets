@@ -149,8 +149,14 @@ input[type="checkbox"]:checked::before { transform: scale(1); }
 input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 
-/* Heroic inspiration is a lone, prominent toggle — size it up a touch. */
-.toggle { width: 26px; height: 26px; }
+/* Heroic inspiration is a lone, prominent toggle — size it up a touch. The selector MUST
+   out-specify the base `input[type="checkbox"]` (0,1,1) or none of this applies: a bare
+   `.toggle` (0,1,0) silently lost the cascade, so this rendered at the base 22px — half the
+   minimum, and the smallest control on the Combat tab (#77). */
+input[type="checkbox"].toggle { width: 26px; height: 26px; }
+/* 26px still reads as a checkbox; ::after carries the 44px tap target, the same trick the
+   pips use. ::before is taken by the tick, and the base rule already sets position:relative. */
+input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -9px; }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -170,7 +176,10 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 .btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn--danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
 .btn--good { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
-.btn--small { min-height: 36px; padding: .3rem .7rem; font-size: .85rem; }
+/* "Small" means smaller text and padding, NOT a smaller target. This used to set 36px, which
+   beat the base .btn's var(--tap) on source order and put every card Edit / + Add button —
+   including the only route to Max HP — under the minimum (#77). */
+.btn--small { min-height: var(--tap); padding: .3rem .7rem; font-size: .85rem; }
 
 .btn-row { display: flex; gap: .5rem; }
 .btn-row > .btn { flex: 1; }
@@ -342,7 +351,7 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 }
 .tile__body {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
-  gap: .3rem; min-height: 40px;
+  gap: .3rem; min-height: var(--tap);   /* 44px, so a solo action tile's button clears the minimum (#77) */
 }
 /* Action tiles (Rest): the body grows to the tile's stretched height (flex:1) and stretches
    its child on the cross axis, so the button fills the tile in BOTH dimensions instead of a
@@ -353,9 +362,11 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
   font-variant-numeric: tabular-nums; line-height: 1.1;
 }
+/* Typography only. The box — full width, .4rem/.6rem padding, border, fill and the 44px
+   min-height — comes from the base `input[type=…]` rule, which at (0,1,1) outranks this
+   (0,1,0). This used to declare `width:3.2rem; min-height:34px; background:none; border:0`;
+   none of it ever applied, and it read as a touch-target violation that wasn't there (#77). */
 .tile__input {
-  width: 3.2rem; min-height: 34px; padding: .1rem;
-  background: none; border: 0;
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600; text-align: center;
 }
 .tile__input:focus { background: var(--parchment); border-radius: 6px; }
@@ -410,14 +421,16 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 
 /* The reorder ↑/↓ controls injected into a card's head while arranging. They only exist in
    the DOM during arrange mode (layout-view injects/removes them), so no is-arranging gate. */
-.card__move { display: inline-flex; gap: .1rem; margin-left: auto; }
+/* Wraps (#71): at 44px per control the group no longer always fits beside the rename field on
+   a 390px head, and an inline-flex that can't wrap would overflow the card instead. */
+.card__move { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: .1rem; margin-left: auto; }
 .card__move .icon-btn {
-  width: 34px; height: 34px; font-size: 1.1rem;
+  width: var(--tap); height: var(--tap); font-size: 1.1rem;
   border: 1px solid var(--line); border-radius: 8px;
 }
 .card__move .icon-btn:disabled { opacity: .3; cursor: default; }
 .card__movetab {
-  min-height: 34px; max-width: 9rem;
+  min-height: var(--tap); max-width: 9rem; min-width: 0;
   padding: 0 .4rem; font-size: .78rem;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
@@ -426,8 +439,12 @@ input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
 /* Editable card title (#54): while arranging, an input stands in for the static .card__title
    (hidden below), sitting where the title was and growing to fill the head. */
 body.is-arranging .card__title { display: none; }
+/* Wraps to its own line rather than crushing the title (#71): at 44px the ↑/↓ pair plus the
+   "Move to…" select no longer share a 390px head with a readable name field — measured, the
+   old `min-width:0` collapsed this to 21px. The floor forces .card__move onto line two. */
+body.is-arranging .list__head { flex-wrap: wrap; }
 .card__rename {
-  flex: 1; min-width: 0; min-height: 34px;
+  flex: 1 1 8rem; min-width: 8rem; min-height: var(--tap);
   padding: 0 .5rem; font-size: 1rem; font-weight: 600;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
@@ -451,13 +468,13 @@ body.is-arranging .arrange-bar {
 .tablist-edit__rows { list-style: none; margin: 0 0 .4rem; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
 .tabrow { display: flex; align-items: center; gap: .3rem; }
 .tabrow__name {
-  flex: 1; min-width: 0; min-height: 34px;
+  flex: 1; min-width: 0; min-height: var(--tap);
   padding: 0 .5rem; font-size: .85rem;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
 .tabrow .icon-btn {
-  width: 34px; height: 34px; flex: none; font-size: 1rem;
+  width: var(--tap); height: var(--tap); flex: none; font-size: 1rem;
   border: 1px solid var(--line); border-radius: 8px;
 }
 .tabrow .icon-btn:disabled { opacity: .3; cursor: default; }
@@ -506,7 +523,7 @@ body.is-arranging .obj-rename { pointer-events: auto; }
     border: 1px solid var(--line); border-radius: 6px;
     cursor: grab; user-select: none;
   }
-  body.is-arranging .card__move .drag-grip { width: 34px; height: 34px; font-size: 1rem; }
+  body.is-arranging .card__move .drag-grip { width: var(--tap); height: var(--tap); font-size: 1rem; }
   body.is-arranging .drag-grip:active { cursor: grabbing; }
   .obj-ctl { width: 68px; }
 }
@@ -684,7 +701,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
 
 .pip {
   position: relative;
-  width: 30px; height: 30px;
+  width: 36px; height: 36px;
   padding: 0;
   background: var(--card);
   border: 2px solid var(--line);
@@ -692,9 +709,11 @@ body.is-arranging [data-action="add-row"] { display: none; }
   cursor: pointer;
   transition: background .12s, border-color .12s;
 }
-/* The circle reads as 30px but the tap target is 38px. The inset matches half the
-   gap exactly, so neighbouring pips extend up to each other and never overlap —
-   an overlap would silently steal taps for the pip drawn last. */
+/* The circle reads as 36px but the tap target is 44px (#77 — it was 30px/38px). The inset
+   still matches half the gap exactly, so neighbouring pips extend up to each other and never
+   overlap — an overlap would silently steal taps for the pip drawn last. Grow the CIRCLE to
+   change the target, never the inset: widening the inset past half the gap re-introduces the
+   overlap this comment exists to prevent. */
 .pip::after { content: ""; position: absolute; inset: -4px; }
 .pip.is-on { background: var(--accent); border-color: var(--accent); }
 .pips--bad .pip.is-on { background: var(--bad); border-color: var(--bad); }
@@ -713,7 +732,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
 
 .chip {
   display: inline-flex; align-items: center; gap: .35rem;
-  min-height: 38px; padding: .25rem .6rem;
+  min-height: var(--tap); padding: .25rem .6rem;   /* the label IS the tap target (#77) */
   background: var(--parchment);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -729,7 +748,8 @@ body.is-arranging [data-action="add-row"] { display: none; }
 /* Match the checkbox to the chip's "active" colour so a set condition reads as one red
    unit rather than a red pill wrapping an accent box. */
 .chip:has(:checked) .chip__box { background: var(--bad); border-color: var(--bad); }
-.chip__box { width: 18px; height: 18px; }
+/* No size here on purpose: an 18px `.chip__box` (0,1,0) never applied — the base
+   `input[type="checkbox"]` (0,1,1) wins and paints it at 22px (#77). */
 
 /* The seams the #14 card merge created: sections that used to be separate cards. */
 .status__block { margin-top: .9rem; }
@@ -831,7 +851,8 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    `size` attrs on to-hit/damage/qty are the width fallback where field-sizing is unsupported. */
 .row__primary { display: flex; align-items: center; gap: .5rem; }
 .row__primary input {
-  field-sizing: content; width: auto; min-width: 2.5rem;   /* width:auto so field-sizing wins over the base input{width:100%} */
+  /* 2.75rem = 44px: the floor is a touch target, not just a legibility minimum (#77). */
+  field-sizing: content; width: auto; min-width: 2.75rem;  /* width:auto so field-sizing wins over the base input{width:100%} */
   text-overflow: ellipsis; padding-inline: .35rem;
 }
 .row__primary > input:first-child { flex: 1 1 4rem; min-width: 0; }  /* name / item: grows into the free space */
@@ -852,7 +873,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
 .row__remove {
   flex: none;
-  width: 38px; height: 38px;
+  width: var(--tap); height: var(--tap);   /* #77 */
   margin-left: auto;
   background: none; border: 1px solid transparent; border-radius: 8px;
   color: var(--ink-faint); font-size: .95rem; cursor: pointer;
