@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8"><title>HP commit probe (#94)</title>
+<!--
+  Regression check for #94: a pending Current HP edit must survive a structural render.
+
+  The bug is easy to reintroduce by "simplifying" renderSheet's [data-bind] loop back to an
+  unconditional write, and the failure is silent — a player's damage just never lands. The
+  existing suite (tests.js) cannot cover it: that suite imports only constants.js + rules.js
+  and is deliberately DOM-free, while this defect lives entirely in the render layer.
+
+  Run: see CLAUDE.md -> "Measuring the running app", pointing --dump-dom at this file.
+  Expect: "verdict": "ALL PASS".
+-->
+<style>#fr{width:390px;height:900px;border:0}</style>
+<pre id="out">pending</pre><iframe id="fr"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+try {
+const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+const a = blankCharacter(); a.name='Alpha'; a.hp.max=30; a.hp.current=20; a.hp.temp=0;
+const b = blankCharacter(); b.name='Beta';  b.hp.max=50; b.hp.current=45; b.hp.temp=0;
+localStorage.setItem(STORAGE_KEY, JSON.stringify({schemaVersion:SCHEMA_VERSION, characters:[a,b]}));
+
+const fr = document.getElementById('fr');
+await new Promise(r => { fr.onload = r; fr.src = '../index.html'; });
+const d = fr.contentDocument;
+const s = (ms=250)=>new Promise(r=>setTimeout(r,ms));
+await s(500);
+
+const stored = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters;
+const hpOf = (name) => stored().find(c => c.name === name).hp;
+const field = () => d.getElementById('f-hp-current');
+const R = {};
+
+/* Assigning .value from script does NOT set the input's dirty flag, so a later blur fires
+   no `change` — which is what the app commits on. execCommand('insertText') is a real text
+   insertion, so the field behaves exactly as it does under a human's fingers. */
+function type(el, text) { el.focus(); el.select(); d.execCommand('insertText', false, text); }
+
+// ---- 1. the reported bug: pending edit + a structural render ----------------
+// A programmatic .click() does not move focus in Chrome, standing in for the iOS gesture
+// where tapping a button leaves the input focused and fires no `change`.
+type(field(), '-8');
+d.querySelector('[data-action="add-row"][data-list="hitDice"]').click();
+await s(500);
+R.pendingSurvivesStructuralRender = {
+  field: field().value,
+  stateCurrent: hpOf('Alpha').current,
+  pass: field().value === '-8' && hpOf('Alpha').current === 20,
+};
+
+// ---- 2. ...and still commits correctly once it blurs ------------------------
+field().blur();
+await s(400);
+R.commitsOnBlur = {
+  field: field().value,
+  state: hpOf('Alpha'),
+  pass: hpOf('Alpha').current === 12,     // 20 - 8, temp was 0
+};
+
+// ---- 3. regression guard: switching character MUST repaint the field --------
+// Type a pending edit, then switch to Beta without blurring.
+type(field(), '-5');
+const rosterBtns = [...d.querySelectorAll('.roster__btn')];
+const betaBtn = rosterBtns.find(btn => btn.textContent.includes('Beta'));
+betaBtn.click();
+await s(600);
+R.characterSwitchRepaints = {
+  field: field().value,
+  expected: '40',                          // Beta is 45; the pending -5 flushed to ALPHA first
+  alpha: hpOf('Alpha'),
+  beta: hpOf('Beta'),
+  fieldShowsBeta: field().value === String(hpOf('Beta').current),
+  pendingWentToAlpha: hpOf('Alpha').current === 7,   // 12 - 5
+};
+R.characterSwitchRepaints.pass =
+  R.characterSwitchRepaints.fieldShowsBeta && R.characterSwitchRepaints.pendingWentToAlpha;
+
+// ---- 4. control: a derived-only render still leaves a pending edit alone ----
+type(field(), '-3');
+d.querySelector('#death-successes .pip').click();
+await s(400);
+R.derivedRenderUntouched = { field: field().value, pass: field().value === '-3' };
+type(field(), String(hpOf('Beta').current));   // tidy up so it can't change anything
+field().blur();
+await s(300);
+
+R.verdict = Object.entries(R).filter(([, v]) => v && typeof v.pass === 'boolean')
+  .every(([, v]) => v.pass) ? 'ALL PASS' : 'FAILURE';
+out.textContent = JSON.stringify(R, null, 1);
+} catch(e){ out.textContent = 'ERR ' + (e && e.stack || e); }
+</script>

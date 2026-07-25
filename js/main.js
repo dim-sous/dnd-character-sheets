@@ -336,6 +336,12 @@ document.addEventListener('click', (event) => {
 
   const rosterBtn = event.target.closest('.roster__btn');
   if (rosterBtn) {
+    // Current HP commits on blur, and iOS doesn't blur a focused input when a button is
+    // tapped (#94) — flush a pending edit into the OUTGOING character before switching, or
+    // renderSheet repaints the field for the incoming one and the edit is dropped. Same
+    // guard long-rest uses; renderSheet's activeElement skip deliberately does not cover
+    // a character switch, because that render MUST repaint every field.
+    document.activeElement?.blur?.();
     state.setActive(rosterBtn.dataset.id);
     closeDrawer();
   }
