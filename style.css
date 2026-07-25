@@ -505,9 +505,15 @@ body.is-arranging .obj-ctl, body.is-arranging .obj-ctl * { pointer-events: auto;
    field simply shows (and edits) the name of whatever you're arranging. */
 body.is-arranging [data-object] .tile__label,
 body.is-arranging [data-object] .subhead { visibility: hidden; }
+/* Position and typography only. The HEIGHT comes from the base `input[type="text"]` rule:
+   at (0,1,1) it outranks this (0,1,0), and its `min-height: var(--tap)` beats a `height`
+   here whatever the specificity. This used to declare `height: 20px; min-height: 20px` —
+   neither ever applied, the field measures 44px, and #71 filed that declared 20px as a
+   touch-target violation on the strength of reading it (#87). Removing the dead code is
+   what stops that being re-filed; the 44px overlay it really is belongs to #72. */
 .obj-rename {
   position: absolute; top: 2px; left: 2px; right: 2px; z-index: 2;
-  height: 20px; min-height: 20px; padding: 0 .3rem;
+  padding: 0 .3rem;
   font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 6px;
@@ -806,7 +812,12 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .slot:last-child { border-bottom: 0; }
 .slot__level { font-size: .8rem; font-weight: 600; color: var(--ink-soft); }
 .slot__total { margin: 0; }
-.slot__total-input { min-height: 36px; font-size: .85rem; }
+/* Typography only. The box — full width, padding, border, fill and the 44px min-height —
+   comes from the base `input[type=…]` rule, which at (0,1,1) outranks this (0,1,0). This
+   used to declare `min-height: 36px`; it never applied (the field measures 44px), and it
+   read as a touch-target violation that wasn't there (#87). `font-size` DOES apply — the
+   base rule sets none — so it stays. */
+.slot__total-input { font-size: .85rem; }
 
 /* ------------------------------------------------------ repeatable rows */
 
@@ -924,7 +935,12 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row--hitdie { align-items: center; }
 .row__of { flex: none; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
 
-.row__prepared { flex: none; display: inline-flex; align-items: center; min-height: 40px; }
+/* `.row__prepared` was removed here (#87): it styled the spell row's "prepared" checkbox,
+   and the spell-row UI went away in #9. The `prepared` FIELD still exists in the model so
+   saved data keeps round-tripping (constants.js ROW_TEMPLATES, and `spells` is deliberately
+   absent from render.js's ROW_TEMPLATE_IDS) — but nothing has rendered the class since, so
+   the rule matched no element and its sub-44px min-height read as a violation that wasn't
+   there. If the spell list comes back, style it then. */
 
 .row__remove {
   flex: none;
