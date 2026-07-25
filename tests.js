@@ -1091,7 +1091,11 @@ describe('normalizeLayout: objects');
   // Span (#54 Phase 6): every object carries its registry default span; the small vitals are 1×,
   // HP and the status blocks are full-width — reproducing today's layout.
   is('default span comes from the registry', objSpan(DEFAULT_LAYOUT, 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
-  is('a small vital defaults to 1×', objSpan(DEFAULT_LAYOUT, 'ac'), 1);
+  is('a small vital defaults to 1×', objSpan(DEFAULT_LAYOUT, 'pb'), 1);
+  // #75 widened AC to 2×: it is read on every incoming attack and was visually identical to
+  // Prof. Bonus, which never changes in play. Asserted by name so a silent revert to 1× fails
+  // here rather than quietly undoing the frequency-of-use weighting.
+  is('AC defaults to 2× (#75)', objSpan(DEFAULT_LAYOUT, 'ac'), 2);
   is('a status block defaults to full', objSpan(DEFAULT_LAYOUT, 'exhaustion'), 'full');
   is('every default span is a valid span', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => OBJECT_SPANS.includes(o.span)), true);
 
@@ -1138,9 +1142,12 @@ describe('moveObject / toggleObjectHidden');
   const objIds = (layout) => combat(layout).objects.map((o) => o.componentId);
   const hiddenOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).hidden;
 
-  // hp is index 0, rest index 1 in the default order.
-  is('move down: hp (0) → 1', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 0, 1)).slice(0, 2), ['rest', 'hp']);
-  is('move up: rest (1) → 0', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 1, 0)).slice(0, 2), ['rest', 'hp']);
+  // Registry-derived, not hardcoded: these assert that moveObject SWAPS the first two
+  // objects, whatever they are. Naming them cost a false failure when #75 reordered the
+  // combat defaults — a deliberate defaults change read as a moveObject bug.
+  const [first, second] = OBJECT_ORDER.combat;
+  is('move down: index 0 → 1', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 0, 1)).slice(0, 2), [second, first]);
+  is('move up: index 1 → 0', objIds(moveObject(DEFAULT_LAYOUT, 'combat', 1, 0)).slice(0, 2), [second, first]);
   is('clamp at top is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', 0, -1), DEFAULT_LAYOUT);
   const lastObj = OBJECT_ORDER.combat.length - 1;   // registry-derived, see the note at 'moved card keeps its objects'
   is('clamp at bottom is a no-op', moveObject(DEFAULT_LAYOUT, 'combat', lastObj, lastObj + 1), DEFAULT_LAYOUT);

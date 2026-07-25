@@ -492,9 +492,9 @@ export function renderSheet(char) {
   if (!char) {
     $('#topbar-name').textContent = '—';
     $('#topbar-sub').textContent = '';
-    // renderDerived never runs without a character, so clear this here or it
-    // survives the deletion of the last (bloodied) character.
-    document.body.classList.remove('is-bloodied');
+    // renderDerived never runs without a character, so clear these here or they
+    // survive the deletion of the last (bloodied or dying) character.
+    document.body.classList.remove('is-bloodied', 'is-dying');
     editCards.clear();
     return;
   }
@@ -646,10 +646,22 @@ export function renderDerived(char) {
     [char.class, char.subclass, char.level ? `Level ${char.level}` : ''].filter(Boolean).join(' · ');
 
   document.body.classList.toggle('is-bloodied', isBloodied(char));
+  document.body.classList.toggle('is-dying', isDying(char));
 }
 
 function isBloodied(char) {
   return char.hp.max > 0 && char.hp.current > 0 && char.hp.current <= char.hp.max / 2;
+}
+
+/**
+ * At 0 HP. `isBloodied` deliberately stops here (it requires current > 0), which used to
+ * mean the app's only HP-conditional cue switched OFF at exactly the point death saves
+ * start mattering (#75). This picks the state up: it keeps Current HP red and marks the
+ * Death Saves tile. Max must be set, or a character with no max entered yet would read as
+ * dying from the moment they are created.
+ */
+function isDying(char) {
+  return char.hp.max > 0 && char.hp.current <= 0;
 }
 
 function paintPips(host, filled) {
