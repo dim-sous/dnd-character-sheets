@@ -77,7 +77,10 @@ export const CARD_ORDER = [
 export const OBJECT_REGISTRY = {
   hp: { card: 'combat', label: 'Hit Points', cost: 'markup', defaultSpan: 'full' },
   rest: { card: 'combat', label: 'Rest', cost: 'markup', defaultSpan: 1 },
-  ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 1 },
+  // #75: two tracks by default. AC is read on every incoming attack and was visually
+  // indistinguishable from Prof. Bonus, which never changes in play — span is the grid's
+  // own way of encoding "this one matters more", and it costs no new CSS.
+  ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 2 },
   initiative: { card: 'combat', label: 'Initiative', cost: 'markup', defaultSpan: 1 },
   speed: { card: 'combat', label: 'Speed', cost: 'markup', defaultSpan: 1 },
   pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup', defaultSpan: 1 },
@@ -99,9 +102,19 @@ export const OBJECT_SPANS = [1, 2, 'full'];
 
 /** Default object order per card (matches today's DOM). Only `combat` has objects this phase. */
 export const OBJECT_ORDER = {
+  // #75: ordered by frequency-of-use in play, not by the historical DOM order.
+  //   hp → deathsaves   the 0-HP path is ONE region; these used to sit at indices 0 and 9
+  //                     with seven unrelated objects between them.
+  //   ac                read on every incoming attack.
+  //   conditions, concentration   change often mid-fight (conditions was ordered last,
+  //                     below the invariant PB tile).
+  //   heroic, hitdice, exhaustion   occasional.
+  //   initiative, speed, pb   read once a fight or never; pb never changes at all.
+  //   rest              once per session and destructive, so it is last and no longer sits
+  //                     next to the HP field a player taps every round.
   combat: [
-    'hp', 'rest', 'ac', 'initiative', 'speed', 'pb', 'heroic', 'concentration',
-    'hitdice', 'deathsaves', 'exhaustion', 'conditions',
+    'hp', 'deathsaves', 'ac', 'conditions', 'concentration', 'heroic',
+    'hitdice', 'exhaustion', 'initiative', 'speed', 'pb', 'rest',
   ],
   // #67. Registering the order is what objectifies a card: normalizeCard backfills any object
   // missing from a saved layout, so every existing character gains both tiles with no migration.

@@ -359,7 +359,11 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 /* Action tiles (Rest): the body grows to the tile's stretched height (flex:1) and stretches
    its child on the cross axis, so the button fills the tile in BOTH dimensions instead of a
    lonely centred pill (#65 symptom 3). flex:1 1 auto on the button owns the width. */
-.tile__body--actions { gap: .4rem; flex: 1; align-items: stretch; }
+/* The button owns the tile's WIDTH but not its height (#75). `flex: 1; align-items: stretch`
+   here made it fill both dimensions, which turned Long Rest — a once-per-session, destructive
+   action — into the largest tap target on the card, next to the field tapped every round.
+   It keeps its 44px from the .btn base, so this is a weight change, not a target change. */
+.tile__body--actions { gap: .4rem; }
 .tile__body--actions .btn { flex: 1 1 auto; }
 .tile__value {
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
@@ -777,13 +781,11 @@ body.is-arranging [data-action="add-row"] { display: none; }
 /* No size here on purpose: an 18px `.chip__box` (0,1,0) never applied — the base
    `input[type="checkbox"]` (0,1,1) wins and paints it at 22px (#77). */
 
-/* The seams the #14 card merge created: sections that used to be separate cards. */
-.status__block { margin-top: .9rem; }
-/* Since #54 Phase 5 the status blocks live INSIDE the Combat tiles grid as objects (so they
-   reorder/hide/resize with the tiles). Since #65 they also carry `.tile`, so they get the tile
-   frame and sit flush in the grid like every other tile — the `.tiles` gap alone separates
-   them, so the old section-break margin is dropped. */
-.tiles > .status__block { margin-top: 0; }
+/* `.status__block { margin-top: .9rem }` and its `.tiles > ` neutraliser were removed here
+   (#75). The margin was a seam from the #14 card merge, for a time when these were separate
+   sections. Since #54 Phase 5 every status block is a child of `.tiles` and since #65 they
+   carry `.tile` too, so the margin was cancelled on every element that had it — a dead pair.
+   The class stays: it is still the hook the print rules use. */
 
 /* Conditions disclosure inside the Combat card (#14): closed, the summary line
    lists the active conditions. Print always shows exactly that line — full and
@@ -797,7 +799,12 @@ body.is-arranging [data-action="add-row"] { display: none; }
    summary's accessible name the way CSS-generated content does. */
 .conditions__marker { display: inline-block; color: var(--ink-faint); transition: transform .12s; }
 details[open] > .conditions__summary .conditions__marker { transform: rotate(90deg); }
-.conditions__summary .subhead { margin: 0; }
+/* Conditions was the last object still on the old `.subhead` component while Hit Point Dice,
+   Death Saves and Exhaustion had moved to `.tile__label` (#75) — so the object already
+   ordered last also rendered its title unlike every sibling. It uses `.tile__label` now; the
+   label's 2.4em min-height exists to align tile BODIES across a grid row and would only pad
+   this inline summary, so drop it here. */
+.conditions__summary .tile__label { min-height: 0; }
 .conditions__active {
   flex: 1; min-width: 0;
   font-size: .78rem; color: var(--ink-soft);
@@ -1046,12 +1053,31 @@ select:disabled { appearance: none; -webkit-appearance: none; }
    rule (specificity 0,1,1, which outranks these class selectors), so Current/Temp read as
    boxed editable fields like currency, while the Edit-gated Max flattens via `input:read-only`
    — the app's existing "live field = boxed, locked = flat" language. All three share one serif
-   display scale so Current / Max / Temp read as one uniform row. */
+   treatment so Current / Max / Temp read as one row. */
 .hp__cur, .hp__max, .hp__temp {
   font-family: var(--serif); font-weight: 700; font-size: 1.4rem;
   text-align: center; line-height: 1.1;
 }
-.is-bloodied .hp__cur { color: var(--bad); }       /* current HP reddens at ≤ half (unchanged) */
+/* ...but not one SIZE (#75). #65 flattened Current to its siblings' 1.4rem, which left the
+   most-read and most-mutated number on the sheet rendering at exactly the scale of Prof.
+   Bonus — a value that never changes in play — and of its own Edit-gated Max. Current is the
+   number you look for first, so it gets the display size back. Max and Temp stay at 1.4rem:
+   the contrast is the point, and the shared family/weight keeps the row coherent. */
+.hp__cur { font-size: 1.9rem; }
+
+/* Current HP reddens at or below half — and, since #75, does NOT switch off at 0. isBloodied
+   required current > 0, so the app's only HP-conditional cue vanished at exactly the moment
+   things got worst; `.is-dying` carries it from there. */
+.is-bloodied .hp__cur, .is-dying .hp__cur { color: var(--bad); }
+
+/* At 0 HP the Death Saves tile stops being one more always-on block and says so. It is not
+   hidden when healthy — this is a tracker, and arrange mode lets a player order or hide it
+   themselves — it just carries no emphasis until it matters. */
+.is-dying [data-object="deathsaves"] {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 7%, var(--card));
+}
+.is-dying [data-object="deathsaves"] .tile__label { color: var(--bad); }
 
 /* --------------------------------------------------------------- tab bar */
 
