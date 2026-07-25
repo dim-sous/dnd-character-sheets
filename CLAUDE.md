@@ -35,7 +35,11 @@ CHROME="/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
 
 `tools/probe.html` is the standing **touch-target audit**: it seeds a character through `blankCharacter()`, loads the app in a 390px iframe, walks every tab and edit/arrange mode, and reports any control whose hit area is under 44px. Extend it rather than writing throwaway probes. Read its header comment before changing it.
 
-The other `tools/probe-*.html` pages are targeted regression checks for behaviour the DOM-free suite can't reach — `probe-hp-commit.html` (an HP edit must survive a roster switch, #94) and `probe-arrange-fn.html` (arrange mode's select-a-tile wiring plus a **height budget** for the arrange bar, #71/#72/#73). They print `ALL PASS` or a list of failures; run them the same way as `probe.html`. Each reseeds `localStorage` — including the layout keys, which are `dnd-character-sheets:layout` and `:layout-default`, colons not hyphens — so runs don't inherit each other's mutations.
+The other `tools/probe-*.html` pages are targeted regression checks for behaviour the DOM-free suite can't reach. They print `ALL PASS` or a list of failures; run them the same way as `probe.html`. Each reseeds `localStorage` — including the layout keys, which are `dnd-character-sheets:layout` and `:layout-default`, colons not hyphens — so runs don't inherit each other's mutations.
+
+- `probe-hp-commit.html` — an HP edit must survive a roster switch (#94).
+- `probe-arrange-fn.html` — arrange mode's select-a-tile wiring, plus a **height budget** for the arrange bar (#71/#72/#73). The budget is the thing that stops the bar creeping back toward the 388px it shipped at; if you add a control to the bar, expect to argue with it.
+- `probe-arrange-place.html` — the "Move to…" reorder gesture, layout undo, and the factory reset (#73). Separate from the above because it deliberately wrecks the layout and saves it as the default to prove the escape hatch works.
 
 Gotchas, all of them learned the hard way:
 

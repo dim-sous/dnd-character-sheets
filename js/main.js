@@ -23,9 +23,10 @@ import {
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
-  tabAdd, tabRemove, tabRename, tabMove, reorderObject, toggleObject, resizeObject,
+  tabAdd, tabRemove, tabRename, tabMove, toggleObject, resizeObject,
   renameCardTitle, renameObjectLabel, dropCard, dropObject,
   selectObject, getSelectedObject,
+  startPlacing, cancelPlacing, placeObject, isPlacing, undoLayout,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -146,7 +147,7 @@ document.addEventListener('keydown', (event) => {
   el.select();
 });
 
-// Cross-tab card move (#54): the arrange-mode "Move to…" select. A <select> fires `change`,
+// Cross-tab card move (#54): the arrange-mode "Send to tab…" select. A <select> fires `change`,
 // not click, so it can't ride the delegated ACTIONS map. The view stays on the current tab
 // (the card just leaves it); sendCardToTab announces the destination and re-homes focus.
 document.addEventListener('change', (event) => {
@@ -154,7 +155,7 @@ document.addEventListener('change', (event) => {
   if (!sel || !sel.value) return;
   const id = cardIdOf(sel);
   const dest = sel.value;
-  sel.value = ''; // snap back to the "Move to…" placeholder
+  sel.value = ''; // snap back to the "Send to tab…" placeholder
   if (id) sendCardToTab(id, dest);
 });
 
@@ -256,13 +257,28 @@ const ACTIONS = {
   'move-card-up': (el) => reorderCard(cardIdOf(el), -1),
   'move-card-down': (el) => reorderCard(cardIdOf(el), 1),
 
-  // Object controls (#54 Phase 5): reorder/hide the tiles & status blocks within a card.
-  'move-object-up': (el) => reorderObject(cardIdOf(el), objIdOf(el), -1),
-  'move-object-down': (el) => reorderObject(cardIdOf(el), objIdOf(el), 1),
+  // Object controls (#54 Phase 5): resize/hide the tiles & status blocks within a card. The
+  // ↑/↓ nudge is gone — "Move to…" below replaced it (#73).
   'resize-object': (el) => resizeObject(cardIdOf(el), objIdOf(el)),
   'toggle-object-hide': (el) => toggleObject(cardIdOf(el), objIdOf(el)),
 
+  // "Pick it up, tap where it goes" (#73): the touch reorder path, so a move costs two taps
+  // instead of one per slot travelled.
+  'place-object-start': () => startPlacing(),
+  'place-object-cancel': () => cancelPlacing(),
+  'place-object': (el) => placeObject(Number(el.dataset.gap)),
+
+  'layout-undo': () => { undoLayout(); reactivateTab(); },
   'arrange-reset': () => { resetLayout(); activateTab(getTabIds()[0]); },
+  // Clears the saved default as well as restoring the shipped layout, so a bad "Set as
+  // default" can no longer lock the player out of the original arrangement (#73). Confirmed
+  // because it discards something they deliberately saved — undo can't bring that key back.
+  'arrange-reset-factory': () => {
+    const ok = confirm('Reset to the original layout? This also clears the default you saved.');
+    if (!ok) return;
+    resetLayout({ factory: true });
+    activateTab(getTabIds()[0]);
+  },
   'arrange-set-default': () => saveDefault(),
 
   // Tab CRUD (#54 Phase 4b). Each tab-set change re-applies the active tab (which tolerates
@@ -358,7 +374,10 @@ document.addEventListener('click', (event) => {
   // Arrange mode (#72): the tile IS the target — tap one to point the toolbar at it. Only a
   // tap that lands ON an object is swallowed; the tab bar, roster and drawer stay usable while
   // arranging, which is why this doesn't return unconditionally.
-  if (isArranging()) {
+  //
+  // While placing (#73) the tiles go quiet: the live targets are the "Move here" lines between
+  // them, and re-selecting mid-move would silently abandon the move you started.
+  if (isArranging() && !isPlacing()) {
     const objNode = event.target.closest('[data-object]');
     if (objNode) {
       selectObject(cardIdOf(objNode), objNode.dataset.object);
@@ -432,15 +451,25 @@ document.addEventListener('keydown', (event) => {
 
 /* Arrange mode (#54): Escape leaves it (but not mid-edit in a field); arrow keys reorder
    while a card's ↑/↓ BUTTON is focused (the buttons already move on Enter/Space — this is a
-   keyboard nicety). Scoped to the buttons, never the "Move to…" select, whose own arrow-key
-   option navigation must not be hijacked. */
+   keyboard nicety). Scoped to the buttons, never the "Send to tab…" select, whose own arrow-key
+   option navigation must not be hijacked.
+
+   While placing an object (#73) the same keys walk the drop targets instead. That is where the
+   objects' ↑/↓ went: reordering by keyboard is now "Move to…", arrow to a line, Enter — the
+   identical path a finger takes, rather than a separate keyboard-only shortcut. */
 document.addEventListener('keydown', (event) => {
   const inField = event.target.closest && event.target.closest('input, select, textarea');
-  if (event.key === 'Escape' && isArranging() && !inField) { toggleArrange(); return; }
+  // Escape unwinds one step at a time: put the tile down first, leave the mode second. Exiting
+  // outright would drop a half-finished move with no way to tell whether it took effect.
+  if (event.key === 'Escape' && isArranging() && !inField) {
+    if (isPlacing()) cancelPlacing(); else toggleArrange();
+    return;
+  }
 
   // A tile is role="button" while arranging (#72), so Enter/Space must select it — that is the
   // keyboard equivalent of tapping it, and without this the toolbar is unreachable by keyboard.
-  if (isArranging() && (event.key === 'Enter' || event.key === ' ')
+  // Inert while placing, for the same reason the click handler is.
+  if (isArranging() && !isPlacing() && (event.key === 'Enter' || event.key === ' ')
       && event.target.matches?.('[data-object]')) {
     event.preventDefault();
     selectObject(cardIdOf(event.target), event.target.dataset.object);
@@ -450,20 +479,28 @@ document.addEventListener('keydown', (event) => {
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
   const action = event.target.dataset && event.target.dataset.action;
   const delta = event.key === 'ArrowUp' ? -1 : 1;
+
+  // Walk between drop targets, skipping the disabled pair that marks where the tile already is.
+  if (isPlacing() && event.target.classList?.contains('dropslot')) {
+    event.preventDefault();
+    const slots = [...document.querySelectorAll('.dropslot')];
+    let i = slots.indexOf(event.target) + delta;
+    while (slots[i] && slots[i].disabled) i += delta;
+    slots[i]?.focus();
+    return;
+  }
+
   if (action === 'move-card-up' || action === 'move-card-down') {
     const id = cardIdOf(event.target);
     if (id) { event.preventDefault(); reorderCard(id, delta); }
-  } else if (action === 'move-object-up' || action === 'move-object-down') {
-    const cardId = cardIdOf(event.target);
-    const objectId = objIdOf(event.target);
-    if (cardId && objectId) { event.preventDefault(); reorderObject(cardId, objectId, delta); }
   }
 });
 
 /* Drag-and-drop reorder (#54 Phase 7): mouse-only, initiated from the ⠿ grips injected in arrange
-   mode. Native HTML5 drag; the ↑/↓ buttons stay the touch/keyboard path. Constrained to the
-   dragged item's own container — a card within its tab, an object within its card (cross-tab stays
-   the "Move to…" select) — so a drop only ever reorders siblings. */
+   mode. Native HTML5 drag; "Move to…" (objects) and the ↑/↓ buttons (cards) stay the touch and
+   keyboard path. Constrained to the dragged item's own container — a card within its tab, an
+   object within its card (cross-tab stays the "Send to tab…" select) — so a drop only ever
+   reorders siblings. */
 let drag = null;
 
 function clearDropMarks() {
@@ -500,11 +537,11 @@ function insertionRef(x, y) {
 }
 
 document.addEventListener('dragstart', (event) => {
-  if (!isArranging()) return;
+  if (!isArranging() || isPlacing()) return; // one move at a time
   const grip = event.target.closest && event.target.closest('.drag-grip');
   // Objects drag from the TILE itself since the in-tile grip went away with the overlay (#72);
   // cards still drag from the ⠿ in their head. Both remain mouse-only — native HTML5 drag does
-  // nothing on touch, where the toolbar's Up/Down is the path.
+  // nothing on touch, where "Move to…" and the drop lines are the path (#73).
   const objNode = grip ? null : (event.target.closest && event.target.closest('[data-object]'));
   const cardNode = grip ? grip.closest('[data-editcard]') : null;
   if (!objNode && !cardNode) return;

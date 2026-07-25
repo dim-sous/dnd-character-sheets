@@ -205,6 +205,14 @@ try {
   await settle(250);
   report.scenes.push(auditScene('arrange / tile selected'));
 
+  // The drop targets only exist mid-gesture, and they are the touch surface the whole reorder
+  // path rests on (#73) — audit them where they live.
+  d.querySelector('[data-action="place-object-start"]')?.click();
+  await settle(250);
+  report.scenes.push(auditScene('arrange / placing a tile'));
+  d.querySelector('[data-action="place-object-cancel"]')?.click();
+  await settle(250);
+
   d.querySelector('.arrange-more')?.setAttribute('open', '');
   await settle(250);
   report.scenes.push(auditScene('arrange / tabs & defaults open'));

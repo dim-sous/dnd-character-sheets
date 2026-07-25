@@ -98,12 +98,17 @@ try {
     `${visibleTiles()} of ${tiles().length}`);
 
   // --- the toolbar acts on the SELECTION, not on where it sits ------------------------
-  btn('move-object-up').click();
-  await wait(250);
-  ok('Up moves the selected tile', ids()[0] === order0[1], `${order0.slice(0, 2)} -> ${ids().slice(0, 2)}`);
-  ok('Up keeps the same tile selected',
+  // The ↑/↓ nudge is gone (#73) — "Move to…" is the single move gesture now, and the placement
+  // flow itself is covered end to end by probe-arrange-place.html.
+  ok('no ↑/↓ nudge left in the toolbar',
+    !btn('move-object-up') && !btn('move-object-down'));
+  btn('place-object-start').click();
+  await wait(300);
+  d.querySelectorAll('.dropslot')[0].click();       // gap 0 = before the first object
+  await wait(300);
+  ok('Move to… moves the selected tile', ids()[0] === order0[1], `${order0.slice(0, 2)} -> ${ids().slice(0, 2)}`);
+  ok('the moved tile stays selected',
     d.querySelector(`#panel-combat [data-object="${order0[1]}"]`).classList.contains('is-selected'));
-  ok('Up disables itself at the top', btn('move-object-up').disabled);
 
   const widthBefore = btn('resize-object').textContent;
   btn('resize-object').click();

@@ -572,6 +572,42 @@ body.is-arranging [data-object].is-selected {
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
+/* --- "pick it up, tap where it goes" (#73) --- */
+
+/* One column for the duration of a move. Objects are 1×/2×/full wide, so a full-width insertion
+   line between two side-by-side tiles would mean nothing — and adding cells to the grid would
+   reflow it anyway. One column makes the order you are inserting into the order you can see. */
+body.is-arranging .is-placing { grid-template-columns: 1fr; }
+/* The span has to be neutralised too, or a `grid-column: span 2` tile creates an IMPLICIT second
+   track and the grid is two columns again despite the single explicit one above. `!important` is
+   the only lever that reaches it: applyObjects writes the width INLINE on every object, because
+   the layout config owns it. Nothing here is persisted — the next applyLayout rewrites the real
+   spans, so there is no state to restore when the move ends. */
+body.is-arranging .is-placing > [data-object] { grid-column: 1 / -1 !important; }
+/* The tile being moved reads as picked up rather than merely selected. */
+body.is-arranging [data-object].is-lifted {
+  opacity: .55;
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+/* A real 44px button, not a hairline: this is the touch target the whole gesture rests on. */
+.dropslot {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: center;
+  min-height: var(--tap); padding: 0;
+  font: inherit; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent); background: none;
+  border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 8px; cursor: pointer;
+}
+.dropslot:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+/* The two gaps either side of the tile's current home: shown (so the row of choices doesn't
+   jump) but inert, and quiet enough not to read as somewhere to go. */
+.dropslot:disabled {
+  color: var(--ink-faint); border-color: var(--line); border-style: dotted; cursor: default;
+}
+.dropslot__text { pointer-events: none; }
+
 .objbar__btn { flex: 0 1 auto; }
 .objbar__btn:disabled { opacity: .35; cursor: default; }
 .objbar__btn.is-off { border-style: dashed; }   /* the hide toggle once the object is hidden */
@@ -636,6 +672,9 @@ body.is-arranging .card {
 }
 body.is-arranging .card__move, body.is-arranging .card__move *,
 body.is-arranging .card__rename { pointer-events: auto; } /* the rename field must stay interactive */
+/* Drop targets sit inside the card, so they need the same opt-out of its pointer-inertness that
+   [data-object] gets — without this the whole "tap where it goes" gesture is unclickable (#73). */
+body.is-arranging .dropslot { pointer-events: auto; }
 body.is-arranging .card__edit,
 body.is-arranging [data-action="add-row"] { display: none; }
 
@@ -1263,7 +1302,8 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
   /* .obj-ctl / .obj-rename dropped here (#72): the in-tile overlay is gone, and the object
      controls now live inside .arrange-bar, which this line already hides. */
-  .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename { display: none !important; }
+  .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename,
+  .dropslot { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }
   /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */

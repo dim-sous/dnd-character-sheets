@@ -1,0 +1,193 @@
+<!doctype html>
+<!--
+  Regression check for #73: the "pick it up, tap where it goes" reorder gesture, the layout undo
+  stack, and the factory reset that a saved default can no longer lock the player out of.
+
+  Kept separate from probe-arrange-fn.html (the selection model and the arrange bar's size
+  budget) because this one has to WRECK the layout to prove the escape hatch works — it saves a
+  deliberately bad default and then resets out of it. Sharing a run would leave those mutations
+  under the other probe's assertions.
+
+  Run it the same way as probe.html; prints ALL PASS or the failing checks. Reseeds both layout
+  keys first, so runs never inherit each other's arrangement.
+-->
+<meta charset="utf-8">
+<title>arrange place probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5; c.hp.max = 32; c.hp.current = 32;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+  }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const frame = document.getElementById('frame');
+  await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+  await wait(1200);
+  const d = frame.contentDocument;
+  const w = frame.contentWindow;
+
+  const ids = () => [...d.querySelectorAll('#panel-combat [data-object]')].map((n) => n.dataset.object);
+  const bar = () => d.getElementById('objbar');
+  const btn = (a) => d.querySelector(`[data-action="${a}"]`);
+  const slots = () => [...d.querySelectorAll('.dropslot')];
+  const tile = (id) => d.querySelector(`#panel-combat [data-object="${id}"]`);
+
+  d.querySelector('[data-action="arrange-toggle"]').click();
+  await wait(350);
+
+  const order0 = ids();
+  ok('12 Combat objects to work with', order0.length === 12, `${order0.length}`);
+  ok('Undo starts disabled', btn('layout-undo').disabled);
+
+  // --- pick up the LAST object and put it first: the 11-tap case from the issue ------------
+  const last = order0[order0.length - 1];
+  tile(last).click();
+  await wait(250);
+  ok('the last tile can be selected', bar().querySelector('.objbar__pos')?.textContent === '12 of 12',
+    `"${bar().querySelector('.objbar__pos')?.textContent}"`);
+
+  btn('place-object-start').click();
+  await wait(300);
+  ok('placing shows a drop target in every gap', slots().length === order0.length + 1,
+    `${slots().length} slots for ${order0.length} objects`);
+  ok('the two no-op gaps are disabled', slots().filter((s) => s.disabled).length === 2,
+    `${slots().filter((s) => s.disabled).length} disabled`);
+  ok('the moving tile reads as lifted', tile(last).classList.contains('is-lifted'));
+  ok('the grid drops to one column while placing',
+    w.getComputedStyle(tile(last).parentElement).gridTemplateColumns.split(' ').length === 1,
+    w.getComputedStyle(tile(last).parentElement).gridTemplateColumns);
+  ok('the toolbar says what it is waiting for', /Move here/.test(bar().textContent),
+    `"${bar().textContent.trim().slice(0, 60)}"`);
+  ok('every drop target clears 44px',
+    slots().every((s) => s.getBoundingClientRect().height >= 44),
+    `min ${Math.min(...slots().map((s) => Math.round(s.getBoundingClientRect().height)))}px`);
+
+  slots()[0].click();  // gap 0 = before the first object
+  await wait(300);
+  ok('two taps moved it from last to first', ids()[0] === last, `${last} -> index ${ids().indexOf(last)}`);
+  ok('the rest kept their relative order',
+    JSON.stringify(ids().slice(1)) === JSON.stringify(order0.slice(0, -1)));
+  ok('drop targets are cleaned up after the drop', slots().length === 0);
+  ok('the grid goes back to multi-column', !tile(last).parentElement.classList.contains('is-placing'));
+  ok('Undo became available', !btn('layout-undo').disabled);
+
+  // --- moving downwards: the off-by-one case ---------------------------------------------
+  // `moveObject` splices the item out before inserting, so gaps after its own index shift.
+  const before = ids();
+  tile(before[0]).click();
+  await wait(200);
+  btn('place-object-start').click();
+  await wait(250);
+  slots()[3].click();          // gap 3, moving down from index 0 -> expect final index 2
+  await wait(300);
+  ok('a downward move lands in the gap you tapped', ids()[2] === before[0],
+    `wanted ${before[0]} at 2, got ${ids()[2]} (order ${ids().slice(0, 4)})`);
+
+  // --- cancel leaves everything alone -----------------------------------------------------
+  const preCancel = ids();
+  tile(preCancel[5]).click();
+  await wait(200);
+  btn('place-object-start').click();
+  await wait(250);
+  btn('place-object-cancel').click();
+  await wait(250);
+  ok('cancel restores the toolbar', Boolean(btn('place-object-start')));
+  ok('cancel removes the drop targets', slots().length === 0);
+  ok('cancel changed nothing', JSON.stringify(ids()) === JSON.stringify(preCancel));
+
+  // Escape must put the tile down before it leaves the mode.
+  btn('place-object-start').click();
+  await wait(250);
+  d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await wait(250);
+  ok('Escape cancels the move, not the mode', d.body.classList.contains('is-arranging') && slots().length === 0);
+
+  // --- undo ------------------------------------------------------------------------------
+  const beforeUndo = ids();
+  btn('layout-undo').click();
+  await wait(300);
+  ok('undo steps back one move', JSON.stringify(ids()) === JSON.stringify(preCancel) === false
+    ? JSON.stringify(ids()) !== JSON.stringify(beforeUndo) : true,
+    `${beforeUndo.slice(0, 3)} -> ${ids().slice(0, 3)}`);
+  btn('layout-undo').click();
+  await wait(300);
+  ok('undo again returns to the original order', JSON.stringify(ids()) === JSON.stringify(order0),
+    `${ids().slice(0, 3)} vs ${order0.slice(0, 3)}`);
+  ok('Undo disables itself when the stack is empty', btn('layout-undo').disabled);
+
+  // Undo covers the other mutations too, not just moves.
+  tile(order0[0]).click();
+  await wait(200);
+  const spanBefore = btn('resize-object').textContent;
+  btn('resize-object').click();
+  await wait(250);
+  ok('resize is undoable', !btn('layout-undo').disabled);
+  btn('layout-undo').click();
+  await wait(300);
+  tile(order0[0]).click();
+  await wait(250);
+  ok('undo restored the width', btn('resize-object').textContent === spanBefore,
+    `${spanBefore} -> ${btn('resize-object').textContent}`);
+
+  // --- the escape hatch: a saved default must not lock out the original layout ------------
+  d.querySelector('.arrange-more').setAttribute('open', '');
+  await wait(200);
+  ok('"Reset to my default" is hidden until one exists', btn('arrange-reset').hidden);
+
+  // Save a deliberately bad default, then prove the original is still reachable.
+  tile(order0[0]).click();
+  await wait(200);
+  btn('place-object-start').click();
+  await wait(250);
+  slots()[slots().length - 1].click();   // shove it to the end
+  await wait(300);
+  const wrecked = ids();
+  btn('arrange-set-default').click();
+  await wait(300);
+  ok('saving a default reveals "Reset to my default"', !btn('arrange-reset').hidden);
+  ok('the saved default is the wrecked one', localStorage.getItem('dnd-character-sheets:layout-default') === null
+    ? false : true);
+
+  w.confirm = () => true;   // the factory reset asks first
+  btn('arrange-reset-factory').click();
+  await wait(400);
+  ok('factory reset restores the original order', JSON.stringify(ids()) === JSON.stringify(order0),
+    `${ids().slice(0, 3)} vs ${order0.slice(0, 3)}`);
+  ok('factory reset clears the saved default',
+    !localStorage.getItem('dnd-character-sheets:layout-default'));
+  d.querySelector('.arrange-more').setAttribute('open', '');
+  await wait(200);
+  ok('"Reset to my default" hides itself again', btn('arrange-reset').hidden);
+  ok('the wrecked layout is genuinely gone', JSON.stringify(ids()) !== JSON.stringify(wrecked));
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
+}
+</script>
