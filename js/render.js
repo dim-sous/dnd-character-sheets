@@ -362,6 +362,18 @@ function renderRows(char, listName) {
       field.dataset.bind = `${basePath}.${index}.${field.dataset.bindSuffix}`;
       delete field.dataset.bindSuffix;
     }
+
+    // The same baking for a per-row DERIVED readout (#84): "attackHit" + the row index
+    // becomes data-derived="attackHit.2", which derivedValue already parses — it splits the
+    // kind off the front and rejoins the rest, the multi-segment support `raw.hp.temp` added.
+    // Authoring a literal data-derived in the template instead would not work: it is invisible
+    // to $$() inside <template>.content, then becomes visible with an index-less key the
+    // moment it is cloned, silently rendering '' through the default case.
+    for (const out of $$('[data-derived-suffix]', node)) {
+      out.dataset.derived = `${out.dataset.derivedSuffix}.${index}`;
+      delete out.dataset.derivedSuffix;
+    }
+
     const remove = $('.row__remove', node);
     if (remove) remove.dataset.index = String(index);
 
@@ -545,6 +557,13 @@ function derivedValue(char, key) {
       const atk = rules.spellAttackBonus(char);
       return atk === null ? '—' : rules.formatMod(atk);
     }
+    // #84: an attack row's to-hit — the only derived value keyed by ARRAY POSITION rather
+    // than a domain key. Safe because every length change emits 'structural' (state.js
+    // addRow/removeRow, import, opening a character), which re-bakes every index through
+    // renderRows before any renderDerived can read a stale one; the two paths that call
+    // renderDerived alone (toggleCardEdit, clearCardEdits) cannot change a list's length.
+    // An out-of-range index yields undefined → '' rather than throwing.
+    case 'attackHit': return rules.attackHit(char, char.attacks[Number(arg)]);
     // A tile's view-mode readout of a plain STORED value (AC, Speed…): no rules.js
     // function, just echo the bound value so the field reads as text until Edit.
     case 'raw': {
@@ -562,8 +581,13 @@ function derivedValue(char, key) {
 export function renderDerived(char) {
   if (!char) return;
 
+  // Write only on a real change, the way the [data-bind] loop below already does. Most of
+  // these are <output>, which maps to role="status" — an aria-live region that re-announces
+  // on ANY subtree mutation, identical text included. That was already noisy; #84 adds one
+  // more per attack row, so an unchanged readout must now cost nothing.
   for (const el of $$('[data-derived]')) {
-    el.textContent = derivedValue(char, el.dataset.derived);
+    const next = derivedValue(char, el.dataset.derived);
+    if (el.textContent !== next) el.textContent = next;
   }
 
   for (const el of $$('[data-toggle]')) {

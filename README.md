@@ -147,7 +147,8 @@ node tools/run-tests.mjs
 
 It asserts every derived value — modifiers, proficiency bonus at each tier, saves, skills
 with proficiency and expertise, passive Perception, initiative, spell DC and attack, the
-HP damage/healing arithmetic, and the long-rest hit-dice recovery. It also covers the
+per-attack to-hit in both its derived and its free-text modes, the HP damage/healing
+arithmetic, and the long-rest hit-dice recovery. It also covers the
 data-loss-critical load path — the `hitDice` migration, `parseStored`, and
 `normalizeCharacter`'s coercion and clamping — plus the dot-path `getByPath`/`setByPath`
 and the `mergeCharacters` id-collision handling the store is built on.
