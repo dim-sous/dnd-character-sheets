@@ -343,8 +343,10 @@ const ACTIONS = {
     document.activeElement?.blur?.();
     // Destructive now that it touches HP and death saves — a mis-tap shouldn't wipe
     // what you were tracking, so gate it behind a confirm.
+    // "Restores lost HP", not "restores HP to max" (#106): a rest no longer lowers a hand-set
+    // current that sits above max, so promising a set-to-max would now misdescribe it.
     const ok = confirm(
-      'Take a long rest? Restores HP to max, recovers all your Hit Point Dice, reduces '
+      'Take a long rest? Restores lost HP, recovers all your Hit Point Dice, reduces '
       + 'exhaustion by 1, clears temp HP and death saves, and resets spell slots.',
     );
     if (ok) {

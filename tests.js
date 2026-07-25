@@ -426,6 +426,38 @@ is('is pure — describing does not mutate', (() => {
   return hp;
 })(), { max: 20, current: 12, temp: 5 });
 
+/* ------------------------------------------------------ restoreHp (long rest) */
+
+describe('restoreHp');
+is('lost hit points come back', rules.restoreHp({ max: 30, current: 11, temp: 0 }).current, 30);
+is('temp hit points are cleared', rules.restoreHp({ max: 30, current: 11, temp: 8 }).temp, 0);
+is('already full is a no-op', rules.restoreHp({ max: 30, current: 30, temp: 0 }).current, 30);
+is('from 0', rules.restoreHp({ max: 30, current: 0, temp: 0 }).current, 30);
+/*
+ * #106. Max HP is Edit-gated and starts at 0, so "note your current HP without ever opening
+ * Edit" is the ordinary path — and a rest used to assign max over it, landing the player on 0.
+ * Silently: the `.is-dying` cue requires max > 0, so nothing on screen flagged it.
+ */
+is('an unset max means untracked, not a ceiling of zero',
+   rules.restoreHp({ max: 0, current: 14, temp: 0 }).current, 14);
+is('an unset max still clears temp', rules.restoreHp({ max: 0, current: 14, temp: 3 }).temp, 0);
+/*
+ * A rest is the largest heal in the game; it should not be the one healing effect that can
+ * COST hit points. This mirrors applyHealing's "never lowers a current already above max",
+ * which matters more now that character data has no undo (#107).
+ */
+is('never lowers a hand-set current above max',
+   rules.restoreHp({ max: 20, current: 30, temp: 0 }).current, 30);
+is('agrees with applyHealing about over-max current',
+   rules.restoreHp({ max: 20, current: 30, temp: 0 }).current,
+   rules.applyHealing({ max: 20, current: 30, temp: 0 }, 999).current);
+is('garbage max is treated as unset', rules.restoreHp({ max: 'x', current: 12, temp: 0 }).current, 12);
+is('does not mutate its input', (() => {
+  const hp = { max: 30, current: 11, temp: 8 };
+  rules.restoreHp(hp);
+  return hp;
+})(), { max: 30, current: 11, temp: 8 });
+
 /* ------------------------------------------------ restoreHitDice (long rest) */
 
 describe('restoreHitDice');
