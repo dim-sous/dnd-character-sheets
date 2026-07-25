@@ -1,0 +1,196 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Touch-target probe</title>
+<!--
+  Measures the running app in a real browser instead of reading declared values out of the
+  stylesheet. It exists because this repo keeps getting the same class of thing wrong:
+
+    - a class rule declares a size and is silently outranked by the base `input`/`.icon-btn`
+      rule, so the control is NOT the size the stylesheet says (#77, #87);
+    - or nothing declares a size at all and the control quietly inherits a 22px base (#86).
+
+  Both are invisible to `grep` and to reading the CSS. Both are obvious the moment you measure.
+  Two issues have already carried claims that measurement disproved, so: measure, don't infer.
+
+  This is a development tool. tools/ is in stamp-sw.py's SKIP_DIRS, so nothing here is ever
+  precached or deployed — but it must stay in tools/ for that to hold. A probe page left at
+  the repo root WOULD be picked up by the precache sweep and shipped to every player's phone.
+
+  Run:  see CLAUDE.md → "Measuring the running app".
+-->
+<style>
+  body { margin: 0; font: 13px/1.4 ui-monospace, monospace; }
+  /* The iframe width IS the viewport under test — pinning it here sidesteps window sizing
+     and host OS display scaling, which do not survive the trip through headless Chrome. */
+  #fr { width: 390px; height: 900px; border: 0; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="fr"></iframe>
+<script type="module">
+const TAP = 44;                 // CLAUDE.md's minimum, and --tap in style.css
+const VIEWPORT = 390;           // the phone width this app is designed at
+const out = document.getElementById('out');
+
+try {
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+
+  // Seed through the app's own canonical shape so the probe can never drift from the real
+  // model. A spellcasting ability is required or the Spells card renders nothing to measure.
+  const c = blankCharacter();
+  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5;
+  c.hp.max = 30; c.hp.current = 20; c.hp.temp = 0;
+  c.ac = 15; c.speed = 30;
+  c.spellcasting.ability = 'int';
+  c.spellcasting.slots[1] = { total: 4, used: 1 };
+  c.attacks = [{ name: 'Dagger', ability: 'dex', proficient: true, damage: '1d4', notes: '' }];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
+
+  const fr = document.getElementById('fr');
+  await new Promise((res) => { fr.onload = res; fr.src = '../index.html'; });
+  const d = fr.contentDocument;
+  const w = fr.contentWindow;
+  // setTimeout rather than requestAnimationFrame: under headless virtual time, timers are
+  // fast-forwarded reliably and an animation-frame loop is not guaranteed to be driven.
+  const settle = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+  await settle(400);
+
+  const px = (v) => (v.endsWith('px') ? parseFloat(v) : null);
+
+  /*
+   * The tap target is not the border box. `.pip` and `.toggle` deliberately keep a small
+   * visible box and carry the real target on an absolutely-positioned `::after` (style.css).
+   * So the honest hit rect is the border box UNION any absolutely-positioned pseudo-element.
+   *
+   * Read analytically from the computed pseudo styles rather than probing with
+   * elementFromPoint: a point walk is quantised by its own step size and under-reports a
+   * 44px target by a couple of px, which is exactly the margin these decisions turn on.
+   */
+  function hitRect(el) {
+    const r = el.getBoundingClientRect();
+    let { left, top, right, bottom } = r;
+    for (const pseudo of ['::after', '::before']) {
+      const cs = w.getComputedStyle(el, pseudo);
+      if (!cs || cs.content === 'none' || cs.position !== 'absolute') continue;
+      const l = px(cs.left), t = px(cs.top), rt = px(cs.right), b = px(cs.bottom);
+      if ([l, t, rt, b].some((v) => v === null)) continue;   // `auto` — can't resolve statically
+      // Offsets are relative to the padding box of the positioned ancestor, which for these
+      // is the control itself (the base checkbox/button rules set position: relative).
+      left = Math.min(left, r.left + l);
+      top = Math.min(top, r.top + t);
+      right = Math.max(right, r.right - rt);
+      bottom = Math.max(bottom, r.bottom - b);
+    }
+    return { w: +(right - left).toFixed(1), h: +(bottom - top).toFixed(1) };
+  }
+
+  const label = (el) => {
+    const id = el.id ? `#${el.id}` : '';
+    const cls = el.classList.length ? `.${[...el.classList].join('.')}` : '';
+    return `${el.tagName.toLowerCase()}${id}${cls}`;
+  };
+
+  // Anything a finger is meant to land on.
+  const SELECTOR = [
+    'button', 'input:not([type="hidden"])', 'select', 'textarea',
+    '[role="tab"]', 'summary', '[data-action]', '.chip',
+  ].join(',');
+
+  /*
+   * The condition chips use the label-wraps-checkbox idiom: the 44px `<label>` is the tap
+   * target and the box inside it stays small on purpose (style.css `.chip` — "the label IS
+   * the tap target (#77)"). Flagging the inner 22px checkbox there would be a false positive,
+   * so a control is excused when a wrapping <label> already meets the minimum.
+   */
+  function coveredByLabel(el) {
+    const lab = el.closest('label');
+    if (!lab) return false;
+    const r = hitRect(lab);
+    return r.w + 0.5 >= TAP && r.h + 0.5 >= TAP;
+  }
+
+  function auditScene(name) {
+    const groups = new Map();
+    const seen = new Set();
+    for (const el of d.querySelectorAll(SELECTOR)) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 && box.height === 0) continue;          // not rendered in this scene
+      if (w.getComputedStyle(el).visibility === 'hidden') continue;
+      const hit = hitRect(el);
+      if (hit.w + 0.5 >= TAP && hit.h + 0.5 >= TAP) continue;
+      if (coveredByLabel(el)) continue;
+      // Identical controls repeat dozens of times (42 skill checkboxes, 48 arrange buttons);
+      // group them so the report reads as findings rather than as a wall.
+      const key = `${label(el)}|${Math.round(box.width)}x${Math.round(box.height)}|${hit.w}x${hit.h}`;
+      const row = groups.get(key) ?? {
+        el: label(el),
+        box: `${Math.round(box.width)}x${Math.round(box.height)}`,
+        hit: `${hit.w}x${hit.h}`,
+        short: +Math.min(hit.w, hit.h).toFixed(1),
+        count: 0,
+      };
+      row.count++;
+      groups.set(key, row);
+    }
+    const rows = [...groups.values()].sort((a, b) => a.short - b.short);
+    return {
+      scene: name,
+      viewport: w.innerWidth,
+      scrollWidth: d.documentElement.scrollWidth,
+      overflows: d.documentElement.scrollWidth > w.innerWidth,
+      failures: rows,
+    };
+  }
+
+  const tab = async (id) => { d.getElementById(`tab-${id}`)?.click(); await settle(); };
+  const edit = async (card) => {
+    d.querySelector(`[data-editcard="${card}"] .card__edit`)?.click();
+    await settle();
+  };
+
+  const report = { viewport: VIEWPORT, tap: TAP, scenes: [] };
+
+  await tab('combat');
+  report.scenes.push(auditScene('combat / view'));
+  await edit('combat');
+  report.scenes.push(auditScene('combat / edit'));
+  await edit('combat');
+
+  await tab('abilities');
+  report.scenes.push(auditScene('abilities / view'));
+  await edit('abilities');
+  report.scenes.push(auditScene('abilities / edit'));
+  await edit('abilities');
+
+  // The spell-slot total field exists ONLY while the Spellcasting card is in edit mode —
+  // play mode renders a remaining/total count instead (render.js renderSlots).
+  await tab('spells');
+  await edit('spellcasting');
+  report.scenes.push(auditScene('spells / setup'));
+  await edit('spellcasting');
+
+  await tab('gear');
+  report.scenes.push(auditScene('gear / view'));
+  await tab('character');
+  report.scenes.push(auditScene('character / view'));
+
+  await tab('combat');
+  d.querySelector('[data-action="arrange-toggle"]')?.click();
+  await settle(250);
+  report.scenes.push(auditScene('arrange'));
+  d.querySelector('.arrange-bar [data-action="arrange-toggle"]')?.click();
+  await settle();
+
+  report.scenes = report.scenes.filter((s) => s.failures.length || s.overflows);
+  report.totalFailures = report.scenes.reduce(
+    (n, s) => n + s.failures.reduce((m, f) => m + f.count, 0), 0,
+  );
+  report.verdict = report.totalFailures === 0
+    ? `PASS — every measured control has a >=${TAP}px hit area at ${VIEWPORT}px`
+    : `FAIL — ${report.totalFailures} control(s) under ${TAP}px`;
+  out.textContent = JSON.stringify(report, null, 1);
+} catch (err) {
+  out.textContent = `PROBE ERROR\n${err && err.stack || err}`;
+}
+</script>
