@@ -134,6 +134,7 @@ export function normalizeCharacter(raw) {
 
   char.attacks = normalizeRows('attacks', raw.attacks);
   char.features = normalizeRows('features', raw.features);
+  char.feats = normalizeRows('feats', raw.feats); // #67 — absent in every pre-#67 file → []
   char.inventory = normalizeRows('inventory', raw.inventory);
 
   const slots = {};

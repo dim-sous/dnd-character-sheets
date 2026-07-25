@@ -840,7 +840,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    was a squeezed fraction before, which is what cropped). Below it, a NOTES field hidden by
    default and revealed by tapping the entry (main.js flips .is-expanded). No caret, no reflow:
    the whole row is the tap target. */
-.row--attack, .row--inventory {
+.row--attack, .row--inventory, .row--feature, .row--feat {
   display: flex; flex-direction: column; align-items: stretch; gap: .35rem;
 }
 /* The primary line lays its fields out by CONTENT width — each takes only what its value needs
@@ -865,6 +865,18 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row--attack > .row__notes, .row--inventory > .row__notes { flex: none; min-height: 0; display: none; }
 .row.is-expanded > .row__notes { display: block; }
 .is-editing .row--attack > .row__notes, .is-editing .row--inventory > .row__notes { display: block; min-height: var(--tap); }
+
+/* #67: the same reveal for Features/Feats, whose hidden part is a BLOCK of fields (source /
+   level / text) rather than one note — so it flexes rather than displaying as a block. */
+.row--feature > .row__detail, .row--feat > .row__detail { display: none; }
+.row.is-expanded > .row__detail,
+.is-editing .row--feature > .row__detail, .is-editing .row--feat > .row__detail { display: flex; }
+.row__detail { flex-wrap: wrap; gap: .4rem; align-items: center; }
+.row__detail > input { flex: 1 1 6rem; min-width: 0; }
+.row__detail > .row__level { flex: 0 1 4rem; }
+/* Neutralise the base `.row > textarea{flex-basis:100%}` reasoning one level down: here the
+   textarea is a grandchild, and it should take the whole second line of the detail block. */
+.row__detail > textarea { flex: 1 1 100%; min-height: 0; }
 
 .row--hitdie { align-items: center; }
 .row__of { flex: none; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
@@ -1095,6 +1107,8 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      clip rather than ellipsize the single-line fields so a printed sheet carries the full entry,
      not just what happened to be expanded on screen. */
   .row--attack > .row__notes, .row--inventory > .row__notes { display: block !important; }
+  /* #67: paper has no tap, so every collapsed detail block prints expanded. */
+  .row--feature > .row__detail, .row--feat > .row__detail { display: flex !important; }
   .row__primary input { text-overflow: clip; }
 }
 

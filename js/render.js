@@ -341,6 +341,7 @@ const ROW_TEMPLATE_IDS = {
   // stays in the model (constants/storage) so existing data keeps round-tripping
   // through save/export/import, and the UI can come back for free.
   features: 'tpl-feature',
+  feats: 'tpl-feat',
   inventory: 'tpl-inventory',
   hitDice: 'tpl-hitdie',
 };

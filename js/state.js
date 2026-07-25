@@ -18,6 +18,7 @@ const LIST_PATHS = {
   attacks: 'attacks',
   spells: 'spellcasting.spells',
   features: 'features',
+  feats: 'feats',
   inventory: 'inventory',
   hitDice: 'hitDice',
 };

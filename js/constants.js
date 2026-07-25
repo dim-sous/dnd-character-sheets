@@ -111,6 +111,7 @@ export function blankCharacter() {
     },
 
     features: [],
+    feats: [],
     inventory: [],
     currency: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
     // #69: free text, one blob per kind — a tracker records what you're proficient with,
@@ -123,7 +124,11 @@ export function blankCharacter() {
 export const ROW_TEMPLATES = {
   attacks: () => ({ name: '', bonus: '', damage: '', notes: '' }),
   spells: () => ({ name: '', level: 0, prepared: false }),
-  features: () => ({ name: '', text: '' }),
+  // #67: source (Species / Background / Class / Other) and level stay FREE TEXT — the sheet
+  // records where a feature came from, it doesn't model class progression. Old rows carry only
+  // name+text; normalizeRow is template-driven, so they backfill to '' with no migration code.
+  features: () => ({ name: '', source: '', level: '', text: '' }),
+  feats: () => ({ name: '', source: '', text: '' }),
   inventory: () => ({ item: '', qty: 1, notes: '' }),
   hitDice: () => ({ size: 'd8', total: 1, remaining: 1 }),
 };

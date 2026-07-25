@@ -312,8 +312,17 @@ document.addEventListener('click', (event) => {
   // notes. Ephemeral UI state (a class on the row, like card edit mode): no character mutation,
   // resets on the next structural render. Edit mode (fields tappable to type) and taps on the note
   // itself are excluded; a note-less entry has nothing to reveal.
-  const entryRow = event.target.closest('.row--attack, .row--inventory');
-  if (entryRow && !entryRow.closest('.is-editing') && !event.target.closest('.row__notes')) {
+  const entryRow = event.target.closest('.row--attack, .row--inventory, .row--feature, .row--feat');
+  if (entryRow && !entryRow.closest('.is-editing')
+      && !event.target.closest('.row__notes') && !event.target.closest('.row__detail')) {
+    // #67 rows carry a .row__detail block (source / level / text) that ALWAYS has fields worth
+    // revealing, so they toggle unconditionally — the note-less guard below only makes sense for
+    // an attack/inventory row, whose sole hidden content is one optional note.
+    const detail = entryRow.querySelector('.row__detail');
+    if (detail) {
+      entryRow.classList.toggle('is-expanded');
+      return;
+    }
     const notes = entryRow.querySelector('.row__notes');
     if (notes && notes.value.trim()) entryRow.classList.toggle('is-expanded');
     return;
