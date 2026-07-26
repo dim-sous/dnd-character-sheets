@@ -41,9 +41,15 @@ function normalizeSpan(rawSpan, componentId) {
 }
 
 /**
- * The object's minimum height in `--tile-step` units. 0 is "as tall as its contents", and is
+ * The object's EXPLICIT height in `--tile-step` units. 0 is "as tall as its contents", and is
  * both the default and where anything unparseable lands — a layout with no height at all (every
  * layout saved before this existed) reads as today's behaviour rather than as a broken tile.
+ *
+ * Any non-zero value is an exact height, not a floor: `.tile.is-sized` in style.css sets `height`
+ * with `overflow: hidden`, so a tile can be made SHORTER than its contents and clips. That is the
+ * point of the control — as a minimum it could only ever add space, which left the whole lower
+ * half of the slider doing nothing (#114). These docstrings said "minimum height" for one release
+ * after that changed, which describes a different feature from the one that ships.
  *
  * Out of range CLAMPS, where an out-of-range span falls back to the registry default instead.
  * The asymmetry is deliberate: both ends of the height range are meaningful values a slider can
@@ -288,7 +294,7 @@ export function setObjectSpan(layout, cardId, objectId, span) {
 }
 
 /**
- * Set one object's minimum height, in `--tile-step` units, within its card (immutable). Out of
+ * Set one object's explicit height, in `--tile-step` units, within its card (immutable). Out of
  * range is clamped by normalizeHeight rather than rejected, so a slider that reports a value
  * past either end still lands somewhere valid. No-op if the object is absent.
  */

@@ -400,25 +400,43 @@ document.addEventListener('change', (event) => {
 });
 
 document.addEventListener('click', (event) => {
-  const actionEl = event.target.closest('[data-action]');
-  if (actionEl) {
-    const handler = ACTIONS[actionEl.dataset.action];
-    if (handler) handler(actionEl);
-    return;
-  }
-
   // Arrange mode (#72): the tile IS the target — tap one to point the toolbar at it. Only a
   // tap that lands ON an object is swallowed; the tab bar, roster and drawer stay usable while
   // arranging, which is why this doesn't return unconditionally.
   //
   // While placing (#73) the tiles go quiet: the live targets are the "Move here" lines between
   // them, and re-selecting mid-move would silently abandon the move you started.
-  if (isArranging() && !isPlacing()) {
-    const objNode = event.target.closest('[data-object]');
-    if (objNode) {
-      selectObject(cardIdOf(objNode), objNode.dataset.object);
-      return;
-    }
+  const objNode = isArranging() && !isPlacing() ? event.target.closest('[data-object]') : null;
+
+  const actionEl = event.target.closest('[data-action]');
+  /*
+   * A [data-action] INSIDE the tile being arranged does not fire (#115). Selecting the tile is
+   * the only thing a tap in there can mean, and dispatching first meant tapping the Rest tile to
+   * move it opened the Long rest confirm instead — a reset of HP, Hit Point Dice, death saves,
+   * concentration, exhaustion and every spell slot, offered while the player was rearranging
+   * furniture and not thinking about character data at all. The death-save pips are in a tile
+   * too, so they went the same way.
+   *
+   * The CSS could not have stopped it: `pointer-events` is inherited, so
+   * `body.is-arranging .card{pointer-events:none}` never reached these buttons — [data-object]
+   * opts back in and every descendant comes with it. The blocklist that hides `.card__edit` and
+   * `add-row` during arrange is the same oversight one layer up, and it grows a new hole every
+   * time a button is added to a tile.
+   *
+   * So suppress by POSITION, not by name: no layout action lives inside an object — they are all
+   * in the arrange bar, and the placement drop slots are siblings of the tiles rather than
+   * children — which means there is no allow-list to keep in step with the ACTIONS map, and
+   * nothing to forget when the next control lands in a tile.
+   */
+  if (actionEl && !(objNode && objNode.contains(actionEl))) {
+    const handler = ACTIONS[actionEl.dataset.action];
+    if (handler) handler(actionEl);
+    return;
+  }
+
+  if (objNode) {
+    selectObject(cardIdOf(objNode), objNode.dataset.object);
+    return;
   }
 
   // Collapsible notes (#64): in VIEW mode, tapping an attack/inventory entry reveals or hides its

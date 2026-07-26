@@ -31,7 +31,9 @@ try {
 
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
   const c = blankCharacter();
-  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5; c.hp.max = 32; c.hp.current = 32;
+  // Wounded on purpose, not at full HP: a long rest restores LOST hit points, so a character
+  // seeded at max would absorb the #115 check below without changing a single visible number.
+  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5; c.hp.max = 32; c.hp.current = 20;
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
   }));
@@ -229,6 +231,46 @@ try {
   d.querySelector('#btn-arrange').click();
   await wait(350);
   ok('re-entry shows the hint again', /Tap a tile/.test(bar().textContent), `"${bar().textContent.trim()}"`);
+
+  /*
+   * #115: a character action inside a tile must not fire while arranging.
+   *
+   * Last, because it needs a clean slate — nothing selected — and it is the one check here that
+   * would mutate character data if it failed. The Rest tile carries `data-action="long-rest"`,
+   * and dispatch used to run before tile selection, so tapping that tile to MOVE it instead
+   * offered to reset HP, Hit Point Dice, death saves, concentration, exhaustion and every spell
+   * slot. The CSS that hides `.card__edit` and `add-row` during arrange never listed this one,
+   * and it could not have helped anyway: `pointer-events` is inherited, so the tile's own opt-in
+   * carries down to every button inside it.
+   *
+   * The button itself is clicked, not the tile's padding — the worst case, and the exact gesture
+   * a player makes when the tile they want to move is mostly button.
+   */
+  const restTile = d.querySelector('#panel-combat [data-object="rest"]');
+  const restBtn = restTile && restTile.querySelector('[data-action="long-rest"]');
+  ok('the Rest tile still contains the Long rest action', Boolean(restBtn));
+  // Counted rather than blocked: `confirm` returning true is what makes the HP assertion below
+  // meaningful, so a regression fails loudly on both counts instead of being swallowed here.
+  let confirms = 0;
+  frame.contentWindow.confirm = () => { confirms++; return true; };
+  const hpBefore = d.getElementById('f-hp-current').value;
+  restBtn.click();
+  await wait(300);
+  ok('tapping Long rest while arranging does not fire it', confirms === 0, `${confirms} confirm(s)`);
+  ok('it selects the tile instead', restTile.classList.contains('is-selected'));
+  ok('and hit points are untouched', d.getElementById('f-hp-current').value === hpBefore,
+    `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);
+
+  // The same tap must still work normally once arranging is over, or the fix has just broken the
+  // feature it was protecting.
+  d.querySelector('.arrange-bar [data-action="arrange-toggle"]').click();
+  await wait(300);
+  d.querySelector('#panel-combat [data-object="rest"] [data-action="long-rest"]').click();
+  await wait(300);
+  ok('and Long rest still works outside arrange mode', confirms === 1, `${confirms} confirm(s)`);
+  ok('the rest actually restored the lost hit points',
+    d.getElementById('f-hp-current').value === '32',
+    `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);
 
   const failed = results.filter((r) => r.startsWith('FAIL')).length;
   out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
