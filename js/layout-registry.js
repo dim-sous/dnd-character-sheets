@@ -69,36 +69,75 @@ export const CARD_ORDER = [
  * `cost:'js'` object hosts, for reference: hitdice→#hitDice, deathsaves→#death-successes
  * /#death-failures, exhaustion→#exhaustion, conditions→#conditions.
  *
- *   defaultSpan — the object's width within the `.tiles` grid (#54 Phase 6), reproducing today's
- *                 layout: `'full'` (a whole grid row, `grid-column: 1 / -1`), `2` (two tracks),
- *                 or `1` (one track). The layout config carries the live per-object span; this is
- *                 the value reconciliation falls back to. Cards keep a single column for now.
+ *   defaultSpan — the object's width in the card's twelve-column `.tiles` grid (#54 Phase 6),
+ *                 reproducing today's layout: 12 (a whole row), 6 (half), 3 (a quarter). The
+ *                 layout config carries the live per-object span; this is the value
+ *                 reconciliation falls back to. Cards keep a single column for now.
  */
 export const OBJECT_REGISTRY = {
-  hp: { card: 'combat', label: 'Hit Points', cost: 'markup', defaultSpan: 'full' },
-  rest: { card: 'combat', label: 'Rest', cost: 'markup', defaultSpan: 1 },
-  // #75: two tracks by default. AC is read on every incoming attack and was visually
+  hp: { card: 'combat', label: 'Hit Points', cost: 'markup', defaultSpan: 12 },
+  rest: { card: 'combat', label: 'Rest', cost: 'markup', defaultSpan: 3 },
+  // #75: half the row by default. AC is read on every incoming attack and was visually
   // indistinguishable from Prof. Bonus, which never changes in play — span is the grid's
   // own way of encoding "this one matters more", and it costs no new CSS.
-  ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 2 },
-  initiative: { card: 'combat', label: 'Initiative', cost: 'markup', defaultSpan: 1 },
-  speed: { card: 'combat', label: 'Speed', cost: 'markup', defaultSpan: 1 },
-  pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup', defaultSpan: 1 },
-  heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup', defaultSpan: 1 },
-  // #78. Label matches the static markup (see applyObjects) and is abbreviated to fit a 1× tile.
-  concentration: { card: 'combat', label: 'Conc.', cost: 'markup', defaultSpan: 1 },
-  hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js', defaultSpan: 'full' },
-  deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js', defaultSpan: 'full' },
-  exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js', defaultSpan: 'full' },
-  conditions: { card: 'combat', label: 'Conditions', cost: 'js', defaultSpan: 'full' },
+  ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 6 },
+  initiative: { card: 'combat', label: 'Initiative', cost: 'markup', defaultSpan: 3 },
+  speed: { card: 'combat', label: 'Speed', cost: 'markup', defaultSpan: 3 },
+  pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup', defaultSpan: 3 },
+  heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup', defaultSpan: 3 },
+  // #78. Label matches the static markup (see applyObjects) and is abbreviated to fit a
+  // quarter-row tile.
+  concentration: { card: 'combat', label: 'Conc.', cost: 'markup', defaultSpan: 3 },
+  hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js', defaultSpan: 12 },
+  deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js', defaultSpan: 12 },
+  exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js', defaultSpan: 12 },
+  conditions: { card: 'combat', label: 'Conditions', cost: 'js', defaultSpan: 12 },
   // #67: the second objectified card. Both own a render.js host (#features / #feats), so
   // cost:'js' — hiding one keeps the host in the DOM, it is never detached.
-  features: { card: 'features', label: 'Features', cost: 'js', defaultSpan: 'full' },
-  feats: { card: 'features', label: 'Feats', cost: 'js', defaultSpan: 'full' },
+  features: { card: 'features', label: 'Features', cost: 'js', defaultSpan: 12 },
+  feats: { card: 'features', label: 'Feats', cost: 'js', defaultSpan: 12 },
 };
 
-/** The valid object spans, in cycle order — the ↔ resize control steps 1 → 2 → full → 1. */
-export const OBJECT_SPANS = [1, 2, 'full'];
+/**
+ * The `.tiles` grid is TWELVE columns. It was four — `auto-fit, minmax(4.5rem, 1fr)` — which
+ * permitted exactly three widths, and that is the only reason resizing was a three-step cycle
+ * (one track, two tracks, the whole row) rather than something continuous.
+ *
+ * Twelve is an exact refinement of four, not a redesign. A span of three covers three tracks
+ * plus the two gaps inside them: 3·(W − 11g)/12 + 2g, which reduces to (W − 3g)/4 — the old
+ * track width, to the pixel. So 1 → 3, 2 → 6, full → 12 reproduces every layout anyone has
+ * already saved, and the nine widths in between are new.
+ *
+ * SPAN_MIN is 2, not 1: a twelfth of a 390px card is ~22px, while two tracks is ~51px — the
+ * narrowest a tile can be and still hold a 44px touch target.
+ */
+export const GRID_COLUMNS = 12;
+export const SPAN_MIN = 2;
+export const SPAN_MAX = GRID_COLUMNS;
+
+/**
+ * A tile's height, counted in `--tile-step` units. 0 — every object's default, and the only
+ * value the slider never writes — means "as tall as its contents", which is what every tile has
+ * always been and what every layout saved before this reads as.
+ *
+ * An explicit height rather than a minimum. A minimum is not a height control: it can only ever
+ * add space, so the shortest thing a tile could be was already the tallest thing inside it, and
+ * the slider's bottom end did nothing. Real heights shrink as well as grow, which is what
+ * `.tile.is-sized` clipping and the collapsed label reservation in style.css are there to
+ * absorb.
+ *
+ * The step is deliberately small (.75rem — see style.css) and the range deliberately short: a
+ * tile is naturally 6–8 steps, so 4..16 is roughly half to double, with the thumb landing near
+ * the middle and useful travel in both directions. A taller ceiling only adds stops nobody
+ * drags to.
+ *
+ * HEIGHT_SET_MIN is where the slider bottoms out rather than 1: four steps is ~48px, a tile that
+ * can still hold a 44px control. HEIGHT_MIN stays 0 because that is the storage floor, and 0
+ * means something different in kind from a height.
+ */
+export const HEIGHT_MIN = 0;
+export const HEIGHT_SET_MIN = 4;
+export const HEIGHT_MAX = 16;
 
 /** Default object order per card (matches today's DOM). Only `combat` has objects this phase. */
 export const OBJECT_ORDER = {

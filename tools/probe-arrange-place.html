@@ -140,19 +140,24 @@ try {
     `${ids().slice(0, 3)} vs ${order0.slice(0, 3)}`);
   ok('Undo disables itself when the stack is empty', btn('layout-undo').disabled);
 
-  // Undo covers the other mutations too, not just moves.
+  // Undo covers the other mutations too, not just moves. Resize is a range now (item 1), so it
+  // is driven by setting .value and firing `input` — a click on a range changes nothing, and a
+  // click-driven check here would report a resize that never happened.
   tile(order0[0]).click();
   await wait(200);
-  const spanBefore = btn('resize-object').textContent;
-  btn('resize-object').click();
+  const widthNow = () => tile(order0[0]).style.gridColumn;
+  const spanBefore = widthNow();
+  const range = d.querySelector('input[data-action="resize-object"]');
+  range.value = String(Number(range.value) - 3);
+  range.dispatchEvent(new w.Event('input', { bubbles: true }));
   await wait(250);
-  ok('resize is undoable', !btn('layout-undo').disabled);
+  ok('resize is undoable', !btn('layout-undo').disabled && widthNow() !== spanBefore,
+    `${spanBefore} -> ${widthNow()}`);
   btn('layout-undo').click();
   await wait(300);
   tile(order0[0]).click();
   await wait(250);
-  ok('undo restored the width', btn('resize-object').textContent === spanBefore,
-    `${spanBefore} -> ${btn('resize-object').textContent}`);
+  ok('undo restored the width', widthNow() === spanBefore, `${spanBefore} -> ${widthNow()}`);
 
   // --- the escape hatch: a saved default must not lock out the original layout ------------
   d.querySelector('.arrange-more').setAttribute('open', '');

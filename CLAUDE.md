@@ -41,6 +41,7 @@ The other `tools/probe-*.html` pages are targeted regression checks for behaviou
 - `probe-arrange-fn.html` — arrange mode's select-a-tile wiring, plus a **height budget** for the arrange bar (#71/#72/#73). The budget is the thing that stops the bar creeping back toward the 388px it shipped at; if you add a control to the bar, expect to argue with it.
 - `probe-arrange-place.html` — the "Move to…" reorder gesture, layout undo, and the factory reset (#73). Separate from the above because it deliberately wrecks the layout and saves it as the default to prove the escape hatch works.
 - `probe-hp-result.html` — the Current HP result line (#74): that a real keystroke reaches it, that the visible line and `#play-status` get the *same* sentence, and that the blur re-commit doesn't overwrite it.
+- `probe-tile-size.html` — the twelve-column tile grid and its two size sliders. Seeds a layout in the **shipped v1 shape** and checks the v1→v2 span rescale reaches the screen at the same pixel widths: that migration is the one layout change that fails silently, because a stale span is coerced to a registry default and the player's arrangement is quietly replaced by the shipped one. Also covers what the pure tests can't see — that height shrinks as well as grows, and that a whole drag is one undo step.
 
 Two traps these probes exist to catch, both of which have produced silently-passing checks here:
 
