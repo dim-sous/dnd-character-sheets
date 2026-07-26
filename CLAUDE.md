@@ -33,7 +33,19 @@ CHROME="/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
   --virtual-time-budget=25000 --dump-dom "http://localhost:8000/tools/probe.html"
 ```
 
-`tools/probe.html` is the standing **reachability audit**: it seeds a character through `blankCharacter()`, loads the app in a fixed-width iframe, walks every tab and edit/arrange mode, and reports any control that is under 44px, **not the thing a tap there would actually hit**, or owns a pseudo-element that has escaped it (see the two traps below). Width is a query parameter — `probe.html` is the 390px phone, `probe.html?w=1440` the laptop where every panel is revealed at once. **Run both**: #115 hit both at different rows, and either width alone reported PASS at the other. Extend it rather than writing throwaway probes. Read its header comment before changing it.
+`tools/probe.html` is the standing **usability audit**: it seeds a character through `blankCharacter()`, loads the app in a fixed-width iframe, walks every tab and edit/arrange mode, and reports any control that is under 44px, **not the thing a tap there would actually hit**, owns a pseudo-element that has escaped it, or carries **text under WCAG AA against the colour actually behind it** (see the traps below). Extend it rather than writing throwaway probes. Read its header comment before changing it.
+
+**Four runs, and all four are load-bearing** — two widths × two themes. Width is a query parameter; the theme is a Chrome flag, and headless defaults to *dark*, so a pair of runs without the flag is two dark runs agreeing with each other:
+
+```bash
+for CS in 1 0; do for W in 390 1440; do   # preferredColorScheme: 1 = light, 0 = dark
+  "$CHROME" --headless=new --disable-gpu --user-data-dir="C:\Temp\probe-$CS-$W" \
+    --blink-settings=preferredColorScheme=$CS --virtual-time-budget=240000 \
+    --dump-dom "http://localhost:8000/tools/probe.html?w=$W"
+done; done
+```
+
+The verdict line names the width and theme it measured, because a PASS that doesn't say which one it was is worth very little: #115 hit both widths at different rows and either alone reported PASS at the other, and #118's accent failures existed only in dark.
 
 The other `tools/probe-*.html` pages are targeted regression checks for behaviour the DOM-free suite can't reach. They print `ALL PASS` or a list of failures; run them the same way as `probe.html`. Each reseeds `localStorage` — including the layout keys, which are `dnd-character-sheets:layout` and `:layout-default`, colons not hyphens — so runs don't inherit each other's mutations.
 

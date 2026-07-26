@@ -108,6 +108,65 @@ try {
   const px = (v) => (v.endsWith('px') ? parseFloat(v) : null);
 
   /*
+   * ---- colour, for the contrast audit -------------------------------------------------------
+   *
+   * Colours are painted into a 1x1 canvas and read back as bytes, NOT regex'd out of the computed
+   * string. `color-mix(…, transparent)` — which this stylesheet uses for every tinted chip —
+   * computes to `color(srgb …)`, so an `rgba()` regex silently fails to parse it, and a background
+   * that fails to parse looks like no background at all. That is how the accent tint behind the
+   * "Done" chip went missing and its contrast was first measured against the bare card: 4.38:1,
+   * when the honest figure against the tint actually behind it is 3.86:1 (#118).
+   */
+  const cv = document.createElement('canvas');
+  cv.width = 1; cv.height = 1;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  const colour = (s) => {
+    if (!s || s === 'none' || s === 'transparent') return { r: 0, g: 0, b: 0, a: 0 };
+    cx.clearRect(0, 0, 1, 1);
+    cx.fillStyle = '#000';
+    cx.fillStyle = s;                     // an unparseable value leaves fillStyle at #000
+    const parsed = cx.fillStyle;
+    cx.fillRect(0, 0, 1, 1);
+    const p = cx.getImageData(0, 0, 1, 1).data;
+    if (parsed === '#000000' && !/^(#000000|rgba?\(\s*0\s*,\s*0\s*,\s*0)/.test(s)) return null;
+    return { r: p[0], g: p[1], b: p[2], a: p[3] / 255 };
+  };
+  const chan = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const relLum = (c) => 0.2126 * chan(c.r) + 0.7152 * chan(c.g) + 0.0722 * chan(c.b);
+  const contrast = (a, b) => {
+    const la = relLum(a), lb = relLum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+  const over = (fg, bg) => ({
+    r: fg.a * fg.r + (1 - fg.a) * bg.r,
+    g: fg.a * fg.g + (1 - fg.a) * bg.g,
+    b: fg.a * fg.b + (1 - fg.a) * bg.b,
+    a: 1,
+  });
+  const hex = (c) => `#${[c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
+
+  /*
+   * The colour actually behind an element's text: walk up compositing every translucent layer
+   * until the first opaque one. Which variable a rule NAMES proves nothing about what ends up
+   * behind the glyphs — the active tab names `--accent` on a `color-mix(accent 12%, card)`
+   * background, and the tint is the thing that decides whether it passes.
+   */
+  const effectiveBg = (el) => {
+    const layers = [];
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const bg = colour(w.getComputedStyle(n).backgroundColor);
+      if (!bg || bg.a === 0) continue;
+      layers.push(bg);
+      if (bg.a === 1) break;
+    }
+    // No opaque layer found at all: the page background is the canvas, which is --parchment on
+    // body; fall back to white only if even that is transparent.
+    let base = layers.length ? layers[layers.length - 1] : { r: 255, g: 255, b: 255, a: 1 };
+    for (let i = layers.length - 2; i >= 0; i--) base = over(layers[i], base);
+    return base;
+  };
+
+  /*
    * The tap target is not the border box. `.pip` and `.toggle` deliberately keep a small
    * visible box and carry the real target on an absolutely-positioned `::after` (style.css).
    * So the honest hit rect is the border box UNION any absolutely-positioned pseudo-element.
@@ -391,6 +450,49 @@ try {
     }));
   }
 
+  /*
+   * Text contrast (#118). WCAG AA wants 4.5:1, or 3:1 for large text — >=24px, or >=18.66px when
+   * bold. Reported per element kind, with the measured pair, because "which variable is wrong" is
+   * only answerable from the actual foreground/background it resolved to.
+   *
+   * Runs in whatever theme the browser reports, which is why the verdict names it: headless Chrome
+   * says `prefers-color-scheme: dark` by DEFAULT, so a light-vs-dark comparison run without
+   * `--blink-settings=preferredColorScheme=1` is two dark runs agreeing with each other. Both
+   * themes have to be run, the same way both widths do.
+   *
+   * Disabled controls are skipped: WCAG exempts inactive components, and the placement drop slots
+   * deliberately grey out the two gaps a tile is already in.
+   */
+  function contrastFailures() {
+    const found = new Map();
+    for (const el of d.querySelectorAll('*')) {
+      // Own text only — an element whose text lives in children is styled by those children.
+      const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+      if (!own) continue;
+      if (el.closest('details:not([open])')) continue;
+      if (el.closest(':disabled, [aria-disabled="true"]')) continue;
+      if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true })) continue;
+      const box = el.getBoundingClientRect();
+      // Not `=== 0`: `.visually-hidden` pins its box to 1x1 and clips, so screen-reader-only
+      // labels are technically rendered and technically fail a contrast check that means nothing
+      // for them. Nothing legible fits in 2px either way.
+      if (box.width <= 2 || box.height <= 2) continue;
+      const cs = w.getComputedStyle(el);
+      if (cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue;
+      const fg = colour(cs.color);
+      if (!fg || fg.a === 0) continue;
+      const bg = effectiveBg(el);
+      const ratio = contrast(over(fg, bg), bg);
+      const size = parseFloat(cs.fontSize), weight = Number(cs.fontWeight) || 400;
+      const need = (size >= 24 || (size >= 18.66 && weight >= 700)) ? 3 : 4.5;
+      if (ratio + 0.005 >= need) continue;
+      const key = `${label(el)} ${hex(over(fg, bg))} on ${hex(bg)}`
+        + ` = ${ratio.toFixed(2)}:1, needs ${need} [${size}px/${weight}]`;
+      found.set(key, (found.get(key) ?? 0) + 1);
+    }
+    return [...found.entries()].map(([k, n]) => (n > 1 ? `${k} (x${n})` : k));
+  }
+
   function auditScene(name) {
     const groups = new Map();
     const seen = new Set();
@@ -425,6 +527,7 @@ try {
       clipped: clippedFields(),
       covered: coveredControls(),
       escaped: escapedPseudos(),
+      contrast: contrastFailures(),
       failures: rows,
     };
   }
@@ -435,7 +538,10 @@ try {
     await settle();
   };
 
-  const report = { viewport: VIEWPORT, tap: TAP, scenes: [] };
+  // Named in the report because a PASS means nothing without it: headless Chrome reports dark by
+  // default, so an unflagged "light" run is a second dark run. See CLAUDE.md.
+  const THEME = w.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  const report = { viewport: VIEWPORT, theme: THEME, tap: TAP, scenes: [] };
 
   await tab('combat');
   report.scenes.push(auditScene('combat / view'));
@@ -492,7 +598,8 @@ try {
   await settle();
 
   report.scenes = report.scenes.filter(
-    (s) => s.failures.length || s.overflows || s.clipped.length || s.covered.length || s.escaped.length,
+    (s) => s.failures.length || s.overflows || s.clipped.length || s.covered.length
+      || s.escaped.length || s.contrast.length,
   );
   report.totalFailures = report.scenes.reduce(
     (n, s) => n + s.failures.reduce((m, f) => m + f.count, 0), 0,
@@ -544,15 +651,21 @@ try {
   }
   report.escapedPseudos = [...escaped.values()];
 
+  // Deduplicated across scenes: one wrong colour pairing is one finding, however many tabs it
+  // appears on. The count in each line is per scene, which is the useful number (12 tile labels
+  // on one Combat screen reads differently from one stray hint).
+  report.contrastFailures = [...new Set(report.scenes.flatMap((s) => s.contrast))];
+
   const parts = [];
+  if (report.contrastFailures.length) parts.push(`${report.contrastFailures.length} text colour pairing(s) under WCAG AA`);
   if (report.escapedPseudos.length) parts.push(`${report.escapedPseudos.length} pseudo-element(s) escape their owner`);
   if (report.totalFailures) parts.push(`${report.totalFailures} control(s) under ${TAP}px`);
   if (report.overflowScenes.length) parts.push(`${report.overflowScenes.length} scene(s) scroll sideways`);
   if (report.clippedFields.length) parts.push(`${report.clippedFields.length} field(s) crop their value`);
   if (coveredTotal) parts.push(`${coveredTotal} control(s) covered by something else`);
   report.verdict = parts.length === 0
-    ? `PASS — at ${VIEWPORT}px every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, nothing scrolls sideways, and no field crops its value`
-    : `FAIL — ${parts.join('; ')}`;
+    ? `PASS — at ${VIEWPORT}px in the ${THEME} theme, every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, every text colour clears WCAG AA against what is actually behind it, nothing scrolls sideways, and no field crops its value`
+    : `FAIL — at ${VIEWPORT}px in the ${THEME} theme: ${parts.join('; ')}`;
   out.textContent = JSON.stringify(report, null, 1);
 } catch (err) {
   out.textContent = `PROBE ERROR\n${err && err.stack || err}`;
