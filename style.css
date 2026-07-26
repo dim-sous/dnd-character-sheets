@@ -3,15 +3,27 @@
    Designed at 375px. Every breakpoint below is min-width.
    ========================================================================= */
 
+/* Three text weights, and all three are contrast-audited (#118): `probe.html` walks every text
+   node in every scene, composites the layers actually behind it, and fails under WCAG AA's 4.5:1.
+   Run it in BOTH themes — headless Chrome reports dark by default, so an unflagged pair of runs
+   is two dark runs agreeing. The quiet end of this scale is where it went wrong: `--ink-faint`
+   was #8b7d6d, which is 3.85:1 on a card and 3.13:1 on the roster's own tint — and it is the
+   colour on the small uppercase tile labels, i.e. the ones you read at a table in bad light.
+   The hierarchy is intact, just moved up: faint 5.88:1, soft 7.27:1, ink 16:1 on `--card`. */
 :root {
   --ink:        #241d16;
   --ink-soft:   #5f5245;
-  --ink-faint:  #8b7d6d;
+  --ink-faint:  #6c6053;   /* 4.79:1 on the darkest tint it lands on, 5.88:1 on --card */
   --parchment:  #f4ede0;
   --card:       #fffaf1;
   --line:       #ded1bc;
   --line-soft:  #ece1cd;
   --accent:     #7b2d26;   /* oxblood — proficiency, active state */
+  /* Text ON a filled accent button. A variable and not `#fff`, because the two themes disagree:
+     white clears 9.35:1 on the light oxblood but only 2.90:1 on the lighter accent dark mode
+     needs, and the two requirements pull in opposite directions — accent-as-text wants a LIGHTER
+     accent, white-on-accent wants a darker one. Flipping the text instead settles it. */
+  --on-accent:  #fff;
   --good:       #2f6b46;
   --bad:        #a33b2c;
   --gold:       #b08340;
@@ -30,12 +42,17 @@
   :root {
     --ink:        #ece3d6;
     --ink-soft:   #b3a693;
-    --ink-faint:  #857868;
+    --ink-faint:  #a49889;   /* 4.97:1 on the lightest tint it lands on, 5.78:1 on --card */
     --parchment:  #1a1613;
     --card:       #241f1a;
     --line:       #3d352c;
     --line-soft:  #322b23;
-    --accent:     #c8695c;
+    /* Lighter than the #c8695c it was, because dark mode is the theme where the accent is used as
+       TEXT and it failed there: the active tab label measured 3.77:1 on the tab bar's own
+       accent-12% tint, and the arrange-mode "Move here" lines 4.38:1 on a card. Now 4.69:1 and
+       5.64:1. Light mode is untouched — it passes at 7.6:1 and up. */
+    --accent:     #d08477;
+    --on-accent:  #1a1613;   /* 6.21:1 on the accent above; white would be 2.90:1 */
     --good:       #5da97b;
     --bad:        #d4705f;
     --gold:       #c9a161;
@@ -179,7 +196,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 }
 .btn:hover { border-color: var(--ink-faint); }
 .btn:active { transform: translateY(1px); }
-.btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn--primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn--danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
 .btn--good { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
 /* "Small" means smaller text and padding, NOT a smaller target. This used to set 36px, which
