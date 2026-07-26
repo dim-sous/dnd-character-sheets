@@ -23,7 +23,7 @@ import {
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
-  tabAdd, tabRemove, tabRename, tabMove, toggleObject, resizeObject,
+  tabAdd, tabRemove, tabRename, tabMove, toggleObject, resizeObject, resizeObjectHeight, endResize,
   renameCardTitle, renameObjectLabel, dropCard, dropObject,
   selectObject, getSelectedObject,
   startPlacing, cancelPlacing, placeObject, isPlacing, undoLayout,
@@ -266,8 +266,10 @@ const ACTIONS = {
   'move-card-down': (el) => reorderCard(cardIdOf(el), 1),
 
   // Object controls (#54 Phase 5): resize/hide the tiles & status blocks within a card. The
-  // ↑/↓ nudge is gone — "Move to…" below replaced it (#73).
-  'resize-object': (el) => resizeObject(cardIdOf(el), objIdOf(el)),
+  // ↑/↓ nudge is gone — "Move to…" below replaced it (#73). The two resize entries are ranges,
+  // so they arrive through the `input` listener below rather than by click.
+  'resize-object': (el) => resizeObject(cardIdOf(el), objIdOf(el), el.value),
+  'resize-object-height': (el) => resizeObjectHeight(cardIdOf(el), objIdOf(el), el.value),
   'toggle-object-hide': (el) => toggleObject(cardIdOf(el), objIdOf(el)),
 
   // "Pick it up, tap where it goes" (#73): the touch reorder path, so a move costs two taps
@@ -375,6 +377,27 @@ const ACTIONS = {
   'download-corrupt': () => exportRaw(state.getCorruptRaw()),
   'start-fresh': () => { state.startFresh(); clearBanner('recovery'); },
 };
+
+/*
+ * Ranges dispatch through the SAME ACTIONS map as buttons, but on `input` — so the tile follows
+ * the thumb instead of jumping when it is released. Separate from the field listener above
+ * because these carry no `data-bind`: they are layout controls, not character data, and must
+ * never reach state.updateActive.
+ */
+const isActionRange = (el) => el.tagName === 'INPUT' && el.type === 'range' && el.dataset.action;
+
+document.addEventListener('input', (event) => {
+  const el = event.target;
+  if (!isActionRange(el)) return;
+  const handler = ACTIONS[el.dataset.action];
+  if (handler) handler(el);
+});
+
+// Release ends the gesture, which is what collapses a whole drag into ONE undo step. Without
+// it the "same gesture" test never goes false and later drags ride the first one's entry.
+document.addEventListener('change', (event) => {
+  if (isActionRange(event.target)) endResize();
+});
 
 document.addEventListener('click', (event) => {
   const actionEl = event.target.closest('[data-action]');

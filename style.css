@@ -321,14 +321,27 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 /* --------------------------------------------------------------- tiles */
 
 /* A segmented readout inside the Combat card (it used to be the sticky top strip).
-   auto-fit so it packs sensibly whether the card is a full-width phone column or a
-   narrow multicol column on a laptop. */
+   Twelve `1fr` tracks, no minimum: the tracks shrink with the card, so this still packs
+   sensibly whether the card is a full-width phone column or a narrow multicol column on a
+   laptop — which is what the `auto-fit, minmax(4.5rem, 1fr)` it replaced was for. Fixed
+   twelve rather than auto-fit because the layout config now names a width in twelfths, and
+   auto-fit's track count varies with the container. Every old width survives to the pixel:
+   see the GRID_COLUMNS note in layout-registry.js. */
 /* ---- tile: the one uniform box. Shell = label, Body = value ⇄ input | live control.
    Every box shares this grid, so any arrangement stays aligned — the #54 groundwork. ---- */
 .tiles {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+  display: grid; grid-template-columns: repeat(12, 1fr);
   gap: .4rem; margin: 0;
+  /* The unit the height slider counts in. Small on purpose: a tile is naturally 6–8 of these,
+     so the slider's 4..16 is about half to double its own size, with useful travel each way.
+     Declared here rather than on :root so it reads beside the grid it sizes — layout-view
+     measures it rather than parsing it, since it is authored in rem. */
+  --tile-step: .75rem;
 }
+/* The Spells card's two stat tiles are the one `.tiles` grid with no layout objects in it, so
+   nothing writes them an inline span. Half each, which is what auto-fit's collapsing empty
+   tracks gave them before. */
+.spell-stats > .tile { grid-column: span 6; }
 .tile {
   display: flex; flex-direction: column; gap: .15rem;
   padding: .45rem .35rem;
@@ -338,6 +351,26 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   /* isolated boxes with a gap, so a partial last row just leaves clean empty space
      (no hairline-grid strip) — and they read as the movable units #54 will rearrange. */
 }
+/*
+ * Config-owned height (item 1). Written inline as a `calc()` of --tile-step, and ONLY on a tile
+ * whose height a player has actually set — untouched, a tile is as tall as its contents, exactly
+ * as before.
+ *
+ * An explicit `height`, not a `min-height`. A minimum can only add space, so the shortest a tile
+ * could be was already the tallest thing inside it and the bottom half of the slider did
+ * nothing. Which means this half has to absorb a tile deliberately made SHORTER than its
+ * contents: `overflow: hidden` keeps the excess inside its own box rather than spilling across
+ * the tile below, and the label gives back the second line it reserves for wrapping, which is
+ * the largest piece of slack a small tile has.
+ */
+.tile.is-sized {
+  height: var(--tile-h);
+  min-height: 0;
+  overflow: hidden;
+  /* Short or tall, the contents sit in the middle of whatever room there is. */
+  justify-content: center;
+}
+.tile.is-sized .tile__label { min-height: 0; }
 /* Tile children fill the tile's width — EXCEPT screen-reader-only helpers. `.visually-hidden`
    pins width to 1px, but it and this rule share specificity (0,1,0), so without the :not()
    this later rule wins and a visually-hidden label/heading inside a `.tile` (Rest's label, the
@@ -603,13 +636,15 @@ body.is-arranging [data-object].is-selected {
    strip. It is also the only place the OBJECT controls are explained — the bar's own label only
    ever described the card ones, which is #72's third complaint. */
 .objbar__hint { font-size: .8rem; color: var(--ink-soft); }
-/* `flex-basis: 100%` puts the rename field on its own line so the four action buttons stay
-   together on the next one. At `8rem` it shared row 1 with Up and Down and pushed Width and
-   Hide onto row 2 — same total height, but the four controls read as two unrelated pairs. */
+/* The rename field shares row 1 with the two buttons. It used to claim a row of its own,
+   because at `8rem` it sat beside Up and Down and pushed Width and Hide onto row 2 — four
+   controls reading as two unrelated pairs. There are two buttons left (Up/Down became "Move
+   to…" in #73, Width became a slider), so the pair fits beside it and the row it was spending
+   is what pays for the size sliders below. */
 .objbar .obj-rename {
-  /* `flex-basis: 100%` claims the row; `max-width` stops it stretching to 1100px of empty field
-     on a laptop, where arrange mode still forces the single-column phone layout. */
-  flex: 1 1 100%; min-width: 6rem; max-width: 24rem; min-height: var(--tap);
+  /* `max-width` stops it stretching to 1100px of empty field on a laptop, where arrange mode
+     still forces the single-column phone layout. */
+  flex: 1 1 8rem; min-width: 6rem; max-width: 24rem; min-height: var(--tap);
   padding: 0 .5rem; font-size: .9rem; font-weight: 600;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
@@ -656,6 +691,37 @@ body.is-arranging [data-object].is-lifted {
 .objbar__pos {
   flex: none; margin-left: auto;
   font-size: .72rem; color: var(--ink-soft); font-variant-numeric: tabular-nums;
+}
+
+/* The two size sliders (item 1). One per line and full width: eleven width stops across ~300px
+   is ~27px of travel each, which is a comfortable drag; side by side it would be ~12px, and
+   the whole point of replacing the three-step cycle button was to make the in-between sizes
+   reachable rather than nominally available. */
+.objbar__size {
+  flex: 1 1 100%;
+  display: flex; align-items: center; gap: .5rem;
+  min-height: var(--tap);
+}
+.objbar__size-cap {
+  flex: 0 0 3.4rem;
+  font-size: .72rem; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+/* The readout sits at a fixed width so the slider's track doesn't resize under the thumb when
+   the text goes from "a third" to "5/12 wide" mid-drag. */
+.objbar__size-out {
+  flex: 0 0 7.5rem;
+  font-size: .72rem; color: var(--ink-soft); text-align: right;
+}
+.objbar__range {
+  flex: 1 1 auto; min-width: 0;
+  /* The full 44px is the tap target — the visible track is drawn inside it, so the control is
+     comfortable to hit without looking like a 44px-thick bar. */
+  height: var(--tap);
+  margin: 0; padding: 0;
+  background: none; border: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 /* Drag-and-drop reorder (#54 Phase 7). The ⠿ grip is a MOUSE affordance — hidden by default and

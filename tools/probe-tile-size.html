@@ -1,0 +1,230 @@
+<!doctype html>
+<!--
+  Tile sizing (item 1): the twelve-column grid, the two size sliders, and the v1 → v2 span
+  migration.
+
+  tests.js proves the migration as arithmetic. What only a browser can prove is that it reaches
+  the SCREEN: a layout saved by the shipped build is read out of real localStorage, upgraded, and
+  lands the tiles at the same pixel widths they had under the four-column grid. If that mapping
+  is ever wrong the failure is silent — normalizeSpan coerces the stale value to a registry
+  default, nothing throws, and the player's arrangement is quietly replaced by the shipped one.
+
+  Also checks the half the pure tests cannot see at all: that the sliders are wired to the
+  layout, that height writes a floor rather than a fixed size (so a tile can never crop its own
+  contents), and that a whole drag is one undo step.
+
+  Run it the same way as probe.html; prints ALL PASS or the failing checks.
+-->
+<meta charset="utf-8">
+<title>tile size probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const LAYOUT_KEY = 'dnd-character-sheets:layout';
+  const LAYOUT_DEFAULT_KEY = 'dnd-character-sheets:layout-default';
+
+  const c = blankCharacter();
+  c.name = 'Fokou'; c.class = 'Druid'; c.level = 3;
+  c.hp.max = 24; c.hp.current = 24; c.ac = 15; c.speed = 30;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+  }));
+
+  /*
+   * A layout in the SHIPPED v1 shape, with a deliberately non-default arrangement: the defaults
+   * would survive being dropped, because they'd be re-derived from the registry. A player's own
+   * widths are the thing a broken migration destroys, so those are what this seeds.
+   *
+   * Only three objects are listed. normalizeCard backfills the rest, which is also the check
+   * that a partial v1 card does not explode.
+   */
+  const V1 = {
+    layoutSchemaVersion: 1,
+    tabs: [
+      { id: 'combat', label: 'Combat', cards: [{ componentId: 'combat', objects: [
+        { componentId: 'pb', hidden: false, span: 'full' },   // player made PB full width
+        { componentId: 'ac', hidden: false, span: 2 },
+        { componentId: 'hp', hidden: false, span: 1 },        // ...and HP a single track
+      ] }] },
+      { id: 'abilities', label: 'Abilities', cards: [] },
+      { id: 'spells', label: 'Spells', cards: [] },
+      { id: 'gear', label: 'Gear', cards: [] },
+      { id: 'character', label: 'Character', cards: [] },
+    ],
+  };
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(V1));
+  localStorage.removeItem(LAYOUT_DEFAULT_KEY);
+
+  const frame = document.getElementById('frame');
+  await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+  await wait(1200);
+  const d = frame.contentDocument;
+  const w = frame.contentWindow;
+
+  const tile = (id) => d.querySelector(`#panel-combat [data-object="${id}"]`);
+  const width = (id) => Math.round(tile(id).getBoundingClientRect().width);
+  const grid = () => d.querySelector('#panel-combat .tiles');
+
+  // --- the grid itself ---------------------------------------------------------------------
+  const cols = w.getComputedStyle(grid()).gridTemplateColumns.split(' ').length;
+  ok('the tile grid is twelve columns', cols === 12, `${cols} columns`);
+
+  // --- a v1 layout comes forward, at the same pixel widths ---------------------------------
+  ok('a v1 full-width span is still full width', tile('pb').style.gridColumn === 'span 12',
+    `pb gridColumn "${tile('pb').style.gridColumn}"`);
+  ok('a v1 double span is half the row', tile('ac').style.gridColumn === 'span 6',
+    `ac gridColumn "${tile('ac').style.gridColumn}"`);
+  ok('a v1 single span is a quarter row', tile('hp').style.gridColumn === 'span 3',
+    `hp gridColumn "${tile('hp').style.gridColumn}"`);
+  // The point of the 3/6/12 mapping: three quarter-tiles plus their gaps equal one old track,
+  // so a migrated tile is the width it always was rather than merely "about right".
+  ok('a quarter tile is a quarter of the row, gaps included',
+    Math.abs(width('pb') - (4 * width('hp') + 3 * 6.4)) <= 2,
+    `full ${width('pb')} vs 4x quarter ${width('hp')} + gaps = ${Math.round(4 * width('hp') + 3 * 6.4)}`);
+  ok('and the backfilled objects took registry defaults', tile('speed').style.gridColumn === 'span 3',
+    `speed gridColumn "${tile('speed').style.gridColumn}"`);
+
+  // Migration is a READ-time transform: the stored file is rewritten only when the player
+  // changes something, so it is still v1 on disk here. That is why upgradeV1toV2 has to stay
+  // idempotent — it runs on every single load, not once.
+  await wait(700);
+  const stored = JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}');
+  ok('the file is untouched until something changes', stored.layoutSchemaVersion === 1,
+    `layoutSchemaVersion ${stored.layoutSchemaVersion}`);
+
+  // --- the sliders ------------------------------------------------------------------------
+  d.querySelector('[data-action="arrange-toggle"]').click();
+  await wait(350);
+  tile('ac').click();
+  await wait(300);
+
+  const range = (action) => d.querySelector(`#objbar input[data-action="${action}"]`);
+  // A drag is a run of `input` events; letting go fires `change`. Both matter here: `input` is
+  // what moves the tile, and `change` is what ends the gesture for undo. A probe that only ever
+  // fired `input` would report that a drag costs no undo entry at all.
+  const drag = async (action, value) => {
+    const el = range(action);
+    el.value = String(value);
+    el.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await wait(220);
+  };
+  const release = async (action) => {
+    range(action).dispatchEvent(new w.Event('change', { bubbles: true }));
+    await wait(80);
+  };
+
+  ok('the width slider opens on the tile\'s own width', range('resize-object').value === '6',
+    `value ${range('resize-object').value}`);
+  ok('its floor is a touch target, not one track', range('resize-object').min === '2',
+    `min ${range('resize-object').min}`);
+
+  // Every stop between the old three must actually be reachable — that is the whole feature.
+  const widths = [];
+  for (const v of [4, 5, 7, 11]) {
+    await drag('resize-object', v);
+    widths.push(`${v}:${width('ac')}`);
+  }
+  ok('every width in between is reachable and distinct',
+    new Set(widths.map((s) => s.split(':')[1])).size === 4, widths.join(' '));
+
+  /*
+   * Height has to work in BOTH directions. The first version of this set a min-height, so the
+   * tile could only ever grow and the whole bottom half of the slider did nothing — the slider
+   * opened at the tile's own size and went up from there. These are the checks that would have
+   * caught it.
+   */
+  await drag('resize-object', 12);
+  const naturalH = tile('ac').getBoundingClientRect().height;
+  const heightRange = range('resize-object-height');
+
+  // The thumb opens at the size the tile ALREADY is, which is what makes "drag left to shrink"
+  // possible at all — a slider parked at its own minimum has nowhere to go but up.
+  const opensAt = Number(heightRange.value);
+  ok('the height slider opens at the tile\'s current size, not at the bottom',
+    opensAt > Number(heightRange.min) && opensAt < Number(heightRange.max),
+    `opens at ${opensAt} in ${heightRange.min}..${heightRange.max}`);
+  ok('there is room to drag both ways from there',
+    opensAt - Number(heightRange.min) >= 2 && Number(heightRange.max) - opensAt >= 2,
+    `${heightRange.min} <- ${opensAt} -> ${heightRange.max}`);
+
+  await drag('resize-object-height', Number(heightRange.max));
+  ok('dragging right makes the tile taller', tile('ac').getBoundingClientRect().height > naturalH + 10,
+    `${Math.round(naturalH)} -> ${Math.round(tile('ac').getBoundingClientRect().height)}`);
+
+  await drag('resize-object-height', Number(heightRange.min));
+  const shortH = tile('ac').getBoundingClientRect().height;
+  ok('dragging left makes it SHORTER than its natural height', shortH < naturalH - 10,
+    `${Math.round(naturalH)} -> ${Math.round(shortH)}`);
+  // Shorter than its contents is the player's call, but it must clip inside its own box rather
+  // than spilling over the tile beneath it.
+  ok('a squeezed tile keeps its overflow to itself',
+    w.getComputedStyle(tile('ac')).overflow === 'hidden'
+      && Math.abs(tile('ac').getBoundingClientRect().height - shortH) < 1,
+    `overflow ${w.getComputedStyle(tile('ac')).overflow}`);
+  ok('the whole range is a sane size for a tile', shortH >= 44 && shortH < 120,
+    `shortest ${Math.round(shortH)}px`);
+
+  // --- a drag is ONE undo step ------------------------------------------------------------
+  const undo = () => d.querySelector('[data-action="layout-undo"]');
+  await drag('resize-object', 6);          // back to where the tile started
+  await release('resize-object');          // ...and let go, which ends that gesture
+  const settled = tile('ac').style.gridColumn;
+  for (const v of [7, 8, 9, 10, 11]) await drag('resize-object', v);   // one continuous drag
+  await release('resize-object');
+  undo().click();
+  await wait(300);
+  ok('one drag costs one undo, not one per stop', tile('ac').style.gridColumn === settled,
+    `${settled} -> after drag+undo ${tile('ac').style.gridColumn}`);
+  // The other half of the same contract: two SEPARATE drags are two separate steps, so undo
+  // does not swallow a gesture the player deliberately finished.
+  await drag('resize-object', 4);
+  await release('resize-object');
+  await drag('resize-object', 10);
+  await release('resize-object');
+  undo().click();
+  await wait(300);
+  ok('two separate drags are two separate undo steps', tile('ac').style.gridColumn === 'span 4',
+    `after undo ${tile('ac').style.gridColumn}`);
+
+  // --- nothing else on the page broke ------------------------------------------------------
+  d.querySelector('.arrange-bar [data-action="arrange-toggle"]').click();
+  await wait(300);
+  // The one .tiles grid with no layout objects in it, so nothing writes it an inline span —
+  // under a fixed twelve-column grid it needs the rule in style.css or both tiles collapse to a
+  // twelfth each. `grid-column: span 6` sets the START; the END stays auto.
+  ok('the Spells stat tiles still share a row',
+    d.querySelectorAll('.spell-stats > .tile').length === 2
+      && [...d.querySelectorAll('.spell-stats > .tile')]
+        .every((t) => w.getComputedStyle(t).gridColumnStart === 'span 6'),
+    [...d.querySelectorAll('.spell-stats > .tile')].map((t) => w.getComputedStyle(t).gridColumnStart).join(' '));
+  ok('the document does not scroll sideways',
+    d.documentElement.scrollWidth <= w.innerWidth,
+    `${d.documentElement.scrollWidth} vs ${w.innerWidth}`);
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack ? err.stack : err}`;
+}
+</script>

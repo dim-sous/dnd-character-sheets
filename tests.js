@@ -26,10 +26,11 @@ import { shouldRemindBackup, shouldSuggestInstall, normalizeNudgeState } from '.
 import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
   moveCard, moveCardToTab, renameCard, addTab, removeTab, renameTab, moveTab,
-  moveObject, toggleObjectHidden, setObjectSpan, cycleSpan, renameObject,
+  moveObject, toggleObjectHidden, setObjectSpan, setObjectHeight, renameObject,
 } from './js/layout.js';
 import {
-  CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER, OBJECT_SPANS,
+  CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
+  GRID_COLUMNS, SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_MAX,
 } from './js/layout-registry.js';
 
 const results = [];
@@ -1154,7 +1155,7 @@ describe('normalizeLayout: objects');
   const featObjIds = (layout) => featCard(layout).objects.map((o) => o.componentId);
   is('features card is objectified', featObjIds(DEFAULT_LAYOUT), ['features', 'feats']);
   is('features objects default to full span',
-    featCard(DEFAULT_LAYOUT).objects.every((o) => o.span === 'full'), true);
+    featCard(DEFAULT_LAYOUT).objects.every((o) => o.span === SPAN_MAX), true);
   // A layout saved before #67 has a features card with NO objects array — both must appear.
   const preObjects = normalizeLayout({
     layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
@@ -1166,19 +1167,27 @@ describe('normalizeLayout: objects');
     tabs: [{ id: 'gear', cards: [{ componentId: 'features', objects: [{ componentId: 'exhaustion' }, { componentId: 'feats' }] }] }],
   })), ['feats', 'features']);
 
-  // Span (#54 Phase 6): every object carries its registry default span; the small vitals are 1×,
-  // HP and the status blocks are full-width — reproducing today's layout.
+  // Span (#54 Phase 6, rescaled to twelfths in item 1): every object carries its registry
+  // default; the small vitals are a quarter of the row, HP and the status blocks the whole of
+  // it — reproducing today's layout.
+  const objHeight = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id).height;
   is('default span comes from the registry', objSpan(DEFAULT_LAYOUT, 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
-  is('a small vital defaults to 1×', objSpan(DEFAULT_LAYOUT, 'pb'), 1);
-  // #75 widened AC to 2×: it is read on every incoming attack and was visually identical to
-  // Prof. Bonus, which never changes in play. Asserted by name so a silent revert to 1× fails
-  // here rather than quietly undoing the frequency-of-use weighting.
-  is('AC defaults to 2× (#75)', objSpan(DEFAULT_LAYOUT, 'ac'), 2);
-  is('a status block defaults to full', objSpan(DEFAULT_LAYOUT, 'exhaustion'), 'full');
-  is('every default span is a valid span', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => OBJECT_SPANS.includes(o.span)), true);
+  is('a small vital defaults to a quarter row', objSpan(DEFAULT_LAYOUT, 'pb'), GRID_COLUMNS / 4);
+  // #75 widened AC to half a row: it is read on every incoming attack and was visually identical
+  // to Prof. Bonus, which never changes in play. Asserted by name so a silent revert to a quarter
+  // fails here rather than quietly undoing the frequency-of-use weighting.
+  is('AC defaults to half a row (#75)', objSpan(DEFAULT_LAYOUT, 'ac'), GRID_COLUMNS / 2);
+  is('a status block defaults to full', objSpan(DEFAULT_LAYOUT, 'exhaustion'), SPAN_MAX);
+  is('every default span is within the grid', card(DEFAULT_LAYOUT, 'combat').objects
+    .every((o) => Number.isInteger(o.span) && o.span >= SPAN_MIN && o.span <= SPAN_MAX), true);
+  // Height is opt-in: nothing ships with one, so every tile is as tall as its contents until a
+  // player drags the slider. This is what makes the new field additive for every saved layout.
+  is('every object defaults to no set height',
+    card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.height === HEIGHT_MIN), true);
 
   // Reconcile: unknown dropped, duplicate collapsed, bare-string coerced, hidden preserved,
   // and every registered object present exactly once (js hosts included — anti-crash).
+  // Version-less, so it also takes the v1 span branch — see the migration group below.
   const messy = normalizeLayout({
     tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [
       { componentId: 'ac', hidden: true, span: 2 },
@@ -1192,8 +1201,27 @@ describe('normalizeLayout: objects');
   is('duplicate object collapses to one', objCount(messy, 'ac'), 1);
   is('kept object order honored (ac, speed, exhaustion first)', objIds(messy).slice(0, 3), ['ac', 'speed', 'exhaustion']);
   is('hidden flag preserved', card(messy, 'combat').objects.find((o) => o.componentId === 'ac').hidden, true);
-  is('valid span preserved', objSpan(messy, 'ac'), 2);
+  is('a v1 span is rescaled, not dropped', objSpan(messy, 'ac'), 6);
   is('invalid span coerced to registry default', objSpan(messy, 'speed'), OBJECT_REGISTRY['speed'].defaultSpan);
+  is('a missing height reads as none', objHeight(messy, 'ac'), HEIGHT_MIN);
+
+  // Height reconciliation, same contract as span: valid kept, junk and out-of-range clamped
+  // rather than rejected, so a hand-edited file can never produce a broken tile.
+  const heights = normalizeLayout({
+    layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
+    tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [
+      { componentId: 'ac', height: 5 },
+      { componentId: 'speed', height: 'tall' },
+      { componentId: 'pb', height: 999 },
+      { componentId: 'heroic', height: -4 },
+      { componentId: 'rest', height: 2.6 },
+    ] }] }],
+  });
+  is('a valid height is preserved', objHeight(heights, 'ac'), 5);
+  is('junk height reads as none', objHeight(heights, 'speed'), HEIGHT_MIN);
+  is('height above the maximum clamps', objHeight(heights, 'pb'), HEIGHT_MAX);
+  is('negative height clamps to none', objHeight(heights, 'heroic'), HEIGHT_MIN);
+  is('a fractional height rounds to a step', objHeight(heights, 'rest'), 3);
 
   // Object label (#54): custom title reconciled like the card's; default objects carry none.
   is('default object has no label', 'label' in card(DEFAULT_LAYOUT, 'combat').objects[0], false);
@@ -1253,32 +1281,92 @@ describe('moveObject / toggleObjectHidden');
   }
 }
 
-describe('setObjectSpan / cycleSpan (#54 Phase 6)');
+describe('setObjectSpan / setObjectHeight (#54 Phase 6, sliders in item 1)');
 {
   const combat = (layout) => layout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === 'combat');
   const spanOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).span;
-
-  // cycleSpan steps 1 → 2 → full → 1, and tolerates a junk input by re-entering the cycle.
-  is('cycle 1 → 2', cycleSpan(1), 2);
-  is('cycle 2 → full', cycleSpan(2), 'full');
-  is('cycle full → 1', cycleSpan('full'), 1);
-  is('cycle covers every span exactly once', [1, cycleSpan(1), cycleSpan(cycleSpan(1))].sort(), [...OBJECT_SPANS].sort());
-  is('cycle of a junk value lands on a valid span', OBJECT_SPANS.includes(cycleSpan('junk')), true);
+  const heightOf = (layout, id) => combat(layout).objects.find((o) => o.componentId === id).height;
 
   // setObjectSpan sets one object's width, coerces junk to the registry default, no-ops elsewhere.
-  is('sets a valid span', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full'), 'ac'), 'full');
-  is('only that object changes', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full'), 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
+  is('sets a valid span', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', SPAN_MAX), 'ac'), SPAN_MAX);
+  is('sets an in-between span the old cycle could not reach',
+    spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 5), 'ac'), 5);
+  is('only that object changes', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', SPAN_MAX), 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
   is('junk span coerced to registry default', spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'wat'), 'ac'), OBJECT_REGISTRY.ac.defaultSpan);
+  // The floor is a touch target, not an aesthetic: one twelfth of a 390px card is ~22px.
+  is('a span below the floor coerces rather than sticking',
+    spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 1), 'ac'), OBJECT_REGISTRY.ac.defaultSpan);
+  is('a span past the grid coerces',
+    spanOf(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 13), 'ac'), OBJECT_REGISTRY.ac.defaultSpan);
   is('unknown object is a no-op', setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ghost', 2), DEFAULT_LAYOUT);
   is('unknown card is a no-op', setObjectSpan(DEFAULT_LAYOUT, 'attacks', 'ac', 2), DEFAULT_LAYOUT);
   is('a resized layout survives normalize unchanged',
-    normalizeLayout(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 2)), setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 2));
+    normalizeLayout(setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 4)), setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 4));
+
+  // Height clamps instead of coercing to a default: a slider reporting a value past either end
+  // should land at that end, not jump back to whatever the registry says.
+  is('sets a height', heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6), 'ac'), 6);
+  is('0 clears the height', heightOf(setObjectHeight(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6), 'combat', 'ac', 0), 'ac'), HEIGHT_MIN);
+  is('height past the top clamps to the top', heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 99), 'ac'), HEIGHT_MAX);
+  is('height below zero clamps to zero', heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', -3), 'ac'), HEIGHT_MIN);
+  is('junk height reads as none', heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 'tall'), 'ac'), HEIGHT_MIN);
+  is('height leaves width alone', spanOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6), 'ac'), OBJECT_REGISTRY.ac.defaultSpan);
+  is('unknown object is a no-op', setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ghost', 6), DEFAULT_LAYOUT);
+  is('a heightened layout survives normalize unchanged',
+    normalizeLayout(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6)), setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6));
 
   {
     const before = JSON.stringify(DEFAULT_LAYOUT);
-    setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', 'full');
-    is('setObjectSpan never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
+    setObjectSpan(DEFAULT_LAYOUT, 'combat', 'ac', SPAN_MAX);
+    setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6);
+    is('neither setter mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
   }
+}
+
+/*
+ * The v1 → v2 span rescale. This is the first non-additive layout change, and the only one
+ * where getting it wrong is silent: a v1 span read as v2 is out of range, so normalizeSpan
+ * coerces it to the registry default and the player's arrangement is quietly reset to the
+ * shipped one. Nothing throws, nothing warns, the layout is just gone.
+ */
+describe('layout migration: v1 spans → twelfths (item 1)');
+{
+  const v1 = (objects) => ({
+    layoutSchemaVersion: 1,
+    tabs: [{ id: 'combat', label: 'Combat', cards: [{ componentId: 'combat', objects }] }],
+  });
+  const spanOf = (layout, id) => layout.tabs.flatMap((t) => t.cards)
+    .find((c) => c.componentId === 'combat').objects.find((o) => o.componentId === id).span;
+
+  const migrated = normalizeLayout(v1([
+    { componentId: 'pb', span: 1 },
+    { componentId: 'ac', span: 2 },
+    { componentId: 'hp', span: 'full' },
+  ]));
+  // A third of the grid each way: 1 → 3, 2 → 6, full → 12 puts every tile back at the same
+  // pixel width it had under the four-column grid.
+  is('v1 single track becomes a quarter row', spanOf(migrated, 'pb'), 3);
+  is('v1 double track becomes half a row', spanOf(migrated, 'ac'), 6);
+  is('v1 full becomes the whole row', spanOf(migrated, 'hp'), SPAN_MAX);
+  is('the migrated layout reports the new version', migrated.layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+  is('migration adds the height field', migrated.tabs.flatMap((t) => t.cards)
+    .find((c) => c.componentId === 'combat').objects.every((o) => o.height === HEIGHT_MIN), true);
+
+  // A NON-default v1 arrangement is the case that matters: the defaults would survive being
+  // dropped, because they'd be re-derived from the registry. A player's own widths would not.
+  const custom = normalizeLayout(v1([{ componentId: 'pb', span: 'full' }, { componentId: 'hp', span: 1 }]));
+  is('a player\'s own v1 widths survive', [spanOf(custom, 'pb'), spanOf(custom, 'hp')], [12, 3]);
+
+  // Version 0 — a blob written before the version field, or one that lost it — still carries v1
+  // spans, so it takes the same branch rather than being read as v2 and coerced away.
+  is('a version-less layout is migrated too',
+    spanOf(normalizeLayout({ tabs: v1([{ componentId: 'ac', span: 2 }]).tabs }), 'ac'), 6);
+
+  // Idempotence: re-running the migration over an already-migrated layout must not rescale
+  // twice. 3 and 6 are not v1 keys, so they pass through untouched — this is the assertion that
+  // keeps that true if the mapping is ever edited.
+  is('migrating twice changes nothing', normalizeLayout(migrated), migrated);
+  is('a v2 layout is left alone', normalizeLayout(DEFAULT_LAYOUT), DEFAULT_LAYOUT);
 }
 
 describe('renameObject (#54)');
@@ -1291,9 +1379,9 @@ describe('renameObject (#54)');
   is('blank label clears the override',
     'label' in obj(renameObject(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X'), 'combat', 'ac', ' '), 'ac'), false);
   is('only the named object changes', 'label' in obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X'), 'speed'), false);
-  is('rename keeps hidden + span intact', (() => {
-    const o = obj(renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'Armor'), 'ac');
-    return o.hidden === false && o.span === OBJECT_REGISTRY.ac.defaultSpan;
+  is('rename keeps hidden + span + height intact', (() => {
+    const o = obj(renameObject(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 5), 'combat', 'ac', 'Armor'), 'ac');
+    return o.hidden === false && o.span === OBJECT_REGISTRY.ac.defaultSpan && o.height === 5;
   })(), true);
   is('unknown object is a no-op', renameObject(DEFAULT_LAYOUT, 'combat', 'ghost', 'X'), DEFAULT_LAYOUT);
   is('unknown card is a no-op', renameObject(DEFAULT_LAYOUT, 'attacks', 'ac', 'X'), DEFAULT_LAYOUT);

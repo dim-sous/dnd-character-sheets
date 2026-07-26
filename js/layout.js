@@ -15,26 +15,45 @@
  */
 
 import {
-  TAB_REGISTRY, CARD_REGISTRY, CARD_ORDER, OBJECT_REGISTRY, OBJECT_ORDER, OBJECT_SPANS,
+  TAB_REGISTRY, CARD_REGISTRY, CARD_ORDER, OBJECT_REGISTRY, OBJECT_ORDER,
+  SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_MAX,
 } from './layout-registry.js';
 
-export const LAYOUT_SCHEMA_VERSION = 1;
+export const LAYOUT_SCHEMA_VERSION = 2;
 
-/**
- * The width of an object within its card grid (#54 Phase 6). Any value not in OBJECT_SPANS
- * (a stale number, a typo, a missing field) falls back to the object's registry default, so
- * an old or hand-edited layout can never produce an invalid `grid-column`.
- */
-function normalizeSpan(rawSpan, componentId) {
-  if (OBJECT_SPANS.includes(rawSpan)) return rawSpan;
-  const reg = OBJECT_REGISTRY[componentId];
-  return reg && OBJECT_SPANS.includes(reg.defaultSpan) ? reg.defaultSpan : 1;
+/** An integer within [min, max], or null if the input is not one. */
+function intInRange(value, min, max) {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) && n >= min && n <= max ? n : null;
 }
 
-/** The next span in the cycle 1 → 2 → full → 1 (what the ↔ resize control steps through). */
-export function cycleSpan(span) {
-  const i = OBJECT_SPANS.indexOf(span);
-  return OBJECT_SPANS[(i + 1) % OBJECT_SPANS.length];
+/**
+ * The width of an object within its card grid (#54 Phase 6), as a whole number of the twelve
+ * columns. Anything out of range — a stale `'full'` from a layout that skipped the migration,
+ * a typo, a missing field — falls back to the object's registry default, so an old or
+ * hand-edited layout can never produce an invalid `grid-column`.
+ */
+function normalizeSpan(rawSpan, componentId) {
+  const span = intInRange(rawSpan, SPAN_MIN, SPAN_MAX);
+  if (span !== null) return span;
+  const reg = OBJECT_REGISTRY[componentId];
+  return (reg && intInRange(reg.defaultSpan, SPAN_MIN, SPAN_MAX)) ?? SPAN_MIN;
+}
+
+/**
+ * The object's minimum height in `--tile-step` units. 0 is "as tall as its contents", and is
+ * both the default and where anything unparseable lands — a layout with no height at all (every
+ * layout saved before this existed) reads as today's behaviour rather than as a broken tile.
+ *
+ * Out of range CLAMPS, where an out-of-range span falls back to the registry default instead.
+ * The asymmetry is deliberate: both ends of the height range are meaningful values a slider can
+ * legitimately report, whereas a span of 0 or 99 is not a width at all and the registry default
+ * is the only sensible recovery.
+ */
+function normalizeHeight(rawHeight) {
+  const n = Math.round(Number(rawHeight));
+  if (!Number.isFinite(n)) return HEIGHT_MIN;
+  return Math.max(HEIGHT_MIN, Math.min(HEIGHT_MAX, n));
 }
 
 function num(value, fallback) {
@@ -76,12 +95,15 @@ function normalizeCard(componentId, rawCard) {
     if (rawLabel) obj.label = rawLabel; // custom title overriding the registry label (#54)
     obj.hidden = Boolean(rawObj && rawObj.hidden);
     obj.span = normalizeSpan(rawObj && rawObj.span, oid);
+    obj.height = normalizeHeight(rawObj && rawObj.height);
     objects.push(obj);
   }
   for (const oid of order) {
     if (seen.has(oid)) continue;
     seen.add(oid);
-    objects.push({ componentId: oid, hidden: false, span: normalizeSpan(undefined, oid) });
+    objects.push({
+      componentId: oid, hidden: false, span: normalizeSpan(undefined, oid), height: HEIGHT_MIN,
+    });
   }
   card.objects = objects;
   return card;
@@ -105,14 +127,50 @@ function buildDefaultLayout() {
 export const DEFAULT_LAYOUT = buildDefaultLayout();
 
 /**
- * Bring an older stored shape forward. Phase 1 is v1 so there is nothing to migrate yet —
- * this is the single seam a future shape change hangs one explicit branch on (modelled on
- * normalizeCharacter's hitDice object→list fold). Additive changes need NO code here: the
- * structural reconciliation below fills anything missing and drops anything stale.
+ * v1 object spans against the old four-column grid. Twelve columns make each an exact
+ * multiple — see the GRID_COLUMNS note in the registry — so the mapping loses nothing: a
+ * layout saved before this change comes back pixel-identical.
+ */
+const V1_SPANS = { 1: 3, 2: 6, full: 12 };
+
+function upgradeV1toV2(raw) {
+  return {
+    ...raw,
+    tabs: (Array.isArray(raw.tabs) ? raw.tabs : []).map((tab) => {
+      if (!tab || typeof tab !== 'object') return tab;
+      return {
+        ...tab,
+        cards: (Array.isArray(tab.cards) ? tab.cards : []).map((card) => {
+          if (!card || typeof card !== 'object' || !Array.isArray(card.objects)) return card;
+          return {
+            ...card,
+            objects: card.objects.map((o) => (
+              o && typeof o === 'object' && Object.hasOwn(V1_SPANS, o.span)
+                ? { ...o, span: V1_SPANS[o.span] }
+                : o
+            )),
+          };
+        }),
+      };
+    }),
+  };
+}
+
+/**
+ * Bring an older stored shape forward — the single seam a shape change hangs one explicit
+ * branch on, modelled on normalizeCharacter's hitDice object→list fold. Additive changes need
+ * NO code here (the new `height` field is one: the reconciliation below fills it in), but the
+ * v1→v2 span rescale is not additive — the same key changed meaning.
+ *
+ * Version 0 takes the same branch as 1: a blob with no version at all still carries v1 spans,
+ * and reading it as v2 would coerce every one of them to a registry default, silently throwing
+ * away a layout the player had arranged.
  */
 function migrate(raw) {
-  switch (num(raw && raw.layoutSchemaVersion, 0)) {
-    // case 1: raw = upgradeV1toV2(raw); // fall through when a v2 shape lands
+  if (!raw || typeof raw !== 'object') return raw;
+  switch (num(raw.layoutSchemaVersion, 0)) {
+    case 0:
+    case 1: return upgradeV1toV2(raw);
     default: return raw;
   }
 }
@@ -230,9 +288,35 @@ export function setObjectSpan(layout, cardId, objectId, span) {
 }
 
 /**
+ * Set one object's minimum height, in `--tile-step` units, within its card (immutable). Out of
+ * range is clamped by normalizeHeight rather than rejected, so a slider that reports a value
+ * past either end still lands somewhere valid. No-op if the object is absent.
+ */
+export function setObjectHeight(layout, cardId, objectId, height) {
+  return {
+    ...layout,
+    tabs: layout.tabs.map((tab) => {
+      if (!tab.cards.some((c) => c.componentId === cardId)) return tab;
+      return {
+        ...tab,
+        cards: tab.cards.map((card) => {
+          if (card.componentId !== cardId || !card.objects) return card;
+          return {
+            ...card,
+            objects: card.objects.map((o) => (
+              o.componentId === objectId ? { ...o, height: normalizeHeight(height) } : o
+            )),
+          };
+        }),
+      };
+    }),
+  };
+}
+
+/**
  * Set (or clear) an object's custom title within its card (immutable). A blank label removes the
  * override so the object falls back to its registry label. Rebuilds the object in reconcile key
- * order (componentId, label, hidden, span) so a renamed layout stays byte-identical to its
+ * order (componentId, label, hidden, span, height) so a renamed layout stays byte-identical to its
  * normalized form. No-op if the object is absent.
  */
 export function renameObject(layout, cardId, objectId, label) {

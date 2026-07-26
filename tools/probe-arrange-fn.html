@@ -87,9 +87,21 @@ try {
     `"${bar().querySelector('.obj-rename').value}"`);
   ok('position readout is visible text', /2 of \d+/.test(bar().querySelector('.objbar__pos').textContent),
     `"${bar().querySelector('.objbar__pos').textContent}"`);
-  ok('width is on the button, not just aria', /Width:/.test(btn('resize-object').textContent),
-    `"${btn('resize-object').textContent}"`);
-  ok('bar stays small with a tile selected', barH() <= 230, `${Math.round(barH())}px of ${vh} (budget 230)`);
+  ok('the width readout is visible, not just an aria-label',
+    /wide|width|third|quarter|sixth/i.test(bar().querySelector('.objbar__size').textContent),
+    `"${bar().querySelector('.objbar__size').textContent.trim()}"`);
+  /*
+   * Raised from 230 to 285 for the two size sliders (item 1), and the cost is real rather than
+   * rounding: the bar goes 219 → 269, and the visible-tile count below drops from 4 to 3. It was
+   * paid for as far as it could be — the rename field gave up the row it had to itself — and the
+   * remainder buys ~165px of travel per slider. On one shared row the bar would stay at 219 and
+   * each track would be ~96px, which is 9px per stop: present, unusable, and the exact failure
+   * mode of the 22px in-tile cluster #72 deleted.
+   *
+   * The tile count is the check that matters and it has NOT been relaxed. If a later change
+   * takes it to 2, that is the shipped-build number this whole mode was rebuilt to escape.
+   */
+  ok('bar stays small with a tile selected', barH() <= 285, `${Math.round(barH())}px of ${vh} (budget 285)`);
   // The symptom the bar's height causes, kept as its own check because it is what a player
   // actually notices. Coupled to the DEFAULT Combat layout (Hit Points is full-width and first),
   // so #75-style reordering can move it legitimately — the height budgets are the stable guard.
@@ -110,11 +122,60 @@ try {
   ok('the moved tile stays selected',
     d.querySelector(`#panel-combat [data-object="${order0[1]}"]`).classList.contains('is-selected'));
 
-  const widthBefore = btn('resize-object').textContent;
-  btn('resize-object').click();
-  await wait(250);
-  ok('Width cycles and the readout follows', btn('resize-object').textContent !== widthBefore,
-    `${widthBefore} -> ${btn('resize-object').textContent}`);
+  /*
+   * The size sliders (item 1). The old control was a button cycling 1× → 2× → full; there are
+   * eleven widths and thirteen heights now, so it is a pair of ranges. Driven the way a finger
+   * drives them — set .value, fire `input` — because that is the event the layout listens on,
+   * and a `change`-only test would pass while the tile refused to follow the thumb.
+   */
+  const range = (action) => bar().querySelector(`input[data-action="${action}"]`);
+  const drag = async (action, value) => {
+    const el = range(action);
+    el.value = String(value);
+    el.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true }));
+    await wait(250);
+  };
+  const tile = () => d.querySelector(`#panel-combat [data-object="${order0[1]}"]`);
+
+  ok('the width control is a range, not a cycle button',
+    Boolean(range('resize-object')) && !bar().querySelector('button[data-action="resize-object"]'));
+  ok('width spans the whole grid', range('resize-object').min === '2' && range('resize-object').max === '12',
+    `${range('resize-object').min}..${range('resize-object').max}`);
+  ok('there is a height range too', Boolean(range('resize-object-height')));
+
+  await drag('resize-object', 5);
+  ok('an in-between width reaches the tile', tile().style.gridColumn === 'span 5',
+    `gridColumn "${tile().style.gridColumn}"`);
+  ok('the readout says what it means, not just the number',
+    /5\/12/.test(range('resize-object').parentElement.textContent),
+    `"${range('resize-object').parentElement.textContent.trim()}"`);
+  await drag('resize-object', 6);
+  ok('a named fraction reads as its name',
+    /half/i.test(range('resize-object').parentElement.textContent),
+    `"${range('resize-object').parentElement.textContent.trim()}"`);
+
+  // Height is an explicit size written as a custom property, and the slider opens at whatever
+  // the tile already is so it can be dragged shorter as well as taller. probe-tile-size.html
+  // covers both directions; this is the wiring check.
+  const heightBefore = tile().getBoundingClientRect().height;
+  await drag('resize-object-height', Number(range('resize-object-height').max));
+  ok('height reaches the tile as --tile-h', /var\(--tile-step\)/.test(tile().style.getPropertyValue('--tile-h')),
+    `"${tile().style.getPropertyValue('--tile-h')}"`);
+  ok('and the tile actually grows', tile().getBoundingClientRect().height > heightBefore + 20,
+    `${Math.round(heightBefore)} -> ${Math.round(tile().getBoundingClientRect().height)}`);
+  await drag('resize-object-height', Number(range('resize-object-height').min));
+  ok('and shrinks below its natural height', tile().getBoundingClientRect().height < heightBefore,
+    `${Math.round(heightBefore)} -> ${Math.round(tile().getBoundingClientRect().height)}`);
+
+  // One undo step for a whole drag, not one per pixel of travel: the stack snapshots only when
+  // the value first leaves where the gesture started.
+  const undoBtn = () => d.querySelector('[data-action="layout-undo"]');
+  for (const v of [7, 8, 9, 10]) await drag('resize-object', v);
+  undoBtn().click();
+  await wait(300);
+  ok('undo steps back past the whole drag, not one stop of it',
+    tile().style.gridColumn === 'span 6', `gridColumn "${tile().style.gridColumn}"`);
+  await drag('resize-object', 6);
 
   btn('toggle-object-hide').click();
   await wait(250);

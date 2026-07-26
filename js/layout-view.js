@@ -10,9 +10,11 @@
 import {
   DEFAULT_LAYOUT, normalizeLayout, moveCard, moveCardToTab, renameCard,
   addTab, removeTab, renameTab, moveTab, moveObject, toggleObjectHidden,
-  setObjectSpan, cycleSpan, renameObject,
+  setObjectSpan, setObjectHeight, renameObject,
 } from './layout.js';
-import { CARD_REGISTRY, OBJECT_REGISTRY } from './layout-registry.js';
+import {
+  CARD_REGISTRY, OBJECT_REGISTRY, SPAN_MIN, SPAN_MAX, HEIGHT_SET_MIN, HEIGHT_MAX,
+} from './layout-registry.js';
 import { newId } from './constants.js';
 
 const LAYOUT_KEY = 'dnd-character-sheets:layout';
@@ -98,13 +100,12 @@ function ensurePanel(id) {
   return panel;
 }
 
-/** An object's span expressed as a `grid-column` value. Config owns object width now (#54
- *  Phase 6), so it is written inline on every object — beating the static `.tiles` rules — and
- *  span `1` becomes explicit `auto` so a shrunk full-width object drops back to one track. */
+/** An object's span expressed as a `grid-column` value. Config owns object width (#54 Phase 6),
+ *  so it is written inline on every object, beating the static `.tiles` rules. A span equal to
+ *  the column count is the whole row — `span 12` in a twelve-column grid needs no special case,
+ *  unlike the old `'full'` sentinel it replaced. */
 function spanToGridColumn(span) {
-  if (span === 'full') return '1 / -1';
-  if (span === 2) return 'span 2';
-  return 'auto';
+  return `span ${span}`;
 }
 
 /**
@@ -123,6 +124,19 @@ function applyObjects(cardNode, card) {
     if (!objNode) continue;
     container.append(objNode); // reorder into config order
     objNode.style.gridColumn = spanToGridColumn(obj.span); // config-owned width (#54 Phase 6)
+    /*
+     * Height in `--tile-step` units, where 0 means "whatever the contents need" — so the
+     * overwhelmingly common case writes nothing at all and the tile keeps the intrinsic height
+     * it has always had. Anything else is an EXPLICIT height, shorter or taller, and `is-sized`
+     * is what makes the shorter half work (see style.css).
+     */
+    const height = Number(obj.height) || 0;
+    if (height > 0) {
+      objNode.style.setProperty('--tile-h', `calc(${height} * var(--tile-step))`);
+    } else {
+      objNode.style.removeProperty('--tile-h');
+    }
+    objNode.classList.toggle('is-sized', height > 0);
     // Config-owned title (#54): write to EVERY label node so multi-label objects (Conditions
     // has a visually-hidden heading + a visible summary title) rename together. Default = the
     // registry label, which matches the static markup, so it's a no-op.
@@ -720,14 +734,94 @@ function barButton(action, text) {
   return btn;
 }
 
-/** The short width label that now appears ON the resize button, not just in its aria-label. */
-function spanShort(span) {
-  if (span === 'full') return 'Full';
-  if (span === 2) return '2×';
-  return '1×';
+/**
+ * One size slider: a caption, the range, and a live readout of what it currently means.
+ *
+ * A range rather than the old cycle button because there are now eleven widths and thirteen
+ * heights, and cycling through eleven stops one tap at a time is the eleven-tap reorder #73
+ * removed, reintroduced on the other axis. The <label> wraps the range so the caption is the
+ * accessible name without a second id to keep in sync, and the readout is aria-hidden — a
+ * screen reader already gets the value from the range itself, and hearing it twice is noise.
+ */
+function barSlider(action, caption, min, max) {
+  const wrap = document.createElement('label');
+  wrap.className = 'objbar__size';
+
+  const cap = document.createElement('span');
+  cap.className = 'objbar__size-cap';
+  cap.textContent = caption;
+
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.className = 'objbar__range';
+  range.min = String(min);
+  range.max = String(max);
+  range.step = '1';
+  range.dataset.action = action;
+
+  const out = document.createElement('span');
+  out.className = 'objbar__size-out';
+  out.setAttribute('aria-hidden', 'true');
+
+  wrap.append(cap, range, out);
+  return wrap;
 }
 
-/** Where an object sits within its card: index, count, its hidden flag, and its span. */
+/**
+ * Width as a fraction of the card, which is the thing a player is actually choosing — "6/12"
+ * is a column count, "half" is a width. Whole fractions get named; the rest fall back to
+ * twelfths, so every one of the eleven stops has an honest readout instead of the three the
+ * old cycle button could say.
+ */
+function spanLabel(span) {
+  if (span === SPAN_MAX) return 'full width';
+  if (span === SPAN_MAX / 2) return 'half width';
+  if (span === SPAN_MAX / 3) return 'a third';
+  if (span === SPAN_MAX / 4) return 'a quarter';
+  if (span === SPAN_MAX / 6) return 'a sixth';
+  return `${span}/${SPAN_MAX} wide`;
+}
+
+/** Height reads as its step count, except 0 — which is not a height at all but its absence. */
+function heightLabel(height) {
+  return height > 0 ? `${height} steps tall` : 'height of its contents';
+}
+
+/*
+ * `--tile-step` in pixels, measured rather than parsed: it is authored in rem, so reading the
+ * custom property gives the string "0.75rem" and converting it by hand would hard-code a root
+ * font size the user is free to change. Measured once — the value cannot shift without a
+ * reload.
+ */
+let stepPx = 0;
+function tileStepPx(within) {
+  if (stepPx) return stepPx;
+  const ruler = document.createElement('div');
+  ruler.style.cssText = 'position:absolute;visibility:hidden;width:0;height:var(--tile-step)';
+  within.appendChild(ruler);
+  stepPx = ruler.getBoundingClientRect().height || 12;
+  ruler.remove();
+  return stepPx;
+}
+
+/**
+ * Where the height slider's thumb sits for a tile that has no explicit height: at the height the
+ * tile ALREADY is, so dragging left makes it shorter and right makes it taller.
+ *
+ * Opening at the bottom of the range instead — which is what a stored 0 would do read literally
+ * — puts the whole control above the tile's current size, so the slider can only ever add
+ * height. That was the first version of this and it is not a height control.
+ */
+function heightThumb(objectId, height) {
+  if (height > 0) return height;
+  const node = document.querySelector(`[data-object="${objectId}"]`);
+  if (!node) return HEIGHT_SET_MIN;
+  const natural = node.getBoundingClientRect().height;
+  const steps = Math.round(natural / tileStepPx(node.parentElement || document.body));
+  return Math.max(HEIGHT_SET_MIN, Math.min(HEIGHT_MAX, steps));
+}
+
+/** Where an object sits within its card: index, count, its hidden flag, size, and title. */
 function objectPosition(cardId, objectId) {
   const card = currentLayout.tabs.flatMap((t) => t.cards).find((c) => c.componentId === cardId);
   if (!card || !card.objects) return null;
@@ -735,15 +829,13 @@ function objectPosition(cardId, objectId) {
   if (i === -1) return null;
   const obj = card.objects[i];
   return {
-    index: i, count: card.objects.length, hidden: obj.hidden, span: obj.span, label: obj.label,
+    index: i,
+    count: card.objects.length,
+    hidden: obj.hidden,
+    span: obj.span,
+    height: Number(obj.height) || 0,
+    label: obj.label,
   };
-}
-
-/** Human-readable width, for the resize control's label + the announcement. */
-function spanLabel(span) {
-  if (span === 'full') return 'full width';
-  if (span === 2) return 'double width';
-  return 'normal width';
 }
 
 /**
@@ -821,9 +913,12 @@ function renderObjectBar() {
     bar.replaceChildren(
       rename,
       barButton('place-object-start', 'Move to…'),
-      barButton('resize-object', 'Width'),
       barButton('toggle-object-hide', 'Hide'),
       Object.assign(document.createElement('span'), { className: 'objbar__pos' }),
+      barSlider('resize-object', 'Width', SPAN_MIN, SPAN_MAX),
+      // HEIGHT_SET_MIN, not HEIGHT_MIN: 0 is "as tall as its contents", a state the slider reads
+      // (as the thumb's opening position) but never writes.
+      barSlider('resize-object-height', 'Height', HEIGHT_SET_MIN, HEIGHT_MAX),
     );
     bar.dataset.obj = selected.objectId;
   }
@@ -833,21 +928,43 @@ function renderObjectBar() {
   if (document.activeElement !== rename) rename.value = pos.label || reg.label;
 
   const move = bar.querySelector('[data-action="place-object-start"]');
-  const resize = bar.querySelector('[data-action="resize-object"]');
   const hide = bar.querySelector('[data-action="toggle-object-hide"]');
 
   // A lone object has nowhere to go.
   move.disabled = pos.count < 2;
   move.setAttribute('aria-label', `Move ${reg.label} to a new position`);
-  // The width is ON the button now, not only in its accessible name (#72): cycling
-  // 1× → 2× → full used to give a sighted player no readout of where they were.
-  resize.textContent = `Width: ${spanShort(pos.span)}`;
-  resize.setAttribute('aria-label', `Resize ${reg.label} (${spanLabel(pos.span)})`);
+
+  /*
+   * The size readouts stay visible, which is what the width-on-the-button change won (#72) —
+   * before it, the span existed only in an aria-label and a sighted player cycled blind. A
+   * range keeps that and adds the one thing the button could not show: where this size sits in
+   * the range of sizes available.
+   *
+   * Never write back to the range being dragged. Assigning `.value` mid-gesture snaps the thumb
+   * to the rounded value under the finger and the drag stops tracking — the same reason
+   * renderDerived skips document.activeElement.
+   */
+  setSlider(bar, 'resize-object', pos.span, spanLabel(pos.span), `Width of ${reg.label}`);
+  setSlider(bar, 'resize-object-height', heightThumb(selected.objectId, pos.height),
+    heightLabel(pos.height), `Height of ${reg.label}`);
+
   hide.textContent = pos.hidden ? 'Show' : 'Hide';
   hide.setAttribute('aria-label', pos.hidden ? `Show ${reg.label}` : `Hide ${reg.label}`);
   hide.setAttribute('aria-pressed', String(pos.hidden));
   hide.classList.toggle('is-off', pos.hidden);
   bar.querySelector('.objbar__pos').textContent = `${pos.index + 1} of ${pos.count}`;
+}
+
+/** Point one size slider at the selection: value, visible readout, and accessible name/value. */
+function setSlider(bar, action, value, text, name) {
+  const range = bar.querySelector(`input[data-action="${action}"]`);
+  if (!range) return;
+  if (document.activeElement !== range) range.value = String(value);
+  range.setAttribute('aria-label', name);
+  // The range reports 2..12 columns; aria-valuetext is what makes it say "half width" instead.
+  range.setAttribute('aria-valuetext', text);
+  const out = range.parentElement.querySelector('.objbar__size-out');
+  if (out) out.textContent = text;
 }
 
 /** Put focus back on the toolbar button just used; fall to its sibling if it went disabled. */
@@ -931,19 +1048,66 @@ export function dropObject(cardId, objectId, beforeObjectId) {
   if (after) announce(`Moved ${reg ? reg.label : objectId} to position ${after.index + 1} of ${after.count}.`);
 }
 
-/** Cycle an object's width (1 → 2 → full → 1); persist, re-apply, refresh, announce, keep focus. */
-export function resizeObject(cardId, objectId) {
+/*
+ * Resize the selected object. Both axes share one path because they differ only in which
+ * mutator they call and what they read back.
+ *
+ * Dragging fires `input` continuously, so this runs on every step of the gesture. Three
+ * consequences it has to handle, none of which the old one-tap cycle button had:
+ *
+ *  - ONE undo entry per gesture, not twenty. The stack snapshots only when the value actually
+ *    leaves the size the drag started from, so a drag out and back is not twenty steps to
+ *    unwind — and a drag that lands where it began costs nothing at all.
+ *  - No announcement per step. The range element already reports its own value as it moves
+ *    (that is what aria-valuetext is for); announce() here would talk over it continuously.
+ *  - No focus call. Focus is already on the thing being dragged, and moving it mid-gesture
+ *    would end the drag.
+ */
+let resizing = null; // { cardId, objectId, axis } while a drag is in flight
+
+/**
+ * End the current drag. A range fires `change` when it is released, which is the only honest
+ * gesture boundary available — without it the "same gesture" test stays true forever and every
+ * later drag on that tile silently rides the first one's undo entry, so undo jumps back further
+ * than the player ever dragged. (It did exactly that until probe-tile-size caught it.)
+ */
+export function endResize() {
+  resizing = null;
+}
+
+function resizeAxis(cardId, objectId, axis, rawValue) {
   const pos = objectPosition(cardId, objectId);
   if (!pos) return;
-  const next = cycleSpan(pos.span);
-  pushUndo();
-  currentLayout = setObjectSpan(currentLayout, cardId, objectId, next);
+  const value = Math.round(Number(rawValue));
+  if (!Number.isFinite(value) || value === pos[axis]) return;
+
+  // Past that guard the value is genuinely different, so the first `input` of a gesture is
+  // always a real change and always worth exactly one undo entry.
+  const sameGesture = resizing
+    && resizing.cardId === cardId
+    && resizing.objectId === objectId
+    && resizing.axis === axis;
+  if (!sameGesture) {
+    pushUndo();
+    resizing = { cardId, objectId, axis };
+  }
+
+  currentLayout = axis === 'span'
+    ? setObjectSpan(currentLayout, cardId, objectId, value)
+    : setObjectHeight(currentLayout, cardId, objectId, value);
   saveLayout();
   applyLayout();
   renderObjectControls();
-  const reg = OBJECT_REGISTRY[objectId];
-  announce(`${reg ? reg.label : objectId} set to ${spanLabel(next)}.`);
-  focusBarButton('resize-object');
+}
+
+/** Set an object's width, in twelfths of its card. */
+export function resizeObject(cardId, objectId, value) {
+  resizeAxis(cardId, objectId, 'span', value);
+}
+
+/** Set an object's minimum height, in `--tile-step` units; 0 is "as tall as its contents". */
+export function resizeObjectHeight(cardId, objectId, value) {
+  resizeAxis(cardId, objectId, 'height', value);
 }
 
 /** Hide or show an object; persist, re-apply, refresh, announce. */
