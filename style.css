@@ -1310,18 +1310,32 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .head-actions { display: flex; align-items: center; gap: .4rem; }
 
 /* Quiet by default so it doesn't fight the sheet — a low-weight text button that turns
-   into a clear accent "Done" chip once its card is unlocked. */
+   into a clear accent "Done" chip once its card is unlocked.
+
+   Quiet, but not invisible: both states failed WCAG AA (4.5:1 for 12.8px/600) and both are
+   measured now rather than eyeballed. `--ink-faint` on `--card` is 3.85:1 in light and 3.80:1 in
+   dark, so this is `--ink-soft` instead — 7.27:1 and 6.84:1, still clearly secondary to the card
+   title. This button is the one control that says whether the sheet is locked, and when a player
+   cannot find it, a card behaving exactly as designed is indistinguishable from a broken one.
+   That is not hypothetical: #115 was reported partly as "Edit does nothing".
+
+   "Done" was worse than it looks, and only in dark: the accent's own 10% tint LIGHTENS the
+   background there, so accent-on-tint measured 3.86:1 (against 4.38:1 on the bare card, which is
+   the number you get if you forget the tint — and 7.61:1 in light, which passes). Mixing the
+   accent toward `--ink` fixes both themes with one expression instead of a per-theme override,
+   because `--ink` is whichever end of the scale has contrast to give: 8.70:1 light, 4.84:1 dark.
+   80% and not 85% (4.57:1) so an accent tweak doesn't silently drop it back under. */
 .card__edit {
   border-color: transparent;
   background: none;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   font-size: .8rem;
   font-weight: 600;
   letter-spacing: .02em;
 }
 .card__edit:hover { color: var(--ink); }
 .is-editing .card__edit {
-  color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 80%, var(--ink));
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
