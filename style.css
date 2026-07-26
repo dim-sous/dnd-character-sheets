@@ -932,8 +932,22 @@ body.is-arranging [data-action="add-row"] { display: none; }
    position:relative, and ::before is taken by the tick, so ::after is the free hook.
    Grow the COLUMN to change the target, never the inset: the clearance to the neighbour is
    half the gap plus half the spare column width, and widening the inset past that
-   re-introduces exactly the overlap this comment exists to prevent (see .pip). */
-.skill__prof::after, .skill__exp::after { content: ""; position: absolute; inset: -11px; }
+   re-introduces exactly the overlap this comment exists to prevent (see .pip).
+
+   Qualified with `input`, and that is load-bearing (#115). A save row has no expertise, so its
+   Exp cell is an empty `<span class="skill__exp">` spacer — same class, no checkbox. A span gets
+   no `position: relative` from the rule above, so on the bare class this inset resolved against
+   the INITIAL CONTAINING BLOCK instead of the control: a 397x907 invisible sheet per ability
+   group, six of them, anchored at the document origin and covering every control in the first
+   screenful of the document. Ability scores above the fold went dead, and so did Done on cards
+   the player had never opened — the Abilities Edit button poisoned Inventory and Feats too.
+   The touch-target audit had no chance of catching it: an empty spacer span is not a control, so
+   nothing measured it, and a 44px audit asks how big each control is rather than whether anything
+   is sitting on top of it. probe.html answers both questions now. Same family as
+   the `.visually-hidden`/`width:100%` trap guarded at `.tile > *:not(.visually-hidden)`: in this
+   stylesheet an absolutely-positioned box whose owner might not be positioned is a bug waiting
+   for the day someone reuses the class on a plain element. */
+input.skill__prof::after, input.skill__exp::after { content: ""; position: absolute; inset: -11px; }
 
 .skill__bonus {
   /* input[type="number"] elsewhere sets width:100% — cap it to the column, which is now a

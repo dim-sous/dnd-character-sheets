@@ -7,10 +7,17 @@
 
     - a class rule declares a size and is silently outranked by the base `input`/`.icon-btn`
       rule, so the control is NOT the size the stylesheet says (#77, #87);
-    - or nothing declares a size at all and the control quietly inherits a 22px base (#86).
+    - or nothing declares a size at all and the control quietly inherits a 22px base (#86);
+    - or the control is the right size, painted, and unreachable, because something invisible
+      is on top of it (#115).
 
-  Both are invisible to `grep` and to reading the CSS. Both are obvious the moment you measure.
-  Two issues have already carried claims that measurement disproved, so: measure, don't infer.
+  All three are invisible to `grep` and to reading the CSS. All three are obvious the moment you
+  measure. Two issues have already carried claims that measurement disproved, so: measure,
+  don't infer.
+
+  Width is a query parameter: `probe.html` is the 390px phone, `probe.html?w=1440` the laptop,
+  where the tab bar is gone and every panel is revealed at once. Run both — #115 landed on
+  both, at different rows, and one width alone would have read as PASS at the other.
 
   This is a development tool. tools/ is in stamp-sw.py's SKIP_DIRS, so nothing here is ever
   precached or deployed — but it must stay in tools/ for that to hold. A probe page left at
@@ -21,14 +28,18 @@
 <style>
   body { margin: 0; font: 13px/1.4 ui-monospace, monospace; }
   /* The iframe width IS the viewport under test — pinning it here sidesteps window sizing
-     and host OS display scaling, which do not survive the trip through headless Chrome. */
+     and host OS display scaling, which do not survive the trip through headless Chrome.
+     The width itself is set from ?w= in script; this is only the fallback. */
   #fr { width: 390px; height: 900px; border: 0; }
 </style>
 <pre id="out">pending</pre>
 <iframe id="fr"></iframe>
 <script type="module">
 const TAP = 44;                 // CLAUDE.md's minimum, and --tap in style.css
-const VIEWPORT = 390;           // the phone width this app is designed at
+// 390 is the phone this app is designed at; ?w=1440 is the laptop layout, which reveals every
+// panel at once (`.tabpanel[hidden]{display:contents}`) and so puts far more of the sheet on
+// screen at the same time — that is where #115's covered controls spread widest.
+const VIEWPORT = Number(new URLSearchParams(location.search).get('w')) || 390;
 const out = document.getElementById('out');
 
 try {
@@ -85,6 +96,7 @@ try {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
 
   const fr = document.getElementById('fr');
+  fr.style.width = `${VIEWPORT}px`;
   await new Promise((res) => { fr.onload = res; fr.src = '../index.html'; });
   const d = fr.contentDocument;
   const w = fr.contentWindow;
@@ -112,8 +124,16 @@ try {
       if (!cs || cs.content === 'none' || cs.position !== 'absolute') continue;
       const l = px(cs.left), t = px(cs.top), rt = px(cs.right), b = px(cs.bottom);
       if ([l, t, rt, b].some((v) => v === null)) continue;   // `auto` — can't resolve statically
-      // Offsets are relative to the padding box of the positioned ancestor, which for these
-      // is the control itself (the base checkbox/button rules set position: relative).
+      /*
+       * Offsets resolve against the padding box of the nearest POSITIONED ancestor, so this
+       * union is only valid when that ancestor is the element itself — which held for every
+       * owner here, because each one (`input[type=checkbox]`, `.pip`, `.toggle`) sets
+       * `position: relative` for exactly this reason. Guarding it anyway: on a static owner the
+       * pseudo is somewhere else entirely, and inflating the border box by insets that resolved
+       * against a distant ancestor would report a tap target that does not exist. Defensive, not
+       * a fix for a past false pass — see escapedPseudos() for who owns that case now.
+       */
+      if (w.getComputedStyle(el).position === 'static') continue;
       left = Math.min(left, r.left + l);
       top = Math.min(top, r.top + t);
       right = Math.max(right, r.right - rt);
@@ -126,6 +146,41 @@ try {
     const id = el.id ? `#${el.id}` : '';
     const cls = el.classList.length ? `.${[...el.classList].join('.')}` : '';
     return `${el.tagName.toLowerCase()}${id}${cls}`;
+  };
+
+  /*
+   * What an absolutely-positioned descendant of `el` would resolve its insets against, named.
+   *
+   * NOT `offsetParent`: for a rendered static element with no positioned ancestor that returns
+   * `body`, which is emphatically not the containing block — the insets resolve against the
+   * initial containing block, and `body`'s padding box is the document's height, not the
+   * viewport's. `offsetParent` is null only when the element isn't rendered at all. Reading it
+   * the other way round labels the one case this probe exists to name (#115) as "body" and saves
+   * the words "initial containing block" for the harmless unpainted case.
+   *
+   * `position` is not the only thing that establishes a containing block for abspos descendants —
+   * `transform`, `filter` and `backdrop-filter` do too, and this stylesheet uses all three (the
+   * topbar and tab bar blur their backdrops, the drawer slides on a transform). They are checked
+   * so the name is trustworthy, even though every one of them here is also fixed or sticky.
+   */
+  const containingBlockOf = (el) => {
+    for (let n = el.parentElement; n && n.nodeType === 1; n = n.parentElement) {
+      const cs = w.getComputedStyle(n);
+      if (cs.position !== 'static') return label(n);
+      if (cs.transform !== 'none' || cs.filter !== 'none') return label(n);
+      if ((cs.backdropFilter || 'none') !== 'none') return label(n);
+    }
+    return 'the initial containing block';
+  };
+
+  // The nearest fixed/sticky ancestor, i.e. which piece of app chrome an element belongs to
+  // (topbar, tab bar, arrange bar, sidebar) — or null for ordinary in-flow sheet content.
+  const fixedChromeAncestor = (el) => {
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const p = w.getComputedStyle(n).position;
+      if (p === 'fixed' || p === 'sticky') return label(n);
+    }
+    return null;
   };
 
   // Anything a finger is meant to land on.
@@ -168,6 +223,174 @@ try {
     return out;
   }
 
+  /*
+   * A control that renders at the right size and cannot be tapped anyway, because something
+   * invisible sits on top of it. This is the check that was missing when #115 shipped: a
+   * `<span class="skill__exp">` spacer inherited `.skill__exp::after{position:absolute;
+   * inset:-11px}` — a 44px tap target written for the checkbox twin. A span gets no
+   * `position: relative`, so the pseudo resolved against the INITIAL CONTAINING BLOCK and
+   * became a viewport-sized invisible sheet anchored at the document origin, six deep, over
+   * every control in the top screenful. Everything measured 44px. Nothing above the fold
+   * worked. The stylesheet has produced this exact class of thing before (see the
+   * `.visually-hidden width:100%` note in the overflow verdict below).
+   *
+   * `elementFromPoint` is the only honest test here: it answers "what would the finger hit",
+   * so it accounts for stacking, `pointer-events`, ancestor clipping and covering layers at
+   * once — none of which are readable from the cascade. It reports the ORIGINATING element for
+   * a pseudo-element, which is what makes the culprit above nameable.
+   *
+   * Reachability is tested at SEVERAL scroll offsets, and a control is only reported when every
+   * one of them fails. That is not thoroughness for its own sake — it is the whole distinction
+   * between the two ways a control gets covered, which one offset cannot tell apart:
+   *
+   *   - A fixed overlay (topbar, tab bar, the tall arrange bar) covers a band of the VIEWPORT.
+   *     Content behind it is reached by scrolling; obscuring it at one offset is the design, and
+   *     reporting it means 54 findings that are all "the bottom bar is at the bottom".
+   *   - An absolutely-positioned box with no positioned ancestor covers a band of the DOCUMENT.
+   *     No scroll offset escapes it. That is #115, and it is a real bug.
+   *
+   * A full-viewport scrim left hit-testable fails at every offset too, so it still reports —
+   * which is the other thing CLAUDE.md warns has bitten this app.
+   *
+   * Several points per offset, not just the centre: `getBoundingClientRect` on an inline element
+   * fragmented across lines returns a union whose centre lands in neither fragment.
+   *
+   * The zero-rect test is NOT enough to decide a control is on screen. Chrome closes a
+   * `<details>` with content containment rather than `display: none`, so everything inside the
+   * Conditions disclosure and the arrange bar's `.arrange-more` keeps a stale non-zero rect
+   * while being correctly un-hit-testable — 83 controls' worth of confident nonsense, naming
+   * whichever unrelated tile happens to sit at those coordinates as the culprit. `<details>` is
+   * the app's own idiom for "not on screen right now", so this defers to it.
+   */
+  function coveredControls() {
+    const out = [];
+    // Controls skipped because transient chrome is over them, tallied per blocker: a bar covering
+    // a band is the design, but one element covering most of a scene is the scrim bug below.
+    const behindChrome = new Map();
+    let considered = 0;
+    for (const el of d.querySelectorAll(SELECTOR)) {
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 && box.height === 0) continue;
+      const cs = w.getComputedStyle(el);
+      if (cs.visibility === 'hidden') continue;
+      if (el.closest('details:not([open])')) continue;
+      if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true })) continue;
+      /*
+       * `pointer-events: none` is a control switched off on purpose, not one covered by accident.
+       * Arrange mode inerts the whole sheet this way (`body.is-arranging .card`) so a tap selects
+       * a tile instead of typing into a field — every character input in a non-tile card computes
+       * `none` there, and `elementFromPoint` correctly answers with the panel behind it. Whether
+       * that gating is RIGHT is a question about the ACTIONS map, not about hit-testing: see #115
+       * / the brief's §2, where an action inside a tile fires during arrange anyway.
+       */
+      if (cs.pointerEvents === 'none') continue;
+      considered++;
+
+      // The chips put the tap target on the wrapping <label> on purpose (style.css `.chip`), so
+      // the label answering for its own checkbox is correct, not a cover.
+      const lab = el.closest('label');
+      const isHit = (t) => t === el || el.contains(t) || (lab !== null && t === lab);
+
+      let blocker = null, reachable = false, sampled = false;
+      for (const block of ['center', 'start', 'end']) {
+        el.scrollIntoView({ block, inline: 'center' });
+        const r = el.getBoundingClientRect();
+        for (const fx of [0.5, 0.25, 0.75]) {
+          for (const fy of [0.5, 0.25, 0.75]) {
+            const x = r.left + r.width * fx, y = r.top + r.height * fy;
+            // Off-screen even after scrolling (a control wider than the viewport, or one inside
+            // its own scroller) is a different failure; the overflow verdict owns it.
+            if (x < 0 || y < 0 || x > w.innerWidth || y > w.innerHeight) continue;
+            sampled = true;
+            const t = d.elementFromPoint(x, y);
+            if (isHit(t)) { reachable = true; break; }
+            // Report the centre-of-viewport blocker: it is the one clear of the fixed bars, so
+            // it names the thing actually in the way rather than whichever chrome is at an edge.
+            if (t && (blocker === null || block === 'center')) blocker = t;
+          }
+          if (reachable) break;
+        }
+        if (reachable) break;
+      }
+      if (reachable || !sampled || blocker === null) continue;
+      /*
+       * A blocker inside fixed or sticky chrome is the app's own furniture — the sticky topbar,
+       * the fixed tab bar, the sticky arrange bar (489px tall with its disclosure open, over half
+       * this viewport). Content behind those is reached by closing the disclosure or scrolling,
+       * and reporting it buries the real finding under 20 lines of "the bar is where the bar is".
+       */
+      const chrome = fixedChromeAncestor(blocker);
+      if (chrome) {
+        behindChrome.set(chrome, (behindChrome.get(chrome) ?? 0) + 1);
+        continue;
+      }
+      out.push(`${label(el)} covered by ${label(blocker)}`);
+    }
+    /*
+     * ...but a single overlay swallowing MOST of a scene is not furniture, it is the scrim bug
+     * CLAUDE.md warns about — an author `display` beating `[hidden]{display:none!important}`
+     * leaves a full-screen layer hit-testable and nothing on the sheet responds. A bar covers a
+     * band; a scrim covers everything. The ratio is what tells them apart, so the exemption
+     * above cannot launder it.
+     */
+    for (const [chrome, n] of behindChrome) {
+      if (considered && n / considered >= 0.5) {
+        out.push(`${chrome} covers ${n} of ${considered} controls — a full-page overlay, not a bar`);
+      }
+    }
+    return out;
+  }
+
+  /*
+   * The #115 root cause stated directly, rather than caught by its consequence: an absolutely
+   * positioned pseudo-element with real insets, on an owner that is `position: static`. The
+   * insets then resolve against some ancestor's padding box — or, with no positioned ancestor at
+   * all, against the initial containing block — so the box lands somewhere its author never
+   * looked, at viewport scale, invisible and hit-testable.
+   *
+   * This walks every element, not just the controls in SELECTOR, and that is the point: the
+   * #115 owner was an empty `<span>` spacer, which is not a control and was therefore outside
+   * everything the size audit looked at. Nothing measured it, and nothing could have — the union
+   * in hitRect only ever inflates an owner's own border box, so it cannot see where an escaped
+   * pseudo actually landed. Only the covered-control check below noticed, and only via the 60
+   * unrelated controls it took down. This says it in one line instead.
+   *
+   * Every such pseudo in this stylesheet is a 44px tap target on a control that sets
+   * `position: relative` itself, so the honest invariant is zero.
+   */
+  function escapedPseudos() {
+    const found = new Map();
+    for (const el of d.querySelectorAll('*')) {
+      if (w.getComputedStyle(el).position !== 'static') continue;
+      for (const pseudo of ['::after', '::before']) {
+        const cs = w.getComputedStyle(el, pseudo);
+        if (!cs || cs.content === 'none' || cs.position !== 'absolute') continue;
+        // All-`auto` insets keep the box in the static position — no escape, nothing to report.
+        if ([cs.top, cs.right, cs.bottom, cs.left].every((v) => v === 'auto')) continue;
+        const key = `${label(el)}${pseudo} is absolute with insets on a static owner`
+          + ` → resolves against ${containingBlockOf(el)}`;
+        /*
+         * The size is carried beside the key rather than inside it. One bad rule is one finding
+         * (see the dedup at the verdict), and an `auto` width means only that the owner is not
+         * rendered in THIS scene — the same rule reports a real box in the scene that paints it.
+         * With the size in the key those two became separate findings and the headline said "2
+         * pseudo-elements escape their owner" for a single rule.
+         */
+        const size = cs.width === 'auto' ? null : `${cs.width}x${cs.height}`;
+        const prev = found.get(key);
+        // Prefer a scene that actually painted it: a measured box is the evidence.
+        if (!prev || (!prev.size && size)) found.set(key, { size, count: (prev?.count ?? 0) + 1 });
+        else found.set(key, { size: prev.size, count: prev.count + 1 });
+      }
+    }
+    return [...found.entries()].map(([k, v]) => ({
+      key: k,
+      // Still reported when nothing painted it: the rule is wrong either way, and catching it
+      // before the state that paints it is the point.
+      detail: `${k} (${v.size || 'not rendered in this scene'}, ${v.count} owner(s))`,
+    }));
+  }
+
   function auditScene(name) {
     const groups = new Map();
     const seen = new Set();
@@ -200,6 +423,8 @@ try {
       scrollWidth: d.documentElement.scrollWidth,
       overflows: d.documentElement.scrollWidth > w.innerWidth,
       clipped: clippedFields(),
+      covered: coveredControls(),
+      escaped: escapedPseudos(),
       failures: rows,
     };
   }
@@ -266,7 +491,9 @@ try {
   d.querySelector('.arrange-bar [data-action="arrange-toggle"]')?.click();
   await settle();
 
-  report.scenes = report.scenes.filter((s) => s.failures.length || s.overflows || s.clipped.length);
+  report.scenes = report.scenes.filter(
+    (s) => s.failures.length || s.overflows || s.clipped.length || s.covered.length || s.escaped.length,
+  );
   report.totalFailures = report.scenes.reduce(
     (n, s) => n + s.failures.reduce((m, f) => m + f.count, 0), 0,
   );
@@ -290,12 +517,41 @@ try {
   // Name would otherwise be reported eight times.
   report.clippedFields = [...new Set(report.scenes.flatMap((s) => s.clipped))];
 
+  /*
+   * Reported per scene, not deduplicated to a flat set like the cropped fields: WHICH scene a
+   * control is unreachable in is the whole finding. #115 is only true with the Abilities card
+   * in edit mode, and it takes out controls in other cards entirely — "Done in Inventory is
+   * dead once you have opened Abilities" is a sentence you can only read off the scene.
+   */
+  report.coveredControls = report.scenes
+    .filter((s) => s.covered.length)
+    .map((s) => `${s.scene}: ${s.covered.length} covered — ${[...new Set(s.covered)].slice(0, 6).join('; ')}`);
+  const coveredTotal = report.scenes.reduce((n, s) => n + s.covered.length, 0);
+
+  /*
+   * Deduplicated across scenes on the RULE, not on the rendered detail: one bad rule is one
+   * finding, not one per tab it renders on. The scene that painted the box wins, because a
+   * measured size is the evidence — an unpainted scene only proves the rule exists.
+   */
+  const escaped = new Map();
+  for (const s of report.scenes) {
+    for (const e of s.escaped) {
+      const prev = escaped.get(e.key);
+      if (!prev || (prev.includes('not rendered') && !e.detail.includes('not rendered'))) {
+        escaped.set(e.key, e.detail);
+      }
+    }
+  }
+  report.escapedPseudos = [...escaped.values()];
+
   const parts = [];
+  if (report.escapedPseudos.length) parts.push(`${report.escapedPseudos.length} pseudo-element(s) escape their owner`);
   if (report.totalFailures) parts.push(`${report.totalFailures} control(s) under ${TAP}px`);
   if (report.overflowScenes.length) parts.push(`${report.overflowScenes.length} scene(s) scroll sideways`);
   if (report.clippedFields.length) parts.push(`${report.clippedFields.length} field(s) crop their value`);
+  if (coveredTotal) parts.push(`${coveredTotal} control(s) covered by something else`);
   report.verdict = parts.length === 0
-    ? `PASS — every measured control has a >=${TAP}px hit area at ${VIEWPORT}px, nothing scrolls sideways, and no field crops its value`
+    ? `PASS — at ${VIEWPORT}px every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, nothing scrolls sideways, and no field crops its value`
     : `FAIL — ${parts.join('; ')}`;
   out.textContent = JSON.stringify(report, null, 1);
 } catch (err) {
