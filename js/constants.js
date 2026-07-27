@@ -104,6 +104,14 @@ export function blankCharacter() {
     deathSaves: { successes: 0, failures: 0 },
     conditions: [],
     exhaustion: 0,
+    // #140: class/subclass resources — Rage, Ki, Bardic Inspiration, Channel Divinity, a
+    // once-per-rest subclass trick. Deliberately the SHAPE of `hitDice` and nothing more: a
+    // name the player types and a remaining/total pair. The app never learns which resource
+    // recovers on which rest, which is why there is no `recovery` field and why `longRest()`
+    // does not touch this list — see the note there. Absent in every pre-#140 file, and
+    // normalizeRows turns a missing array into [], so no migration and no SCHEMA_VERSION bump
+    // (exactly the path `feats` took in #67).
+    resources: [],
 
     attacks: [],
 
@@ -149,4 +157,11 @@ export const ROW_TEMPLATES = {
   feats: () => ({ name: '', source: '', text: '' }),
   inventory: () => ({ item: '', qty: 1, notes: '' }),
   hitDice: () => ({ size: 'd8', total: 1, remaining: 1 }),
+  // #140: `remaining`/`total` named to match the hitDice row above, so the two tiles read the
+  // same way and share their row CSS. Both start at 0 rather than 1: a resource's size is
+  // whatever the player types, and there is no sensible guess — where a Hit Point Dice pool
+  // added by hand is almost always at least one die, a blank resource is a blank resource.
+  // `remaining` is NOT clamped to `total` anywhere (hitDice isn't either): a total of 0 means
+  // "not tracked", the same contract Max HP has, and clamping would be a rule.
+  resources: () => ({ name: '', remaining: 0, total: 0 }),
 };

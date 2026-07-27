@@ -268,6 +268,17 @@
                 <button type="button" class="btn btn--small tile__add" data-action="add-row" data-list="hitDice">+ Add</button>
               </div>
 
+              <!-- #140: class/subclass resources. Structurally the Hit Point Dice tile above —
+                   heading, a `rows` host renderRows owns, and an Edit-only + Add — because a
+                   resource IS a hitDice pool with a typed name instead of a die size. Sharing
+                   the shape is the point: no new list mechanism, no new row CSS, and a player
+                   who has used one tile already knows this one. -->
+              <div class="tile status__block" data-object="resources">
+                <h3 class="tile__label">Resources</h3>
+                <ul class="rows rows--tight" id="resources"></ul>
+                <button type="button" class="btn btn--small tile__add" data-action="add-row" data-list="resources">+ Add</button>
+              </div>
+
               <div class="tile status__block" data-object="deathsaves">
                 <h3 class="tile__label">Death Saves</h3>
                 <!-- Two columns rather than two labelled rows: side by side the tile is one row
@@ -735,6 +746,32 @@
       <option value="d12">d12</option>
     </select>
     <button type="button" class="row__remove" data-action="remove-row" data-list="hitDice" aria-label="Remove Hit Point Dice pool">✕</button>
+  </li>
+</template>
+
+<template id="tpl-resource">
+  <!-- #140. The name LEADS here where the hit-die row's qualifier trails, because it is the
+       only thing telling two rows apart — "2 / 3" says nothing without it. It also grows: the
+       base `.row > input` rule gives it `flex: 1 1 7rem`, so a long name takes the slack the
+       two fixed-width counts leave rather than being squeezed to a fixed column.
+
+       data-live is on `remaining` ONLY, matching the hit-die row exactly. Spending a resource
+       is the play-mode action this tile exists for and must never be behind an Edit press;
+       the name and the total are the setup half, Edit-gated so a mis-tap in the middle of a
+       fight cannot silently rewrite the denominator or the label (the Max HP rule, #65). -->
+  <li class="row row--resource">
+    <input type="text" class="row__name" data-bind-suffix="name" placeholder="Name" aria-label="Resource name">
+    <!-- The counts are ONE flex item, exactly as on an attack row: as loose children the line
+         could wrap between "2" and "/", which reads as a broken row rather than a wrapped one.
+         Grouped, the line has two items and can only ever break BEFORE the numbers — so a long
+         name spends a second line and keeps its text, instead of cropping to "Channel Divini…".
+         The ✕ travels inside the group, like the attack row's. -->
+    <span class="row__stats">
+      <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="remaining" data-type="number" placeholder="0" aria-label="Resource remaining" data-live>
+      <span class="row__of" aria-hidden="true">/</span>
+      <input type="number" inputmode="numeric" class="row__narrow" data-bind-suffix="total" data-type="number" placeholder="0" aria-label="Resource total">
+      <button type="button" class="row__remove" data-action="remove-row" data-list="resources" aria-label="Remove resource">✕</button>
+    </span>
   </li>
 </template>
 

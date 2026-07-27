@@ -33,7 +33,7 @@ export const TAB_REGISTRY = [
  *   sel   — the selector locating the live card node (a data string; no DOM access here).
  *
  * cost:'js' host ids, for reference (must stay in the DOM):
- *   combat       → #hitDice #death-successes #death-failures #exhaustion #conditions
+ *   combat       → #hitDice #resources #death-successes #death-failures #exhaustion #conditions
  *   attacks      → #attacks
  *   abilities    → #abilities
  *   spellcasting → #slots #spell-body #card-spellcasting
@@ -63,11 +63,11 @@ export const CARD_ORDER = [
  * `data-object="<id>"`, the object analogue of `data-editcard`. `cost:'js'` objects contain a
  * render.js host, so they may be hidden (host stays present-but-hidden) but never detached.
  *
- * Phase 5 objectifies only the Combat card (its tiles + 4 status blocks; Temp HP folded into
- * the Hit Points tile and the Adjust HP tile retired in #65, Concentration added in #78);
- * other cards stay whole.
- * `cost:'js'` object hosts, for reference: hitdice→#hitDice, deathsaves→#death-successes
- * /#death-failures, exhaustion→#exhaustion, conditions→#conditions.
+ * Phase 5 objectifies only the Combat card (its tiles + 5 status blocks; Temp HP folded into
+ * the Hit Points tile and the Adjust HP tile retired in #65, Concentration added in #78,
+ * Resources in #140); other cards stay whole.
+ * `cost:'js'` object hosts, for reference: hitdice→#hitDice, resources→#resources,
+ * deathsaves→#death-successes/#death-failures, exhaustion→#exhaustion, conditions→#conditions.
  *
  *   defaultSpan — the object's width in the card's twelve-column `.tiles` grid (#54 Phase 6),
  *                 reproducing today's layout: 12 (a whole row), 6 (half), 3 (a quarter). The
@@ -89,6 +89,12 @@ export const OBJECT_REGISTRY = {
   // quarter-row tile.
   concentration: { card: 'combat', label: 'Conc.', cost: 'markup', defaultSpan: 3 },
   hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js', defaultSpan: 12 },
+  // #140. cost:'js' — renderRows dereferences #resources with no null check, so the tile may be
+  // hidden but must never be detached. Full width like the other row-list tiles: a row is a name
+  // that grows plus two counts, and a half-row would ellipsize every name worth reading.
+  // The label MUST stay identical to the <h3> in index.html — applyObjects rewrites that node
+  // from this string on every layout apply, so a mismatch silently overwrites the markup.
+  resources: { card: 'combat', label: 'Resources', cost: 'js', defaultSpan: 12 },
   deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js', defaultSpan: 12 },
   exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js', defaultSpan: 12 },
   conditions: { card: 'combat', label: 'Conditions', cost: 'js', defaultSpan: 12 },
@@ -147,12 +153,15 @@ export const OBJECT_ORDER = {
   //   ac                read on every incoming attack.
   //   conditions, concentration   change often mid-fight (conditions was ordered last,
   //                     below the invariant PB tile).
+  //   resources         #140: spent mid-fight like the two above — a Rage, a Bardic
+  //                     Inspiration die, a Channel Divinity use — so it sits with them and
+  //                     above the tiles read once a session.
   //   heroic, hitdice, exhaustion   occasional.
   //   initiative, speed, pb   read once a fight or never; pb never changes at all.
   //   rest              once per session and destructive, so it is last and no longer sits
   //                     next to the HP field a player taps every round.
   combat: [
-    'hp', 'deathsaves', 'ac', 'conditions', 'concentration', 'heroic',
+    'hp', 'deathsaves', 'ac', 'conditions', 'concentration', 'resources', 'heroic',
     'hitdice', 'exhaustion', 'initiative', 'speed', 'pb', 'rest',
   ],
   // #67. Registering the order is what objectifies a card: normalizeCard backfills any object

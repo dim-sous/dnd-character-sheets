@@ -1287,8 +1287,13 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    built for list items that need to read as separate cards — but this row is one line of three
    controls inside a tile that is already a bounded box, so the treatment nested a card in a
    card. In dark mode `--parchment` is the near-black PAGE background against a lighter
-   `--card` tile, which is what made it read as a black box rather than as a panel. */
-.row--hitdie {
+   `--card` tile, which is what made it read as a black box rather than as a panel.
+
+   The resource row (#140) shares all of this: it is the same one-line remaining/total group
+   inside the same kind of tile, so it wants the same de-slabbing and the same narrow counts. It
+   differs in one way, handled below — a name field that grows, which means it has no free space
+   for `justify-content: center` to distribute and the declaration is simply inert there. */
+.row--hitdie, .row--resource {
   align-items: center; justify-content: center;
   padding: 0; background: none; border: 0;
 }
@@ -1301,6 +1306,32 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    one-line row the remove button travels with the group it removes. */
 .row--hitdie > .row__remove { margin-left: 0; }
 .row__of { flex: none; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+/* #140: the resource name, and the reason it is not just `.row > input`.
+   A plain input's min-content width comes from its `size` attribute (~20 characters), NOT from
+   its value — see the `min-width: 0` note on the base control rule — so a flex line has no way
+   to know the text is longer than the box and the value is silently cropped. Measured at 390px
+   with the probe's seeded row: "Channel Divinity: Turn Undead" needed 233px in the 146px it was
+   given (96px once Edit reveals the ✕), rendering "Channel Divini…".
+
+   `field-sizing: content` is what makes the intrinsic size track the VALUE, and `flex-basis:
+   min-content` then makes the name's hypothetical size its full text — so the flex line breaks
+   before `.row__stats` only when the text genuinely has nowhere to go. "Rage" is unaffected and
+   stays the single line it was; a long name spends a second line and keeps every character.
+   `width: auto` so field-sizing beats the base `input[type="text"]{width:100%}` (0,1,1) — this
+   selector is (0,2,0), which is the specificity trap this stylesheet keeps setting.
+   The 2.75rem floor is 44px: a touch target, not just legibility, and small enough against a
+   ~304px row that a long name can never push the document sideways. */
+.row--resource > .row__name {
+  field-sizing: content; width: auto;
+  flex: 1 1 min-content; min-width: 2.75rem;
+  text-overflow: ellipsis; padding-inline: .35rem;
+}
+/* The counts sit inside `.row__stats` now, so the `.row > .row__narrow` rule no longer reaches
+   them (they are grandchildren) and `.row__stats > *` gives them `flex-basis: auto` — which
+   resolves to `width`, and the base rule's `width: 100%` would size them against the group
+   rather than to two digits. Two classes (0,2,0) to outrank `input[type="number"]` (0,1,1). */
+.row--resource .row__narrow { width: 3.6rem; }
 
 /* `.row__prepared` was removed here (#87): it styled the spell row's "prepared" checkbox,
    and the spell-row UI went away in #9. The `prepared` FIELD still exists in the model so
@@ -1551,7 +1582,16 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 @page { margin: 1.5cm; }
 
 @media print {
-  .sidebar, .scrim, .topbar, .tabbar, .row__remove, .list__head .btn, .slots__head .btn,
+  /* #140: `[data-action="add-row"]` joins this list, and `.rows__empty` with it. Both are
+     instructions to press something, and paper has nothing to press — the empty line literally
+     reads "tap Edit to add". Neither was reachable on paper before because both are edit-mode
+     or empty-list states nobody printed, but the Resources tile makes the empty one the COMMON
+     case (most characters have no class resources), so without this every printed sheet gains a
+     line of screen chrome. Unconditional, like the #84 attack rules below: a card left in Edit
+     mode still prints the finished sheet. An empty tile then prints as its heading over blank
+     space, which is a better thing to hand a player than an instruction they cannot follow. */
+  .sidebar, .scrim, .topbar, .tabbar, .row__remove, [data-action="add-row"], .rows__empty,
+  .list__head .btn, .slots__head .btn,
   /* .obj-ctl / .obj-rename dropped here (#72): the in-tile overlay is gone, and the object
      controls now live inside .arrange-bar, which this line already hides. */
   .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename,

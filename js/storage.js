@@ -136,6 +136,13 @@ export function normalizeCharacter(raw) {
   };
   char.conditions = strArray(raw.conditions);
   char.exhaustion = clamp(num(raw.exhaustion, 0), 0, MAX_EXHAUSTION);
+  // #140 — absent in every pre-#140 file, and normalizeRows maps a non-array to [], so old
+  // saves and old exports load with an empty list instead of crashing. NOT clamped the way
+  // deathSaves/exhaustion/slots are just above: those have a fixed number of pips, so an
+  // out-of-range import would render a state the UI cannot undo. A resource is two free-form
+  // numbers in typed fields, and `remaining` above `total` is a legitimate override the player
+  // can always correct — the same reason current HP is allowed above max.
+  char.resources = normalizeRows('resources', raw.resources);
 
   char.attacks = normalizeRows('attacks', raw.attacks);
   char.features = normalizeRows('features', raw.features);
