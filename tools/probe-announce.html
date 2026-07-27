@@ -96,6 +96,12 @@ try {
   regions.forEach((r) => { r.hits.length = 0; });
   const hp = d.querySelector('[data-hp-current]');
   if (hp) {
+    // Back to the panel HP lives on. The name-typing step above left the Character tab
+    // active, and a field on a `hidden` panel takes no focus and no keystrokes — which
+    // reads as "nothing announced", i.e. exactly the pass we must not fake here.
+    const hpPanel = hp.closest('[role="tabpanel"]');
+    const hpTab = hpPanel && d.querySelector(`[role="tab"][aria-controls="${hpPanel.id}"]`);
+    if (hpTab) { hpTab.click(); await settle(300); }
     hp.focus(); hp.select();
     tick++;
     d.execCommand('insertText', false, '-8');
@@ -109,8 +115,33 @@ try {
       L.push(`      ${JSON.stringify([...new Set(r.hits.map((h) => h.text))])}`);
     }
     const fired = regions.filter((r) => r.hits.length).map((r) => `#${r.id}`);
-    L.push(`  regions competing for the same action: ${fired.length} -> ${fired.join(', ')}`);
+    L.push(`  regions competing for the same action: ${fired.length} -> ${fired.join(', ') || 'none'}`);
+    L.push(`  the result sentence still speaks: ${regions.some((r) => r.id === 'play-status' && r.hits.length) ? 'YES' : 'NO — the announcement was lost'}`);
   }
+
+  // --- a save FAILURE must still speak, now that #saved is silent ---------------------------
+  // Removing aria-live from the chip is only correct if the case that mattered — writes are
+  // failing — still reaches the player. Break localStorage and check the banner takes over.
+  regions.forEach((r) => { r.hits.length = 0; });
+  const realSet = w.localStorage.setItem.bind(w.localStorage);
+  w.localStorage.setItem = (k, v) => {
+    if (String(k).startsWith('dnd-character-sheets') && !String(k).includes('::probe')) {
+      const e = new Error('probe: quota'); e.name = 'QuotaExceededError'; throw e;
+    }
+    return realSet(k, v);
+  };
+  const ac = d.querySelector('[data-bind="ac"]');
+  if (ac) {
+    ac.value = '19';
+    ac.dispatchEvent(new w.Event('input', { bubbles: true }));
+    await settle(900);
+    const banner = d.getElementById('banner');
+    L.push(`\n--- a failing write, with #saved no longer announcing ---`);
+    L.push(`  #banner hidden: ${banner.hidden}`);
+    L.push(`  #banner text:   ${JSON.stringify(banner.textContent.slice(0, 70))}`);
+    L.push(`  spoken by:      ${regions.filter((r) => r.hits.length).map((r) => '#' + r.id).join(', ') || 'NOTHING — the failure is silent'}`);
+  }
+  w.localStorage.setItem = realSet;
 
   obs.disconnect();
   out.textContent = L.join('\n');
