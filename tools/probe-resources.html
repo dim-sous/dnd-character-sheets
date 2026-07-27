@@ -1,0 +1,241 @@
+<!doctype html>
+<!--
+  Functional check for the class-resources tile (#140).
+
+  tests.js already covers the data layer — the row template, normalizeRows' migration of a
+  pre-#140 file, and the layout backfill. None of that touches the DOM, and the parts of this
+  feature that can break silently all live there:
+
+    - the tile is wired to `renderRows` at all (a missing ROW_TEMPLATE_IDS entry renders an
+      empty <ul> and nothing throws);
+    - `data-live` sits on `remaining` and NOT on name/total, which is the whole play-vs-setup
+      contract — get it wrong and either a resource cannot be spent without pressing Edit, or a
+      mis-tap mid-fight silently rewrites the pool's size (the Max HP rule, #65);
+    - a real keystroke in `remaining` reaches state and survives the debounce;
+    - LONG REST LEAVES RESOURCES ALONE. This is the #140 decision most likely to be "fixed" by a
+      later contributor adding one line to state.longRest(), and nothing else in the repo would
+      complain — the pure suite cannot see longRest() (it is a side-effecting state.js mutator,
+      deliberately untested there), so this is the only guard it has.
+
+  Run: see CLAUDE.md -> "Measuring the running app", pointing --dump-dom at this file.
+  Expect: "ALL PASS".
+-->
+<meta charset="utf-8">
+<title>class resources probe (#140)</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 900px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+
+try {
+  // Cache-first service worker: without this the run measures the PREVIOUS build, which shows
+  // up as a change that "didn't apply" or a bogus missing-export error.
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+
+  // Seeded as a PRE-#140 record on purpose: `resources` is deleted from the stored JSON, so the
+  // first assertions below exercise the real migration path a player will hit — a save written
+  // by the previous build — rather than a shape this build produced for itself.
+  const c = blankCharacter();
+  c.name = 'Probe'; c.class = 'Barbarian'; c.level = 5;
+  // Wounded, so the long-rest check can prove the rest still DID something. "Resources were
+  // untouched" is worthless if the rest silently no-opped.
+  c.hp.max = 45; c.hp.current = 28;
+  const stale = JSON.parse(JSON.stringify(c));
+  delete stale.resources;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [stale],
+  }));
+  // Colons, not hyphens (layout-view.js). Both keys, or this run inherits the previous one's
+  // arrangement — including a hidden Resources tile, which would read as "the tile is missing".
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const frame = document.getElementById('frame');
+  await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+  await wait(1200);
+  const d = frame.contentDocument;
+
+  const tile = () => d.querySelector('#panel-combat [data-object="resources"]');
+  const host = () => d.getElementById('resources');
+  const rows = () => [...host().querySelectorAll('.row--resource')];
+  const field = (i, suffix) => rows()[i]?.querySelector(`[data-bind="resources.${i}.${suffix}"]`);
+  const stored = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters[0];
+  const editBtn = d.querySelector('[data-editcard="combat"] .card__edit');
+  // A script-assigned .value never sets the dirty flag, so no `change`/`input` fires and the
+  // handler under test never runs — while the probe cheerfully reports PASS. Type for real.
+  const type = (el, text) => { el.focus(); el.select(); d.execCommand('insertText', false, text); };
+
+  /* ---- 1. the tile exists, is wired, and says something useful when empty ---- */
+
+  ok('the Resources tile is in the Combat panel', Boolean(tile()));
+  ok('its heading matches the registry label (applyObjects rewrites this node)',
+    tile()?.querySelector('.tile__label')?.textContent.trim() === 'Resources',
+    `"${tile()?.querySelector('.tile__label')?.textContent.trim()}"`);
+  // Assert the INPUT too, or this whole section is testing a shape this build wrote for itself.
+  ok('the seeded save really is pre-#140', !('resources' in stale));
+  // ...and that the app rendered it without throwing. This is the migration observed where it
+  // actually matters: renderRows does `getByPath(char, 'resources').length`, which throws on
+  // undefined, so an empty list on screen is proof normalizeCharacter supplied the array.
+  // Reading localStorage here would prove nothing — opening a character mutates nothing, so no
+  // save has been scheduled and the store still holds the raw seed. (It is asserted below,
+  // once the first edit has actually written back.)
+  ok('a pre-#140 save renders an empty list, not an error', Boolean(host()) && rows().length === 0,
+    `${rows().length} row(s)`);
+  // The generic "Nothing here yet" would mean renderRows ran but ROW_EMPTY_MESSAGES was missed.
+  const emptyText = host().querySelector('.rows__empty')?.textContent ?? '';
+  ok('the empty state names what a resource is', /No resources yet/.test(emptyText), `"${emptyText}"`);
+
+  /* ---- 2. + Add is Edit-gated, and adds a bound row -------------------------- */
+
+  const addBtn = tile().querySelector('[data-action="add-row"][data-list="resources"]');
+  ok('+ Add exists', Boolean(addBtn));
+  ok('+ Add is hidden in play mode', addBtn && frame.contentWindow.getComputedStyle(addBtn).display === 'none');
+
+  editBtn.click();
+  await wait(250);
+  ok('+ Add is revealed by Edit', frame.contentWindow.getComputedStyle(addBtn).display !== 'none');
+
+  addBtn.click();
+  await wait(350);
+  ok('a row appears', rows().length === 1, `${rows().length} row(s)`);
+  ok('the empty state is gone', !host().querySelector('.rows__empty'));
+  // renderRows bakes the array index into each data-bind — a missing LIST_PATHS entry or a
+  // template typo shows up here and nowhere else.
+  ok('name is bound to resources.0.name', Boolean(field(0, 'name')));
+  ok('remaining is bound to resources.0.remaining', Boolean(field(0, 'remaining')));
+  ok('total is bound to resources.0.total', Boolean(field(0, 'total')));
+  ok('the row has a remove button', Boolean(rows()[0].querySelector('[data-action="remove-row"][data-list="resources"]')));
+
+  type(field(0, 'name'), 'Rage');
+  type(field(0, 'total'), '3');
+  type(field(0, 'remaining'), '3');
+  field(0, 'remaining').blur();
+  await wait(600);   // longer than the 400ms save debounce
+  ok('the typed row reached storage',
+    JSON.stringify(stored().resources) === JSON.stringify([{ name: 'Rage', remaining: 3, total: 3 }]),
+    JSON.stringify(stored().resources));
+  // The other half of the migration: the record written back now carries the key the seed
+  // lacked, so the next load has nothing left to migrate.
+  ok('the migrated shape is what gets persisted', 'resources' in stored());
+
+  /* ---- 3. the row is de-slabbed, like the Hit Point Dice row it copies ------ */
+
+  /*
+   * `.row` paints `var(--parchment)` with a border and padding so list items read as separate
+   * cards. Inside a tile — already a bounded box — that nests a card in a card, and in dark mode
+   * `--parchment` is the near-black PAGE colour against a lighter `--card`, so the row reads as a
+   * black box. `.row--hitdie, .row--resource` undoes it for both.
+   *
+   * Measured rather than assumed, because the failure mode is a rule that is not APPLIED rather
+   * than one that is wrong, and nothing else here can see that. An unbalanced comment close above
+   * that rule made CSS error recovery skip to the next brace block and discard the whole thing —
+   * which silently reverted the Hit Point Dice tile to the slab as well. Every other probe still
+   * passed: a slab breaks no tap target, no contrast pairing, no overflow, and crops no value.
+   * (Note for whoever edits this comment: never write a literal comment-close inside one. Doing
+   * exactly that here ended the block early, and a module with a syntax error never runs at all —
+   * so the page printed "pending" rather than a failure, which reads like a hung probe.)
+   */
+  const cs = (el) => frame.contentWindow.getComputedStyle(el);
+  const bare = (el) => {
+    const s = cs(el);
+    // Any fully transparent colour is fine — `transparent` computes differently across engines.
+    const transparent = /^(transparent$|rgba\(0, 0, 0, 0\)$)/.test(s.backgroundColor);
+    return { bg: s.backgroundColor, pad: s.paddingTop, border: s.borderTopWidth,
+      ok: transparent && parseFloat(s.paddingTop) === 0 && parseFloat(s.borderTopWidth) === 0 };
+  };
+  const resBare = bare(rows()[0]);
+  ok('the resource row is de-slabbed (no card-in-a-card)', resBare.ok,
+    `bg ${resBare.bg}, padding ${resBare.pad}, border ${resBare.border}`);
+  // The same rule serves the hit-dice row, so this is also the regression guard for that tile.
+  const hitRow = d.querySelector('#hitDice .row--hitdie');
+  const hitBare = hitRow ? bare(hitRow) : null;
+  ok('...and so is the Hit Point Dice row that shares the rule', Boolean(hitBare) && hitBare.ok,
+    hitBare ? `bg ${hitBare.bg}, padding ${hitBare.pad}, border ${hitBare.border}` : 'no hit-dice row');
+  // The counts must be two digits wide, which is the other half of the shared block — and the
+  // one that depends on out-ranking `input[type="number"]{width:100%}`.
+  ok('the counts are sized to two digits, not stretched',
+    Math.round(parseFloat(cs(field(0, 'remaining')).width)) === Math.round(3.6 * 16),
+    `${cs(field(0, 'remaining')).width}, expected ${3.6 * 16}px`);
+
+  /* ---- 4. the play-vs-setup lock ------------------------------------------- */
+
+  editBtn.click();   // back to play mode
+  await wait(300);
+  ok('in play mode, remaining stays editable (data-live)', field(0, 'remaining').readOnly === false);
+  ok('in play mode, the name is locked', field(0, 'name').readOnly === true);
+  ok('in play mode, the total is locked', field(0, 'total').readOnly === true);
+
+  // Spending one, with a real keystroke, without ever pressing Edit — the gesture the tile exists for.
+  type(field(0, 'remaining'), '2');
+  field(0, 'remaining').blur();
+  await wait(600);
+  ok('spending a resource in play mode commits', stored().resources[0].remaining === 2,
+    `remaining = ${stored().resources[0].remaining}`);
+
+  /* ---- 5. the #140 decision: a long rest must NOT touch resources ----------- */
+
+  let confirms = 0;
+  frame.contentWindow.confirm = () => { confirms++; return true; };
+  const hpBefore = d.getElementById('f-hp-current').value;
+  d.querySelector('#panel-combat [data-object="rest"] [data-action="long-rest"]').click();
+  await wait(700);
+  ok('the long rest was confirmed and taken', confirms === 1, `${confirms} confirm(s)`);
+  // The control: the rest really did run, so the assertion below means something.
+  ok('the rest restored the lost hit points', d.getElementById('f-hp-current').value === '45',
+    `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);
+  ok('the long rest left the resource spent (#140)', stored().resources[0].remaining === 2,
+    `remaining = ${stored().resources[0].remaining}, expected 2`);
+  ok('...and did not touch its total either', stored().resources[0].total === 3,
+    `total = ${stored().resources[0].total}`);
+  ok('...and the field on screen still shows it spent', field(0, 'remaining').value === '2',
+    `"${field(0, 'remaining').value}"`);
+
+  /* ---- 6. rows are removable, and the empty state comes back ---------------- */
+
+  editBtn.click();
+  await wait(250);
+  addBtn.click();
+  await wait(350);
+  type(field(1, 'name'), 'Second Wind');
+  field(1, 'name').blur();
+  await wait(600);
+  ok('a second row is independently bound', stored().resources.length === 2
+    && stored().resources[1].name === 'Second Wind', JSON.stringify(stored().resources));
+
+  // Remove the FIRST row: renderRows re-bakes every index afterwards, so removing row 0 is what
+  // catches a stale data-index (removing the last row would pass either way).
+  rows()[0].querySelector('[data-action="remove-row"]').click();
+  await wait(600);
+  ok('removing row 0 removes the right row', stored().resources.length === 1
+    && stored().resources[0].name === 'Second Wind', JSON.stringify(stored().resources));
+  ok('the surviving row is re-bound to index 0', field(0, 'name')?.value === 'Second Wind',
+    `"${field(0, 'name')?.value}"`);
+
+  rows()[0].querySelector('[data-action="remove-row"]').click();
+  await wait(600);
+  ok('removing the last row restores the empty state',
+    /No resources yet/.test(host().querySelector('.rows__empty')?.textContent ?? ''));
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (e) {
+  out.textContent = `ERR ${(e && e.stack) || e}\n\n${results.join('\n')}`;
+}
+</script>

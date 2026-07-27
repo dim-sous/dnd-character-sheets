@@ -89,6 +89,22 @@ try {
     { name: 'Longbow of the Deep Wood', ability: 'dex', proficient: true, damage: '1d8+2 piercing', notes: 'Range 150/600' },
   ];
   c.inventory = [{ name: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
+  /*
+   * #140: the same short-row/long-row pairing, and for the same reason. An UNSEEDED Resources
+   * tile renders only its empty-state line, so the row's three fields and its ✕ are never
+   * measured — the tile passes at every width and theme while the thing it exists to show has
+   * not been looked at once.
+   *
+   * The long row is the fixture that matters: the name field is the only one here that grows,
+   * so it is the one that can push a 390px row sideways, and real class resources have long
+   * names ("Channel Divinity: Turn Undead" is 29 characters). Two-digit counts on it as well —
+   * a level-20 monk has 20 Ki points, and a 3.6rem field sized around "3" is a different
+   * measurement from one holding "14".
+   */
+  c.resources = [
+    { name: 'Rage', remaining: 2, total: 3 },
+    { name: 'Channel Divinity: Turn Undead', remaining: 14, total: 20 },
+  ];
   c.proficiencies = {
     armor: 'Light, medium, heavy, shields', weapons: 'Simple, martial',
     tools: 'Smith’s tools, dice set', languages: 'Common, Dwarvish, Undercommon',

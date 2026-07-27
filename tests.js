@@ -720,6 +720,66 @@ describe('features + feats rows (#67)');
   is('pre-#67 backup gains an empty feats list', parseStored(preFile).characters[0].feats, []);
 }
 
+describe('class resources (#140)');
+{
+  // A blank character has none. Most characters will stay that way, so this is the shape the
+  // empty-state hint renders against, not an edge case.
+  is('blank character starts with no resources', blankCharacter().resources, []);
+  is('row template', ROW_TEMPLATES.resources(), { name: '', remaining: 0, total: 0 });
+
+  // The migration that matters, and the whole reason this needed no SCHEMA_VERSION bump: every
+  // file written before #140 lacks the key entirely. normalizeRows maps a non-array to [], so
+  // the field arrives empty rather than undefined — which is what stops renderRows throwing on
+  // `getByPath(char, 'resources').length`.
+  is('resources absent → []', normalizeCharacter({ name: 'Old' }).resources, []);
+  is('resources non-array → []', normalizeCharacter({ resources: {} }).resources, []);
+  is('resources null → []', normalizeCharacter({ resources: null }).resources, []);
+  is('garbage row → template', normalizeCharacter({ resources: ['nope'] }).resources[0],
+    { name: '', remaining: 0, total: 0 });
+
+  is('row preserved', normalizeCharacter({ resources: [{ name: 'Rage', remaining: 2, total: 3 }] }).resources[0],
+    { name: 'Rage', remaining: 2, total: 3 });
+  is('several rows keep their order',
+    normalizeCharacter({ resources: [{ name: 'Rage' }, { name: 'Ki' }] }).resources.map((r) => r.name),
+    ['Rage', 'Ki']);
+  // Template-driven backfill, exactly like the feature rows above: a hand-written file holding
+  // only a name gets the two counts for free.
+  is('name-only row backfills its counts', normalizeCharacter({ resources: [{ name: 'Ki' }] }).resources[0],
+    { name: 'Ki', remaining: 0, total: 0 });
+  // The counts are numbers, so a hand-edited string coerces (num()) rather than being kept as
+  // text — the opposite of `feature.level`, which is free text on purpose.
+  is('string counts coerce to numbers', normalizeCharacter({ resources: [{ name: 'Ki', remaining: '4', total: '5' }] }).resources[0],
+    { name: 'Ki', remaining: 4, total: 5 });
+  is('unparseable count falls back to 0', normalizeCharacter({ resources: [{ name: 'Ki', remaining: 'lots' }] }).resources[0].remaining, 0);
+  // A numeric name is coerced the other way, the same as every other string field.
+  is('numeric name becomes a string', normalizeCharacter({ resources: [{ name: 7 }] }).resources[0].name, '7');
+  // Unknown keys are dropped: normalizeRow builds its output solely from template keys. This is
+  // what makes a future `recovery` field additive rather than a migration — and what guarantees
+  // a hand-edited file cannot smuggle state past the shape.
+  is('unknown row keys are dropped', Object.keys(normalizeCharacter({ resources: [{ name: 'X', recovery: 'long' }] }).resources[0]),
+    ['name', 'remaining', 'total']);
+
+  // NOT clamped, unlike deathSaves / exhaustion / spell slots. Those have a fixed number of pips
+  // and an out-of-range import renders a state the UI cannot undo; a resource is two typed
+  // fields the player can always correct. `remaining > total` is a legitimate override (the same
+  // contract current HP has), and `total: 0` means "not tracked", not "a ceiling of zero".
+  is('remaining above total is preserved, not clamped',
+    normalizeCharacter({ resources: [{ name: 'Rage', remaining: 9, total: 3 }] }).resources[0].remaining, 9);
+  is('an untracked total stays 0 with a live remaining',
+    normalizeCharacter({ resources: [{ name: 'Luck', remaining: 3, total: 0 }] }).resources[0], { name: 'Luck', remaining: 3, total: 0 });
+  is('a negative count is preserved', normalizeCharacter({ resources: [{ name: 'X', remaining: -1 }] }).resources[0].remaining, -1);
+
+  // A pre-#140 backup must still import, and a #140 file must round-trip through parseStored.
+  const preFile140 = JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [{ name: 'Old' }] });
+  is('pre-#140 backup gains an empty resources list', parseStored(preFile140).characters[0].resources, []);
+  const withFile = JSON.stringify({
+    schemaVersion: SCHEMA_VERSION,
+    characters: [{ name: 'Barb', resources: [{ name: 'Rage', remaining: 1, total: 3 }] }],
+  });
+  is('a #140 backup round-trips', parseStored(withFile).characters[0].resources,
+    [{ name: 'Rage', remaining: 1, total: 3 }]);
+}
+
 /* ------------------------------------- normalizeCharacter spell slots */
 
 describe('normalizeCharacter slots');
@@ -1139,13 +1199,35 @@ describe('normalizeLayout: objects');
 
   const objSpan = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id).span;
 
-  is('default combat carries all 12 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
+  is('default combat carries all 13 objects in order', objIds(DEFAULT_LAYOUT), COMBAT_OBJS);
   // #78: a layout saved before the Concentration tile existed must gain it, same backfill the
   // features card relies on below — otherwise the tile renders but arrange mode can't see it.
   is('a pre-#78 combat card gains the concentration object', objIds(normalizeLayout({
     layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
     tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: COMBAT_OBJS.filter((id) => id !== 'concentration') }] }],
   })).includes('concentration'), true);
+  // #140: the same backfill for the Resources tile, and the one that matters most for it —
+  // every player already has a saved layout, so if normalizeCard did not append the new object
+  // the tile would render but arrange mode could neither move nor hide it.
+  {
+    const pre140 = normalizeLayout({
+      layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
+      tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: COMBAT_OBJS.filter((id) => id !== 'resources') }] }],
+    });
+    is('a pre-#140 combat card gains the resources object', objIds(pre140).includes('resources'), true);
+    // Appended, not inserted at its registry index: the saved arrangement is the player's, and
+    // reconciliation adds to the end of it rather than reshuffling tiles they placed by hand.
+    is('the backfilled resources object lands last', objIds(pre140).at(-1), 'resources');
+    is('the backfilled object is visible and full-span',
+      card(pre140, 'combat').objects.find((o) => o.componentId === 'resources'),
+      { componentId: 'resources', hidden: false, span: SPAN_MAX, height: HEIGHT_MIN });
+    // Backfill must be exactly-once, or a second normalize (every load does one) duplicates it.
+    is('backfill is idempotent', objCount(normalizeLayout(pre140), 'resources'), 1);
+  }
+  is('resources defaults to the full row', objSpan(DEFAULT_LAYOUT, 'resources'), SPAN_MAX);
+  // cost:'js' is the safety oracle: renderRows dereferences #resources with no null check, so
+  // arrange mode must never be allowed to detach this tile.
+  is('resources is a cost:js object', OBJECT_REGISTRY.resources.cost, 'js');
   is('default objects all visible', card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.hidden === false), true);
   is('a non-objectified card (attacks) has no objects field', 'objects' in card(DEFAULT_LAYOUT, 'attacks'), false);
 

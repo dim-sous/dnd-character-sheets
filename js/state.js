@@ -21,6 +21,7 @@ const LIST_PATHS = {
   feats: 'feats',
   inventory: 'inventory',
   hitDice: 'hitDice',
+  resources: 'resources',   // #140
 };
 
 let characters = [];
@@ -277,6 +278,16 @@ export function setSlotsUsed(level, used) {
  * The HP half is `rules.restoreHp`, not an inline assignment: it has two edge cases worth
  * stating and testing (an unset max, and a hand-set current above max), and the rest of the
  * recovery arithmetic already lives in the pure module for exactly that reason.
+ *
+ * Class resources (#140) are deliberately NOT in this list, and that is a decision rather than
+ * an omission. Everything restored above recovers on a long rest for EVERY character — the rule
+ * is a property of the game, not of the sheet's owner. "Does this resource come back?" is the
+ * opposite: Rage does on a long rest, Channel Divinity on a short one, a Warlock's slots on a
+ * short one, and a once-per-day item on neither. Restoring them all would be wrong for most
+ * characters, and silently wrong — the player would have to notice and undo it, which is worse
+ * than never doing it, and there is no undo for character data (#107). Encoding it properly
+ * needs a per-resource recovery rule, i.e. the class knowledge this app has refused to hold.
+ * So a resource is spent and refilled by hand, like every other free-form field here.
  */
 export function longRest() {
   const char = getActive();

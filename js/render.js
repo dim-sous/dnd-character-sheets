@@ -344,6 +344,22 @@ const ROW_TEMPLATE_IDS = {
   feats: 'tpl-feat',
   inventory: 'tpl-inventory',
   hitDice: 'tpl-hitdie',
+  resources: 'tpl-resource',   // #140
+};
+
+/**
+ * What an empty list says, where the generic line below isn't enough (#140).
+ *
+ * Every other list is named for something the player already knows they own — Attacks,
+ * Inventory, Feats — so "nothing here yet" is the whole message. "Resources" is not: it is the
+ * one tile whose title doesn't say what belongs in it, and most characters will have none, so
+ * the empty state is the only thing they will ever see there. Naming three examples is the
+ * cheapest way to answer "what is this for", and it costs no rules knowledge — this is prose in
+ * a hint, not the app knowing what a Rage is. Anything not listed here falls back to the
+ * generic line.
+ */
+const ROW_EMPTY_MESSAGES = {
+  resources: 'No resources yet — tap Edit to add one (Rage, Ki, Bardic Inspiration…).',
 };
 
 function renderRows(char, listName) {
@@ -383,7 +399,7 @@ function renderRows(char, listName) {
   if (items.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'rows__empty';
-    empty.textContent = 'Nothing here yet — tap Edit to add.';
+    empty.textContent = ROW_EMPTY_MESSAGES[listName] ?? 'Nothing here yet — tap Edit to add.';
     host.append(empty);
   }
 }

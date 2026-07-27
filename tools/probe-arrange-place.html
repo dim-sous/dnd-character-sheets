@@ -37,6 +37,13 @@ try {
   }
 
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  // Read the expected tile count from the registry rather than hardcoding it. It was 12 until
+  // #140 added Resources, and two assertions below then failed for no reason other than the
+  // number — a fixture that breaks on every new tile trains you to edit the probe rather than
+  // read it. What these checks are actually about is the LAST tile being selectable and
+  // placeable, whatever the count happens to be.
+  const { OBJECT_ORDER } = await import('../js/layout-registry.js');
+  const COMBAT_COUNT = OBJECT_ORDER.combat.length;
   const c = blankCharacter();
   c.name = 'Probe'; c.class = 'Wizard'; c.level = 5; c.hp.max = 32; c.hp.current = 32;
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -61,14 +68,16 @@ try {
   await wait(350);
 
   const order0 = ids();
-  ok('12 Combat objects to work with', order0.length === 12, `${order0.length}`);
+  ok('every registered Combat object is on screen to work with', order0.length === COMBAT_COUNT,
+    `${order0.length} of ${COMBAT_COUNT}`);
   ok('Undo starts disabled', btn('layout-undo').disabled);
 
   // --- pick up the LAST object and put it first: the 11-tap case from the issue ------------
   const last = order0[order0.length - 1];
   tile(last).click();
   await wait(250);
-  ok('the last tile can be selected', bar().querySelector('.objbar__pos')?.textContent === '12 of 12',
+  ok('the last tile can be selected',
+    bar().querySelector('.objbar__pos')?.textContent === `${COMBAT_COUNT} of ${COMBAT_COUNT}`,
     `"${bar().querySelector('.objbar__pos')?.textContent}"`);
 
   btn('place-object-start').click();
