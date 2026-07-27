@@ -49,6 +49,24 @@
   --space-7: 32px;
   --space-8: 48px;
 
+  /* Type scale (#121). Six steps, and body is --text-md.
+
+     Before this there were 21 distinct font sizes, five of them inside a 1.6px band
+     (14.4 / 14.08 / 13.6 / 13.12 / 12.8). A 0.32px step is not a level of hierarchy — it is
+     noise that stops things lining up. Three more sat under 10px (8.96 on the HP sublabel,
+     9.28 on the skills legend, 9.92 on every tile label), which is below the point where a
+     label is comfortably readable on a phone; those were raised, not rounded.
+
+     16.8px — card titles, the brand, the topbar name — rounds DOWN to 16 by distance, which
+     would erase the only thing separating a heading from body text. It is mapped up to 18 on
+     purpose. Hierarchy beats nearest-neighbour. */
+  --text-2xs: 11px;        /* the floor — captions and tile labels, nothing smaller */
+  --text-xs:  12px;
+  --text-sm:  14px;
+  --text-md:  16px;        /* body */
+  --text-lg:  18px;        /* headings, and icon glyphs */
+  --text-xl:  22px;        /* the big display numbers: HP, ability mods, tile values */
+
   --radius: 10px;
   --tap: 44px;             /* minimum comfortable touch target */
   /* Fixed so the sticky stack below the topbar is arithmetic, not guesswork. */
@@ -223,7 +241,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 /* "Small" means smaller text and padding, NOT a smaller target. This used to set 36px, which
    beat the base .btn's var(--tap) on source order and put every card Edit / + Add button —
    including the only route to Max HP — under the minimum (#77). */
-.btn--small { min-height: var(--tap); padding: var(--space-1) var(--space-3); font-size: .85rem; }
+.btn--small { min-height: var(--tap); padding: var(--space-1) var(--space-3); font-size: var(--text-sm); }
 
 .btn-row { display: flex; gap: var(--space-2); }
 .btn-row > .btn { flex: 1; }
@@ -232,16 +250,16 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--tap); height: var(--tap);
   background: none; border: 0; border-radius: 8px;
-  font-size: 1.25rem; cursor: pointer;
+  font-size: var(--text-lg); cursor: pointer;
 }
 
 .rule { border: 0; border-top: 1px solid var(--line); margin: var(--space-3) 0; }
 
-.hint { margin: var(--space-2) 0 0; font-size: .78rem; color: var(--ink-faint); line-height: 1.4; }
+.hint { margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--ink-faint); line-height: 1.4; }
 
 .field { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .field > label {
-  font-size: .72rem; font-weight: 600; letter-spacing: .07em;
+  font-size: var(--text-xs); font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
 }
 
@@ -276,17 +294,17 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 .topbar__id { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar__name {
-  font-family: var(--serif); font-size: 1.05rem; font-weight: 600;
+  font-family: var(--serif); font-size: var(--text-lg); font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .topbar__sub {
-  font-size: .72rem; color: var(--ink-faint);
+  font-size: var(--text-xs); color: var(--ink-faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 .saved {
   flex: none; min-width: 3.5rem; text-align: right;
-  font-size: .72rem; color: var(--ink-faint);
+  font-size: var(--text-xs); color: var(--ink-faint);
   transition: opacity .2s;
 }
 .saved[data-tone="error"] { color: var(--bad); }
@@ -296,7 +314,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   background: color-mix(in srgb, var(--bad) 12%, var(--card));
   border: 1px solid color-mix(in srgb, var(--bad) 35%, var(--line));
   border-radius: var(--radius);
-  font-size: .85rem;
+  font-size: var(--text-sm);
 }
 
 /* The banner is red by default because it normally carries a failure. A waiting
@@ -332,7 +350,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--line);
 }
-.brand { margin: 0; font-size: 1.05rem; }
+.brand { margin: 0; font-size: var(--text-lg); }
 
 .roster { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: var(--space-2); }
 .roster__item { margin-bottom: var(--space-1); }
@@ -348,8 +366,8 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   background: color-mix(in srgb, var(--accent) 12%, var(--card));
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
-.roster__name { font-family: var(--serif); font-size: 1rem; }
-.roster__meta { font-size: .75rem; color: var(--ink-faint); }
+.roster__name { font-family: var(--serif); font-size: var(--text-md); }
+.roster__meta { font-size: var(--text-xs); color: var(--ink-faint); }
 
 .sidebar__foot { padding: var(--space-3); border-top: 1px solid var(--line); }
 .sidebar__foot > .btn--primary { width: 100%; margin-bottom: var(--space-2); }
@@ -429,7 +447,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
      height on Death Saves, Conditions, Hit Point Dice and Exhaustion that the <span> labels
      never had. Third silent difference between the two, after the typeface and the centring. */
   margin: 0;
-  font-size: .62rem; font-weight: 600; letter-spacing: .07em;
+  font-size: var(--text-2xs); font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
   /* Deliberately NO `width: 100%` here. A tile's direct children already get it from
      `.tile > *:not(.visually-hidden)`, and they are blockified as flex items so `text-align`
@@ -460,7 +478,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .tile__body--actions { gap: var(--space-2); flex: 1; align-items: stretch; }
 .tile__body--actions .btn { flex: 1 1 auto; }
 .tile__value {
-  font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
+  font-family: var(--serif); font-size: var(--text-xl); font-weight: 600;
   font-variant-numeric: tabular-nums; line-height: 1.1;
 }
 /* Typography only. The box — full width, .4rem/.6rem padding, border, fill and the 44px
@@ -468,7 +486,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    (0,1,0). This used to declare `width:3.2rem; min-height:34px; background:none; border:0`;
    none of it ever applied, and it read as a touch-target violation that wasn't there (#77). */
 .tile__input {
-  font-family: var(--serif); font-size: 1.4rem; font-weight: 600; text-align: center;
+  font-family: var(--serif); font-size: var(--text-xl); font-weight: 600; text-align: center;
 }
 /* The focus tint is for a field you are TYPING in. `:not(:read-only)` matters since #76 made
    AC and Speed keep their field in view mode: locked, it still took focus on a tap and painted
@@ -529,14 +547,14 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 .card__title {
   margin: 0 0 var(--space-3);
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--line-soft);
 }
 
 .subhead {
   margin: var(--space-4) 0 var(--space-2);
-  font-size: .72rem; font-weight: 700; letter-spacing: .1em;
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-faint);
   font-family: var(--sans);
 }
@@ -572,13 +590,13 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    a 390px head, and an inline-flex that can't wrap would overflow the card instead. */
 .card__move { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-0); margin-left: auto; }
 .card__move .icon-btn {
-  width: var(--tap); height: var(--tap); font-size: 1.1rem;
+  width: var(--tap); height: var(--tap); font-size: var(--text-lg);
   border: 1px solid var(--line); border-radius: 8px;
 }
 .card__move .icon-btn:disabled { opacity: .3; cursor: default; }
 .card__movetab {
   min-height: var(--tap); max-width: 9rem; min-width: 0;
-  padding: 0 var(--space-2); font-size: .78rem;
+  padding: 0 var(--space-2); font-size: var(--text-xs);
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
@@ -592,7 +610,7 @@ body.is-arranging .card__title { display: none; }
 body.is-arranging .list__head { flex-wrap: wrap; }
 .card__rename {
   flex: 1 1 8rem; min-width: 8rem; min-height: var(--tap);
-  padding: 0 var(--space-2); font-size: 1rem; font-weight: 600;
+  padding: 0 var(--space-2); font-size: var(--text-md); font-weight: 600;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
@@ -609,7 +627,7 @@ body.is-arranging .arrange-bar {
 }
 /* `flex: 0 1 auto` (not `1` with an 8rem floor) so the label and Done share ONE row instead of
    being forced apart — the mode name doesn't need to claim a line of a phone screen (#73). */
-.arrange-bar__label { flex: 0 1 auto; min-width: 0; font-size: .8rem; color: var(--ink-soft); }
+.arrange-bar__label { flex: 0 1 auto; min-width: 0; font-size: var(--text-xs); color: var(--ink-soft); }
 .arrange-bar__actions { display: flex; gap: var(--space-2); margin-left: auto; }
 
 /* The rare half of arrange mode, folded away (#73). Tab editing alone is ~290px — 75% of what
@@ -619,7 +637,7 @@ body.is-arranging .arrange-bar {
 .arrange-more__summary {
   display: flex; align-items: center; gap: var(--space-2);
   min-height: var(--tap); cursor: pointer; list-style: none;
-  font-size: .8rem; color: var(--ink-soft);
+  font-size: var(--text-xs); color: var(--ink-soft);
 }
 .arrange-more__summary::-webkit-details-marker { display: none; }
 /* A real element (aria-hidden in the markup) rather than generated content, so the glyph can't
@@ -634,12 +652,12 @@ body.is-arranging .arrange-bar {
 .tabrow { display: flex; align-items: center; gap: var(--space-1); }
 .tabrow__name {
   flex: 1; min-width: 0; min-height: var(--tap);
-  padding: 0 var(--space-2); font-size: .85rem;
+  padding: 0 var(--space-2); font-size: var(--text-sm);
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
 .tabrow .icon-btn {
-  width: var(--tap); height: var(--tap); flex: none; font-size: 1rem;
+  width: var(--tap); height: var(--tap); flex: none; font-size: var(--text-md);
   border: 1px solid var(--line); border-radius: 8px;
 }
 .tabrow .icon-btn:disabled { opacity: .3; cursor: default; }
@@ -673,7 +691,7 @@ body.is-arranging [data-object].is-selected {
 /* Shown until a tile is picked, so the mode opens saying what to do rather than showing an empty
    strip. It is also the only place the OBJECT controls are explained — the bar's own label only
    ever described the card ones, which is #72's third complaint. */
-.objbar__hint { font-size: .8rem; color: var(--ink-soft); }
+.objbar__hint { font-size: var(--text-xs); color: var(--ink-soft); }
 /* The rename field shares row 1 with the two buttons. It used to claim a row of its own,
    because at `8rem` it sat beside Up and Down and pushed Width and Hide onto row 2 — four
    controls reading as two unrelated pairs. There are two buttons left (Up/Down became "Move
@@ -683,7 +701,7 @@ body.is-arranging [data-object].is-selected {
   /* `max-width` stops it stretching to 1100px of empty field on a laptop, where arrange mode
      still forces the single-column phone layout. */
   flex: 1 1 8rem; min-width: 6rem; max-width: 24rem; min-height: var(--tap);
-  padding: 0 var(--space-2); font-size: .9rem; font-weight: 600;
+  padding: 0 var(--space-2); font-size: var(--text-sm); font-weight: 600;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
@@ -710,7 +728,7 @@ body.is-arranging [data-object].is-lifted {
   grid-column: 1 / -1;
   display: flex; align-items: center; justify-content: center;
   min-height: var(--tap); padding: 0;
-  font: inherit; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase;
+  font: inherit; font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase;
   color: var(--accent); background: none;
   border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
   border-radius: 8px; cursor: pointer;
@@ -728,7 +746,7 @@ body.is-arranging [data-object].is-lifted {
 .objbar__btn.is-off { border-style: dashed; }   /* the hide toggle once the object is hidden */
 .objbar__pos {
   flex: none; margin-left: auto;
-  font-size: .72rem; color: var(--ink-soft); font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs); color: var(--ink-soft); font-variant-numeric: tabular-nums;
 }
 
 /* The two size sliders (item 1). One per line and full width: eleven width stops across ~300px
@@ -742,14 +760,14 @@ body.is-arranging [data-object].is-lifted {
 }
 .objbar__size-cap {
   flex: 0 0 3.4rem;
-  font-size: .72rem; font-weight: 600; letter-spacing: .06em;
+  font-size: var(--text-xs); font-weight: 600; letter-spacing: .06em;
   text-transform: uppercase; color: var(--ink-faint);
 }
 /* The readout sits at a fixed width so the slider's track doesn't resize under the thumb when
    the text goes from "a third" to "5/12 wide" mid-drag. */
 .objbar__size-out {
   flex: 0 0 7.5rem;
-  font-size: .72rem; color: var(--ink-soft); text-align: right;
+  font-size: var(--text-xs); color: var(--ink-soft); text-align: right;
 }
 .objbar__range {
   flex: 1 1 auto; min-width: 0;
@@ -769,12 +787,12 @@ body.is-arranging [data-object].is-lifted {
 @media (pointer: fine) {
   body.is-arranging .drag-grip {
     display: inline-flex; align-items: center; justify-content: center; flex: none;
-    width: 22px; height: 22px; font-size: .8rem;
+    width: 22px; height: 22px; font-size: var(--text-xs);
     color: var(--ink-soft); background: var(--card);
     border: 1px solid var(--line); border-radius: 6px;
     cursor: grab; user-select: none;
   }
-  body.is-arranging .card__move .drag-grip { width: var(--tap); height: var(--tap); font-size: 1rem; }
+  body.is-arranging .card__move .drag-grip { width: var(--tap); height: var(--tap); font-size: var(--text-md); }
   body.is-arranging .drag-grip:active { cursor: grabbing; }
 }
 /* Objects drag from the tile itself now, so the cursor has to say so (mouse only — native
@@ -876,25 +894,25 @@ body.is-arranging [data-action="add-row"] { display: none; }
 }
 .ability-row__name {
   flex: 1; margin: 0; /* h3: kill the UA heading margin inside the flex row */
-  font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+  font-size: var(--text-xs); font-weight: 700; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-soft);
 }
 .ability-row__score {
   /* The global input[type="number"] rule wins width:100% on specificity; the cap
      has to come from max-width, the same dodge the old ability tile used. */
   width: 100%; max-width: 3.4rem;
-  font-size: .9rem; text-align: center;
+  font-size: var(--text-sm); text-align: center;
   display: none;
 }
 .is-editing .ability-row__score { display: inline-block; }
 .ability-row__score-display {
   min-width: 3.4rem; text-align: center;
-  font-size: .9rem;
+  font-size: var(--text-sm);
 }
 .is-editing .ability-row__score-display { display: none; }
 .ability-row__mod {
   min-width: 2.6rem; text-align: center;
-  font-family: var(--serif); font-size: 1.35rem; font-weight: 600;
+  font-family: var(--serif); font-size: var(--text-xl); font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 /* Passive Perception sits under the ability grid on the Abilities tab. */
@@ -904,11 +922,11 @@ body.is-arranging [data-action="add-row"] { display: none; }
   border-top: 1px solid var(--line-soft);
 }
 .passive__label {
-  font-size: .72rem; font-weight: 600; letter-spacing: .07em;
+  font-size: var(--text-xs); font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
 }
 .passive__value {
-  font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
+  font-family: var(--serif); font-size: var(--text-xl); font-weight: 600;
   font-variant-numeric: tabular-nums; line-height: 1.1;
 }
 
@@ -936,7 +954,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
    misalign — and never scrolls far from the checkboxes it labels. */
 .skills__legend {
   padding: var(--space-0) var(--space-1) 0;
-  font-size: .58rem; font-weight: 700; letter-spacing: .08em;
+  font-size: var(--text-2xs); font-weight: 700; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-faint);
   text-align: center;
 }
@@ -945,7 +963,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
 .skills { list-style: none; margin: 0; padding: 0; }
 .skill { min-height: var(--tap); border-bottom: 1px solid var(--line-soft); padding: 0 var(--space-1); }
 .skill:last-child { border-bottom: 0; }
-.skill__name { font-size: .88rem; }
+.skill__name { font-size: var(--text-sm); }
 
 .skill__prof, .skill__exp, .skill__bonus,
 .legend__prof, .legend__exp, .legend__bonus, .legend__total {
@@ -992,16 +1010,16 @@ input.skill__prof::after, input.skill__exp::after { content: ""; position: absol
      full --tap so the field clears the minimum on its short side too (#86; it measured
      38.4px wide while its column was 2.4rem). */
   width: 100%; max-width: var(--tap);
-  font-size: .8rem;
+  font-size: var(--text-xs);
 }
 .skill__marker {
   justify-self: center;
-  font-size: .75rem; font-weight: 700;
+  font-size: var(--text-xs); font-weight: 700;
   color: var(--ink-faint);
 }
 .skill__total {
   justify-self: center;
-  font-family: var(--serif); font-size: 1.05rem; font-weight: 600;
+  font-family: var(--serif); font-size: var(--text-lg); font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1047,7 +1065,7 @@ input.skill__prof::after, input.skill__exp::after { content: ""; position: absol
   display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
 }
 .deathsaves__label {
-  font-size: .72rem; letter-spacing: .04em; color: var(--ink-soft);
+  font-size: var(--text-xs); letter-spacing: .04em; color: var(--ink-soft);
 }
 
 /* ---------------------------------------------------------------- chips */
@@ -1060,7 +1078,7 @@ input.skill__prof::after, input.skill__exp::after { content: ""; position: absol
   background: var(--parchment);
   border: 1px solid var(--line);
   border-radius: 999px;
-  font-size: .82rem;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .chip:has(:checked) {
@@ -1107,7 +1125,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
      left edge and undo the centring above. It still shrinks and ellipsizes when a lot of
      conditions are active, which is the case this readout exists for. */
   flex: 0 1 auto; min-width: 0;
-  font-size: .78rem; color: var(--ink-soft);
+  font-size: var(--text-xs); color: var(--ink-soft);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .conditions .chips { margin-top: var(--space-2); }
@@ -1121,7 +1139,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .slots__actions { display: flex; gap: var(--space-2); }
 
 .slot__count {
-  font-size: .85rem; font-weight: 600; color: var(--ink-soft);
+  font-size: var(--text-sm); font-weight: 600; color: var(--ink-soft);
   text-align: right; font-variant-numeric: tabular-nums;
 }
 
@@ -1134,14 +1152,14 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   border-bottom: 1px solid var(--line-soft);
 }
 .slot:last-child { border-bottom: 0; }
-.slot__level { font-size: .8rem; font-weight: 600; color: var(--ink-soft); }
+.slot__level { font-size: var(--text-xs); font-weight: 600; color: var(--ink-soft); }
 .slot__total { margin: 0; }
 /* Typography only. The box — full width, padding, border, fill and the 44px min-height —
    comes from the base `input[type=…]` rule, which at (0,1,1) outranks this (0,1,0). This
    used to declare `min-height: 36px`; it never applied (the field measures 44px), and it
    read as a touch-target violation that wasn't there (#87). `font-size` DOES apply — the
    base rule sets none — so it stays. */
-.slot__total-input { font-size: .85rem; }
+.slot__total-input { font-size: var(--text-sm); }
 
 /* ------------------------------------------------------ repeatable rows */
 
@@ -1150,7 +1168,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
 .rows__empty {
   padding: var(--space-3); text-align: center;
-  color: var(--ink-faint); font-size: .82rem; font-style: italic;
+  color: var(--ink-faint); font-size: var(--text-sm); font-style: italic;
 }
 
 /* Wrapping flex, not grid.
@@ -1260,7 +1278,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row__misc { flex: 0 0 3.5rem; }
 .row__prof {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-1);
-  min-height: var(--tap); font-size: .8rem; color: var(--ink-faint);
+  min-height: var(--tap); font-size: var(--text-xs); color: var(--ink-faint);
 }
 
 /* Notes: hidden by default; revealed when the entry is tap-expanded (.is-expanded), and always
@@ -1282,7 +1300,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   content: "▸";
   flex: none; align-self: center;
   margin-left: var(--space-0);
-  color: var(--ink-faint); font-size: .7rem;
+  color: var(--ink-faint); font-size: var(--text-2xs);
   transition: transform .12s;
 }
 .row.is-expanded > .row__primary::after { transform: rotate(90deg); }
@@ -1335,7 +1353,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   width: var(--tap); height: var(--tap);   /* #77 */
   margin-left: auto;
   background: none; border: 1px solid transparent; border-radius: 8px;
-  color: var(--ink-faint); font-size: .95rem; cursor: pointer;
+  color: var(--ink-faint); font-size: var(--text-md); cursor: pointer;
 }
 .row__remove:hover { color: var(--bad); border-color: var(--bad); }
 
@@ -1367,7 +1385,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   border-color: transparent;
   background: none;
   color: var(--ink-soft);
-  font-size: .8rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: .02em;
 }
@@ -1431,7 +1449,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 }
 .hp__field + .hp__field { border-left: 1px solid var(--line-soft); } /* the "separated" seam */
 .hp__sublabel {
-  font-size: .56rem; font-weight: 600; letter-spacing: .05em;
+  font-size: var(--text-2xs); font-weight: 600; letter-spacing: .05em;
   text-transform: uppercase; color: var(--ink-faint); line-height: 1;
 }
 /* The box, padding, full width and 44px min-height all come from the base `input[type=…]`
@@ -1440,7 +1458,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
    — the app's existing "live field = boxed, locked = flat" language. All three share one serif
    treatment so Current / Max / Temp read as one row. */
 .hp__cur, .hp__max, .hp__temp {
-  font-family: var(--serif); font-weight: 700; font-size: 1.4rem;
+  font-family: var(--serif); font-weight: 700; font-size: var(--text-xl);
   text-align: center; line-height: 1.1;
 }
 /* Current / Max / Temp share ONE size on purpose. #75 briefly gave Current a 1.9rem display
@@ -1452,7 +1470,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
    Quiet by design: it is a caption for the numbers above it, not a fourth thing to read. */
 .hp__result {
   margin: var(--space-1) 0 0;
-  font-size: .72rem; line-height: 1.35; text-align: center;
+  font-size: var(--text-xs); line-height: 1.35; text-align: center;
   color: var(--ink-soft);
   text-wrap: balance;
 }
@@ -1496,7 +1514,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   padding: var(--space-1);
   background: none; border: 0; border-radius: 8px;
   font-family: var(--sans);
-  font-size: .74rem; color: var(--ink-soft); cursor: pointer;
+  font-size: var(--text-xs); color: var(--ink-soft); cursor: pointer;
 }
 .tab[aria-selected="true"] {
   color: var(--accent); font-weight: 600;
@@ -1559,8 +1577,8 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
 }
 .dialog::backdrop { background: rgba(20, 14, 8, .5); }
-.dialog__title { margin: 0 0 var(--space-2); font-size: 1.15rem; }
-.dialog__body { margin: 0 0 var(--space-2); font-size: .88rem; }
+.dialog__title { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+.dialog__body { margin: 0 0 var(--space-2); font-size: var(--text-sm); }
 .dialog__actions {
   display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end;
   margin: var(--space-4) 0 0; padding: 0;
