@@ -1,0 +1,218 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Row alignment probe</title>
+<!--
+  Measures vertical alignment WITHIN a row — the thing the spacing probe never looked at. It
+  reports off-scale gaps and asymmetric gutters, all of which can be perfect while the numbers
+  in a row of tiles sit at four different heights.
+
+  Three specific reports, from three real observations on a phone:
+
+    A. Status tile row — where each big number actually sits. "17" (AC) rides lower than PB,
+       Init and Speed beside it.
+    B. Toggle row — where each tile's control sits. The CONC. tick sits higher than the
+       HEROIC INSP. tick, whose label wraps to two lines.
+    C. Feature vs feat rows — the box around "Tough" is a different height from the box
+       around "Druidic", despite near-identical templates.
+
+  Seeds a character shaped like the one in the report (Druid, several features, one feat).
+-->
+<style>
+  body { margin: 0; font: 12px/1.45 ui-monospace, monospace; }
+  #fr { width: 390px; height: 900px; border: 0; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="fr"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const L = [];
+const say = (s) => L.push(s);
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) { const k = await caches.keys(); await Promise.all(k.map((x) => caches.delete(x))); }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Fokou'; c.class = 'Druid'; c.subclass = 'Moon'; c.level = 3;
+  c.hp.max = 39; c.hp.current = 39; c.hp.temp = 12;
+  c.ac = 17; c.speed = 30;
+  c.abilities.dex = 16;
+  c.spellcasting.ability = 'wis';
+  c.features = [
+    { name: 'Druidic', source: 'Druid', level: '1', text: '' },
+    { name: 'Primal Order', source: 'Druid', level: '1', text: '' },
+    { name: 'Wild Shape', source: 'Druid', level: '2', text: '' },
+    { name: 'Circle of the Moon Spells', source: 'Moon', level: '3', text: '' },
+  ];
+  c.feats = [{ name: 'Tough', source: 'Origin', text: '' }];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const fr = document.getElementById('fr');
+  await new Promise((res) => { fr.onload = res; fr.src = '../index.html'; });
+  const d = fr.contentDocument, w = fr.contentWindow;
+  const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+  await settle(600);
+  const R = (n) => Math.round(n * 10) / 10;
+
+  /*
+   * Where the GLYPHS sit, not where the box sits. A border box can be identical while the text
+   * inside rides high or low — an <input> and an <output> lay their text out differently even
+   * at the same font-size and height, which is exactly the failure mode under test. A Range
+   * over the text node gives the painted line box.
+   */
+  const textRect = (el) => {
+    if (el.tagName === 'INPUT') return el.getBoundingClientRect();  // no text node to range over
+    const node = [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+    if (!node) return el.getBoundingClientRect();
+    const r = d.createRange();
+    r.selectNodeContents(node);
+    return r.getBoundingClientRect();
+  };
+
+  // ---- A. the status tile row -------------------------------------------------------------
+  say('=== A. Status tile row — where each number sits ===');
+  const tileOf = (name) => d.querySelector(`.tile[data-object="${name}"]`);
+  for (const name of ['pb', 'ac', 'initiative', 'speed']) {
+    const tile = tileOf(name);
+    if (!tile) { say(`  ${name.padEnd(6)} (no tile)`); continue; }
+    const tr = tile.getBoundingClientRect();
+    const val = [...tile.querySelectorAll('.tile__value, .tile__input')]
+      .find((el) => el.checkVisibility?.());
+    if (!val) { say(`  ${name.padEnd(6)} (no visible value)`); continue; }
+    const vr = val.getBoundingClientRect();
+    const tx = textRect(val);
+    say(`  ${name.padEnd(6)} <${val.tagName.toLowerCase()}.${String(val.className).split(' ')[0]}>`
+      + `  tileTop=${R(tr.top)}  boxTop=${R(vr.top - tr.top)} boxH=${R(vr.height)}`
+      + `  TEXTtop=${R(tx.top - tr.top)} textBottom=${R(tx.bottom - tr.top)}`
+      + `  fontSize=${w.getComputedStyle(val).fontSize} lineH=${w.getComputedStyle(val).lineHeight}`
+      + `  pad=${w.getComputedStyle(val).paddingTop}/${w.getComputedStyle(val).paddingBottom}`);
+  }
+
+  // ---- B. the toggle row ------------------------------------------------------------------
+  say('\n=== B. Toggle row — where each control sits ===');
+  /*
+   * Measured TWICE. With the shipped layout every .tile__label carries a min-height that
+   * reserves two lines, so a one-line label and a two-line label leave their controls at the
+   * same height and the row looks fine. `.tile.is-sized .tile__label { min-height: 0 }` drops
+   * that the moment a player resizes ANY tile — which is the state the report came from, and
+   * the state a default-layout probe can never reach.
+   */
+  for (const pass of ['default layout', 'after a tile has been resized (is-sized)']) {
+    if (pass.startsWith('after')) {
+      for (const t of d.querySelectorAll('.tile')) t.classList.add('is-sized');
+      await settle(200);
+    }
+    say(`  --- ${pass} ---`);
+  for (const name of ['heroic', 'rest', 'concentration']) {
+    const tile = tileOf(name);
+    if (!tile) { say(`  ${name} (no tile)`); continue; }
+    const tr = tile.getBoundingClientRect();
+    const label = tile.querySelector('.tile__label');
+    const lr = label ? label.getBoundingClientRect() : null;
+    const ctrl = tile.querySelector('input[type="checkbox"], .toggle, .btn');
+    const cr = ctrl ? ctrl.getBoundingClientRect() : null;
+    say(`  ${name.padEnd(14)} tileH=${R(tr.height)}`
+      + `  labelH=${lr ? R(lr.height) : '-'} labelLines=${lr && label ? Math.round(lr.height / parseFloat(w.getComputedStyle(label).lineHeight)) : '-'}`
+      + `  controlTop(rel tile)=${cr ? R(cr.top - tr.top) : '-'}`
+      + `  controlH=${cr ? R(cr.height) : '-'}`);
+  }
+  }
+  for (const t of d.querySelectorAll('.tile')) t.classList.remove('is-sized');
+  await settle(150);
+
+  // ---- C. feature rows vs feat rows -------------------------------------------------------
+  say('\n=== C. Feature vs feat rows (Character tab, view mode) ===');
+  // Activate whichever panel actually OWNS the rows. In the shipped layout Features and Feats
+  // live on Gear, not Character — the report came from a customised layout that had moved them.
+  // Hunting for the tab by name measured a panel that never contained them, and every row read
+  // 0x0 because its panel was still `hidden`.
+  const ownerPanel = d.querySelector('.row--feature')?.closest('[role="tabpanel"]');
+  const ownerTab = ownerPanel && d.querySelector(`[role="tab"][aria-controls="${ownerPanel.id}"]`);
+  if (ownerTab) { ownerTab.click(); await settle(600); }
+  say(`  (rows live on ${ownerPanel ? '#' + ownerPanel.id : '?'}; hidden now: ${ownerPanel?.hasAttribute('hidden')})`);
+  // why are these measuring zero?
+  for (const sel of ['.row--feature', '.row--feat']) {
+    const all = [...d.querySelectorAll(sel)];
+    say(`  ${sel}: ${all.length} in DOM`);
+    if (all.length) {
+      const r0 = all[0];
+      const rect = r0.getBoundingClientRect();
+      say(`    first rect: ${R(rect.width)}x${R(rect.height)} at ${R(rect.top)}`);
+      let n = r0, chain = [];
+      while (n && n !== d.body) {
+        const nr = n.getBoundingClientRect();
+        chain.push(`${n.tagName.toLowerCase()}${n.id ? '#' + n.id : ''}.${String(n.className).split(' ')[0]}[${R(nr.height)}${n.hasAttribute('hidden') ? ' HIDDEN' : ''}]`);
+        n = n.parentElement;
+      }
+      say(`    chain: ${chain.join(' < ')}`);
+    }
+  }
+  for (const sel of ['.row--feature', '.row--feat']) {
+    const rows = [...d.querySelectorAll(sel)].filter((r) => r.getBoundingClientRect().height > 0);
+    for (const row of rows) {
+      const rr = row.getBoundingClientRect();
+      const cs = w.getComputedStyle(row);
+      const prim = row.querySelector('.row__primary');
+      const pr = prim ? prim.getBoundingClientRect() : null;
+      const inp = row.querySelector('input[type="text"]');
+      const name = inp ? inp.value : '?';
+      say(`  ${sel.padEnd(15)} "${(name || '(blank)').slice(0, 26).padEnd(26)}"`
+        + ` H=${R(rr.height)}  pad=${cs.paddingTop}/${cs.paddingBottom}`
+        + `  gap=${cs.rowGap}  primaryH=${pr ? R(pr.height) : '-'}`
+        + `  minH=${cs.minHeight}`);
+    }
+  }
+  // The first row of each list is ~24px taller. What is inside its .row__primary that the
+  // others' is not?
+  say('\n  --- inside .row__primary, first row vs second ---');
+  const featRows = [...d.querySelectorAll('.row--feature')];
+  for (const [i, row] of featRows.slice(0, 2).entries()) {
+    const prim = row.querySelector('.row__primary');
+    const pcs = w.getComputedStyle(prim);
+    say(`  row ${i}: primaryH=${R(prim.getBoundingClientRect().height)} display=${pcs.display}`
+      + ` wrap=${pcs.flexWrap} gap=${pcs.rowGap} pad=${pcs.paddingTop}/${pcs.paddingBottom}`);
+    for (const k of prim.children) {
+      const kr = k.getBoundingClientRect();
+      say(`      ${k.tagName.toLowerCase()}.${String(k.className).split(' ')[0] || '-'}`
+        + `  ${R(kr.width)}x${R(kr.height)} top=${R(kr.top - prim.getBoundingClientRect().top)}`);
+    }
+    say(`      primaryWidth=${R(prim.getBoundingClientRect().width)}`
+      + ` inputComputedWidth=${w.getComputedStyle(prim.querySelector('input')).width}`
+      + ` value="${prim.querySelector('input').value}"`);
+    for (const pseudo of ['::before', '::after']) {
+      const ps = w.getComputedStyle(prim, pseudo);
+      if (ps.content && ps.content !== 'none') {
+        say(`      ${pseudo} content=${ps.content} position=${ps.position} w=${ps.width} h=${ps.height}`
+          + ` display=${ps.display} flex=${ps.flex} marginLeft=${ps.marginLeft}`);
+      }
+    }
+  }
+
+  // what differs between the two rules
+  const f1 = d.querySelector('.row--feature'), f2 = d.querySelector('.row--feat');
+  if (f1 && f2) {
+    const a = w.getComputedStyle(f1), b = w.getComputedStyle(f2);
+    const diffs = [];
+    for (const prop of ['paddingTop', 'paddingBottom', 'rowGap', 'minHeight', 'display',
+                        'alignItems', 'fontSize', 'lineHeight']) {
+      if (a[prop] !== b[prop]) diffs.push(`${prop}: feature=${a[prop]} feat=${b[prop]}`);
+    }
+    say(`  computed differences: ${diffs.length ? diffs.join('; ') : 'NONE — the rows differ by content, not by rule'}`);
+    // and the children each row actually renders
+    const kids = (el) => [...el.children].filter((k) => k.getBoundingClientRect().height > 0)
+      .map((k) => `${k.tagName.toLowerCase()}.${String(k.className).split(' ')[0]}(${R(k.getBoundingClientRect().height)})`);
+    say(`  feature children: ${kids(f1).join(' ')}`);
+    say(`  feat    children: ${kids(f2).join(' ')}`);
+  }
+
+  out.textContent = L.join('\n');
+} catch (err) {
+  out.textContent = `PROBE ERROR: ${err && err.stack || err}`;
+}
+</script>

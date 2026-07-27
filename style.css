@@ -478,7 +478,14 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   /* Short or tall, the contents sit in the middle of whatever room there is. */
   justify-content: center;
 }
-.tile.is-sized .tile__label { min-height: 0; }
+/* NOT `min-height: 0`. That reservation is load-bearing (#65 symptom 1): it is the only thing
+   keeping a one-line label ("Conc.") and a two-line one ("Heroic Insp.") from leaving their
+   controls at different heights across a row. Zeroing it for sized tiles quietly undid that
+   fix for anyone who had ever used the size sliders — measured at 6.6px of drift between the
+   Concentration tick and the Heroic Inspiration tick beside it, which is small enough to read
+   as sloppiness rather than as a bug and so had gone unreported for a while.
+   A sized tile that is genuinely too short still clips rather than overflowing: `.tile.is-sized`
+   sets `overflow: hidden` right above, which is what makes dropping this safe. */
 /* Tile children fill the tile's width — EXCEPT screen-reader-only helpers. `.visually-hidden`
    pins width to 1px, but it and this rule share specificity (0,1,0), so without the :not()
    this later rule wins and a visually-hidden label/heading inside a `.tile` (Rest's label, the
@@ -539,6 +546,15 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    none of it ever applied, and it read as a touch-target violation that wasn't there (#77). */
 .tile__input {
   font-family: var(--serif); font-size: var(--text-xl); font-weight: 600; text-align: center;
+  /* Same line box as .tile__value, or the two do not line up in a row of tiles.
+     Without it the input takes the UA's `normal` line-height (~31.9px at 22px serif), which
+     plus the base input padding makes the box 49.9px — taller than the 44px `.tile__body`
+     min-height. The body grows to fit, and the number inside it lands ~3px lower than the
+     <output> in the tile beside it. That is the "17 sits lower than PB, Init and Speed" report:
+     AC and Speed keep a real field in view mode (#76), the others render an <output>, and only
+     the field was pushing its own row down. At 1.1 the natural box is 42.2px, so min-height
+     wins at exactly 44 and the glyphs centre where the outputs' do. */
+  line-height: 1.1;
 }
 /* The focus tint is for a field you are TYPING in. `:not(:read-only)` matters since #76 made
    AC and Speed keep their field in view mode: locked, it still took focus on a tap and painted
@@ -1269,6 +1285,15 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   /* 2.75rem = 44px: the floor is a touch target, not just a legibility minimum (#77). */
   field-sizing: content; width: auto; min-width: 2.75rem;  /* width:auto so field-sizing wins over the base input{width:100%} */
   text-overflow: ellipsis; padding-inline: var(--space-1);
+  /* Leave room for the ▸ caret on the same line. `field-sizing: content` makes this input as
+     wide as its value, and a flex container decides line breaking from HYPOTHETICAL sizes —
+     before any shrinking — so once the input alone fills the line the caret wraps to a second
+     one and the row gets ~24px taller. Measured at exactly the knife edge: input 277.8 + gap 8
+     + margin 2 + caret 9.2 = 297.0 against a 297.0 container, which is a tie decided by
+     sub-pixel rounding. That is why some rows in a list were taller than others with no pattern
+     a player could infer — the first Feature and the first Feat came out tall, the rest didn't.
+     24px is the caret plus its gap and margin, rounded up. */
+  max-width: calc(100% - 1.5rem);
 }
 .row__primary > input:first-child { flex: 1 1 4rem; min-width: 0; }  /* name / item: grows into the free space */
 .row__primary > input:not(:first-child) { flex: 0 0 auto; }          /* to-hit / damage / qty: exactly content width */
