@@ -1,0 +1,91 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Skip link probe (#126)</title>
+<!--
+  A skip link is easy to add and easy to add uselessly: off-screen with `display:none` (not
+  focusable, so it never appears), pointing at an element that cannot take focus (so the jump
+  does nothing and Tab continues from the top), or sitting behind the sticky topbar once it
+  IS focused. All three look identical in the markup. This measures the three that matter.
+-->
+<style>
+  body { margin: 0; font: 12px/1.45 ui-monospace, monospace; }
+  #fr { width: 390px; height: 900px; border: 0; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="fr"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const L = [];
+let fails = 0;
+const ok = (name, pass, detail = '') => {
+  if (!pass) fails++;
+  L.push(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? '   ' + detail : ''}`);
+};
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) { const k = await caches.keys(); await Promise.all(k.map((x) => caches.delete(x))); }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Thorin'; c.hp.max = 30; c.hp.current = 20;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const fr = document.getElementById('fr');
+  await new Promise((res) => { fr.onload = res; fr.src = '../index.html'; });
+  const d = fr.contentDocument, w = fr.contentWindow;
+  const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+  await settle(500);
+
+  const link = d.querySelector('.skip-link');
+  ok('the skip link exists', Boolean(link));
+
+  // 1. It must be the FIRST thing in the tab order — a skip link reached after the roster
+  //    has skipped nothing.
+  const focusables = [...d.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+  )].filter((el) => el.checkVisibility?.() && !el.closest('[inert]'));
+  ok('it is first in the tab order', focusables[0] === link,
+    `first focusable is ${focusables[0]?.tagName.toLowerCase()}.${String(focusables[0]?.className).split(' ')[0]}`);
+
+  // 2. Off-screen until focused, on-screen after — and still focusable while hidden, which
+  //    display:none / visibility:hidden would both destroy.
+  const offRect = link.getBoundingClientRect();
+  ok('it is off-screen before focus', offRect.bottom <= 0, `bottom=${Math.round(offRect.bottom)}`);
+  ok('but still focusable while hidden', link.checkVisibility?.() === true,
+    'not display:none / visibility:hidden');
+
+  link.focus();
+  await settle(120);
+  const onRect = link.getBoundingClientRect();
+  ok('focusing brings it on-screen', onRect.top >= 0 && onRect.bottom <= w.innerHeight,
+    `top=${Math.round(onRect.top)} bottom=${Math.round(onRect.bottom)}`);
+  ok('it is a real touch target once visible', onRect.height >= 44, `${Math.round(onRect.height)}px tall`);
+
+  // 3. Focused, it must not be sitting under the sticky topbar.
+  const mid = { x: onRect.left + onRect.width / 2, y: onRect.top + onRect.height / 2 };
+  const hit = d.elementFromPoint(mid.x, mid.y);
+  ok('nothing covers it when focused', hit === link || link.contains(hit),
+    `elementFromPoint -> ${hit?.tagName.toLowerCase()}.${String(hit?.className).split(' ')[0]}`);
+
+  // 4. Following it actually moves focus. A target without tabindex="-1" silently does not
+  //    take focus, and Tab then resumes from the top of the document as if nothing happened.
+  const target = d.getElementById(link.getAttribute('href').slice(1));
+  ok('its target exists', Boolean(target), link.getAttribute('href'));
+  link.click();
+  await settle(150);
+  ok('following it moves focus to the sheet',
+    d.activeElement === target || target.contains(d.activeElement),
+    `activeElement = ${d.activeElement?.tagName.toLowerCase()}#${d.activeElement?.id || ''}`);
+
+  L.unshift(fails ? `${fails} FAILURE(S) — ${L.length} checks\n` : `ALL PASS — ${L.length} checks\n`);
+  out.textContent = L.join('\n');
+} catch (err) {
+  out.textContent = `PROBE ERROR: ${err && err.stack || err}`;
+}
+</script>
