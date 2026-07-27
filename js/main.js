@@ -125,22 +125,6 @@ function applyField(el) {
   state.updateActive(el.dataset.bind, coerce(el), type);
 }
 
-// Live fields update as you type. Structural ones (they change how much DOM exists)
-// wait for `change` — rebuilding mid-keystroke would throw the caret away.
-document.addEventListener('input', (event) => {
-  const el = event.target;
-  if (!el.dataset || el.dataset.structural === 'true') return;
-  // Current HP commits on `change`, not per-keystroke: a signed value like "-8" is a delta
-  // (damage/heal), so writing it live would set current HP to a literal negative mid-type.
-  if (el.dataset.hpCurrent) return;
-  applyField(el);
-});
-
-document.addEventListener('change', (event) => {
-  const el = event.target;
-  if (!el.dataset || el.dataset.structural !== 'true') return;
-  applyField(el);
-});
 
 // Current HP (#65/#74): the sole HP-change control now that the steppers and Damage/Heal
 // buttons are gone. A bare number sets current HP; a signed value adjusts it — "-8" damages
@@ -183,10 +167,6 @@ function reportHp(before, after, raw) {
   if (String(raw).trim() === '') showHpResult('');
 }
 
-// Two ways to register the change: tap away (blur → change) or press Enter.
-document.addEventListener('change', (event) => {
-  if (event.target.dataset?.hpCurrent) commitHpCurrent(event.target);
-});
 document.addEventListener('keydown', (event) => {
   const el = event.target;
   if (event.key !== 'Enter' || !el.dataset?.hpCurrent) return;
@@ -203,46 +183,39 @@ document.addEventListener('keydown', (event) => {
 // Cross-tab card move (#54): the arrange-mode "Send to tab…" select. A <select> fires `change`,
 // not click, so it can't ride the delegated ACTIONS map. The view stays on the current tab
 // (the card just leaves it); sendCardToTab announces the destination and re-homes focus.
-document.addEventListener('change', (event) => {
-  const sel = event.target.closest && event.target.closest('.card__movetab');
-  if (!sel || !sel.value) return;
+function commitCardMoveTab(sel) {
+  if (!sel.value) return;
   const id = cardIdOf(sel);
   const dest = sel.value;
   sel.value = ''; // snap back to the "Send to tab…" placeholder
   if (id) sendCardToTab(id, dest);
-});
+}
 
 // Tab rename (#54): the tab-list rename field commits on `change` (blur/Enter). Reflect the
 // final label back — a blank entry reverts to the current name.
-document.addEventListener('change', (event) => {
-  const input = event.target.closest && event.target.closest('.tabrow__name');
-  if (!input) return;
+function commitTabRename(input) {
   const tabId = tabIdOf(input);
   if (!tabId) return;
   tabRename(tabId, input.value);
   reactivateTab();
   const tab = getLayout().tabs.find((t) => t.id === tabId);
   if (tab) input.value = tab.label;
-});
+}
 
 // Card rename (#54): the arrange-mode title field commits on `change` (blur/Enter). renameCardTitle
 // re-applies the layout (repainting the title) and refreshes the field — a blank reverts to the
 // registry default.
-document.addEventListener('change', (event) => {
-  const input = event.target.closest && event.target.closest('.card__rename');
-  if (!input) return;
+function commitCardRename(input) {
   const id = cardIdOf(input);
   if (id) renameCardTitle(id, input.value);
-});
+}
 
 // Object (tile) rename (#54): the field lives in the arrange bar now (#72), so it names the
 // SELECTED object rather than the one it sits inside. Commits on `change` (blur/Enter).
-document.addEventListener('change', (event) => {
-  const input = event.target.closest && event.target.closest('.obj-rename');
-  if (!input) return;
+function commitObjectRename(input) {
   const sel = getSelectedObject();
   if (sel) renameObjectLabel(sel.cardId, sel.objectId, input.value);
-});
+}
 
 /* -------------------------------------------------------------- actions */
 
@@ -431,18 +404,10 @@ const ACTIONS = {
  */
 const isActionRange = (el) => el.tagName === 'INPUT' && el.type === 'range' && el.dataset.action;
 
-document.addEventListener('input', (event) => {
-  const el = event.target;
-  if (!isActionRange(el)) return;
+function runRangeAction(el) {
   const handler = ACTIONS[el.dataset.action];
   if (handler) handler(el);
-});
-
-// Release ends the gesture, which is what collapses a whole drag into ONE undo step. Without
-// it the "same gesture" test never goes false and later drags ride the first one's entry.
-document.addEventListener('change', (event) => {
-  if (isActionRange(event.target)) endResize();
-});
+}
 
 document.addEventListener('click', (event) => {
   // Arrange mode (#72): the tile IS the target — tap one to point the toolbar at it. Only a
@@ -768,6 +733,79 @@ function askImport(incomingCount, existingCount) {
     dialog.addEventListener('close', () => resolve(dialog.returnValue || 'cancel'), { once: true });
   });
 }
+
+
+/* ------------------------------------------------------------- dispatch */
+
+/*
+ * One `input` listener and one `change` listener, each driving an ordered table (#125).
+ *
+ * There used to be seven top-level `change` listeners and two `input` ones, each re-deriving
+ * from scratch whether the event was theirs. Every change event ran all seven `closest()`
+ * walks — which is cheap and not the problem. The problem was that nothing declared a
+ * PRECEDENCE: an element matching two predicates ran both handlers, in source-file order,
+ * silently, and nothing anywhere said which was meant to win. Given how much of this repo's
+ * bug history is "something fired that shouldn't have", that is a standing invitation.
+ *
+ * FIRST MATCH WINS. The routes below are mutually exclusive today — a structural field is not
+ * the HP field, a rename input is not a range — so this is the same behaviour the seven
+ * listeners had, with the contract written down instead of implied. probe-dispatch.html holds
+ * that claim to account by walking the live DOM and failing if any element matches two routes;
+ * without it "mutually exclusive" is just a comment that ages badly.
+ *
+ * `find` returns the element to ACT ON, not a boolean, because several routes match an
+ * ancestor of the event target rather than the target itself.
+ */
+
+const INPUT_ROUTES = [
+  { name: 'resize slider', find: (t) => (isActionRange(t) ? t : null), run: runRangeAction },
+  /*
+   * Live fields update as you type. Structural ones (they change how much DOM exists) wait for
+   * `change` — rebuilding mid-keystroke would throw the caret away. Current HP also waits: a
+   * signed value like "-8" is a delta (damage/heal), so writing it live would set current HP
+   * to a literal negative mid-type.
+   *
+   * Requiring data-bind/data-toggle is what keeps this route from being a catch-all. Written
+   * as "anything not structural and not HP" it matched 4183 elements — including the resize
+   * slider, which then depended on being listed first to work at all. applyField already does
+   * nothing without one of those two attributes, so asking for them up front costs no
+   * behaviour and makes the table genuinely disjoint instead of merely well-ordered.
+   * probe-dispatch.html caught this on its first run.
+   */
+  {
+    name: 'live field',
+    find: (t) => (t.dataset && (t.dataset.bind || t.dataset.toggle)
+      && t.dataset.structural !== 'true' && !t.dataset.hpCurrent ? t : null),
+    run: applyField,
+  },
+];
+
+const CHANGE_ROUTES = [
+  { name: 'structural field', find: (t) => (t.dataset?.structural === 'true' ? t : null), run: applyField },
+  // Two ways to register an HP change: tap away (blur → change) or press Enter.
+  { name: 'current HP', find: (t) => (t.dataset?.hpCurrent ? t : null), run: commitHpCurrent },
+  { name: 'send card to tab', find: (t) => t.closest?.('.card__movetab') ?? null, run: commitCardMoveTab },
+  { name: 'rename tab', find: (t) => t.closest?.('.tabrow__name') ?? null, run: commitTabRename },
+  { name: 'rename card', find: (t) => t.closest?.('.card__rename') ?? null, run: commitCardRename },
+  { name: 'rename object', find: (t) => t.closest?.('.obj-rename') ?? null, run: commitObjectRename },
+  // Release ends the gesture, which is what collapses a whole drag into ONE undo step. Without
+  // it the "same gesture" test never goes false and later drags ride the first one's entry.
+  { name: 'end resize drag', find: (t) => (isActionRange(t) ? t : null), run: () => endResize() },
+];
+
+function dispatch(routes, target) {
+  if (!target || target.nodeType !== 1) return;
+  for (const route of routes) {
+    const el = route.find(target);
+    if (el) { route.run(el); return; }
+  }
+}
+
+document.addEventListener('input', (event) => dispatch(INPUT_ROUTES, event.target));
+document.addEventListener('change', (event) => dispatch(CHANGE_ROUTES, event.target));
+
+// Exposed for probe-dispatch.html only — it needs the tables to prove they stay disjoint.
+window.__dispatchRoutes = { INPUT_ROUTES, CHANGE_ROUTES };
 
 /* ------------------------------------------------------- mobile drawer */
 
