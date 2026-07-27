@@ -1350,6 +1350,18 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    these are editing controls, not content worth revealing in view mode.
    flex-basis, not width: `select`/`input[type=number]` are width:100% from the base rule, so
    a width here would lose to it — the same trap noted on .skill__bonus. */
+/* Reserve the quantity field's slot on the item name (#137). An inventory row's primary line is
+   name + qty, and the two came to exactly the container width — name 270 + gap 8 + qty 44 = 322
+   against a 322px primary. A flex container decides line breaking from hypothetical sizes before
+   any shrinking, so at a dead tie the quantity went to a second line and every inventory row
+   stood 114px tall to show one item name. Feature rows with the same one-line content were 62px.
+   Same knife-edge as the caret in #135, one field along; 6rem covers the 4.5rem quantity, its
+   gap and the caret.
+   `flex-wrap: nowrap` on `.row__primary` looks like the tidier fix and is not: it stops the
+   attack rows' primary from wrapping too, and probe.html reports 6 scenes scrolling sideways at
+   390px. Reserving width is the change that fits in one row type. */
+.row--inventory > .row__primary > input:first-child { max-width: calc(100% - 6rem); }
+
 .row--attack > .row__hitcalc { display: none; }
 /* wrap, not shrink: these three are fixed-basis, so a narrower phone must drop one to a
    second line rather than squeeze "Custom" out of the picker. */
