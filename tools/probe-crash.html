@@ -1,0 +1,106 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Crash-visibility probe (#122)</title>
+<!--
+  Two things this checks, both of which used to fail silently:
+
+    1. An exception escaping a render reaches the window error handler and puts a banner on
+       screen, instead of leaving a half-painted sheet and saying nothing.
+
+    2. The edit is STILL SAVED. `emit()` used to be notify-then-schedule, so a throwing
+       render skipped scheduleSave() entirely — the mutation landed in memory, nothing was
+       queued to write it, and the player kept typing into a sheet that had quietly stopped
+       saving. #122 reordered it to schedule-then-notify.
+
+  The failure is injected by making `document.querySelectorAll` throw for the one selector
+  the derived-render walks. That is a faithful stand-in for a render bug: it throws from
+  inside render(), on a real mutation, after the state has already changed.
+
+  Reading localStorage here needs a wait longer than the 400ms debounce (CLAUDE.md).
+-->
+<style>
+  body { margin: 0; font: 12px/1.45 ui-monospace, monospace; }
+  #fr { width: 390px; height: 900px; border: 0; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="fr"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const L = [];
+let fails = 0;
+const ok = (name, pass, detail = '') => {
+  if (!pass) fails++;
+  L.push(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? '   ' + detail : ''}`);
+};
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) { const k = await caches.keys(); await Promise.all(k.map((x) => caches.delete(x))); }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Thorin'; c.hp.max = 30; c.hp.current = 20; c.ac = 15;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const fr = document.getElementById('fr');
+  await new Promise((res) => { fr.onload = res; fr.src = '../index.html'; });
+  const d = fr.contentDocument, w = fr.contentWindow;
+  const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+  await settle(600);
+
+  const banner = d.getElementById('banner');
+  ok('no banner before anything goes wrong', banner.hidden, `hidden=${banner.hidden}`);
+
+  // --- inject the failure: the derived-render walk now throws -------------------------------
+  const realQSA = d.querySelectorAll.bind(d);
+  let injected = 0;
+  d.querySelectorAll = (sel) => {
+    if (typeof sel === 'string' && sel.includes('data-derived')) {
+      injected++;
+      throw new TypeError('probe: injected render failure');
+    }
+    return realQSA(sel);
+  };
+
+  // A real mutation on a live-bound field. AC is a plain number input on the Combat panel,
+  // which is the tab the app opens on, so nothing needs revealing first.
+  const ac = d.querySelector('[data-bind="ac"]');
+  ok('found a live-bound field to mutate', Boolean(ac), ac ? '[data-bind="ac"]' : 'none');
+  ac.focus();
+  ac.value = '19';
+  ac.dispatchEvent(new w.Event('input', { bubbles: true }));
+
+  await settle(1200);   // longer than the 400ms save debounce
+
+  ok('the injected failure actually fired', injected > 0, `${injected} throws`);
+  ok('the crash raised a banner', !banner.hidden, `hidden=${banner.hidden}`);
+  ok('the banner says the data is safe and points at export',
+    /export/i.test(banner.textContent) && /still saved/i.test(banner.textContent),
+    JSON.stringify(banner.textContent.slice(0, 90)));
+
+  // --- the point of the reorder: the edit survived the crash --------------------------------
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+  const savedAc = stored?.characters?.[0]?.ac;
+  ok('the edit was still written to storage despite the render throwing',
+    String(savedAc) === '19', `stored ac = ${JSON.stringify(savedAc)}`);
+
+  // --- and it does not re-announce on every subsequent keystroke ----------------------------
+  const before = banner.textContent;
+  ac.value = '18';
+  ac.dispatchEvent(new w.Event('input', { bubbles: true }));
+  await settle(700);
+  ok('a second failure does not rewrite the banner', banner.textContent === before,
+    'banner stable across repeated throws');
+
+  d.querySelectorAll = realQSA;
+  L.unshift(fails ? `${fails} FAILURE(S) — ${L.length} checks\n` : `ALL PASS — ${L.length} checks\n`);
+  out.textContent = L.join('\n');
+} catch (err) {
+  out.textContent = `PROBE ERROR: ${err && err.stack || err}`;
+}
+</script>

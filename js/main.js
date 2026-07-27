@@ -31,6 +31,51 @@ import {
 
 const $ = (sel) => document.querySelector(sel);
 
+/* -------------------------------------------------- unexpected failures */
+
+/**
+ * Say something when the app breaks (#122).
+ *
+ * There is no build step, no telemetry and no error reporting here, so before this an
+ * exception escaping a render left the sheet half-painted and silent: stale readouts, a row
+ * that didn't appear, and nothing on screen to say so. The player's only clue was that the
+ * numbers looked wrong, which on a character sheet is indistinguishable from having typed
+ * the wrong number.
+ *
+ * Registered before anything else in this module so it is already listening while the rest
+ * of the file wires itself up. It cannot catch a failure to *load* the modules — by then
+ * this file has not run — but that case is a blank page rather than a plausible-looking
+ * wrong one, and the blank page is at least honest.
+ *
+ * Once per page load. A render that throws usually throws again on the next keystroke, and
+ * a banner that rewrites itself on every letter is worse than no banner.
+ */
+let reportedFailure = false;
+function reportUnexpectedFailure(detail) {
+  // eslint-disable-next-line no-console -- the only channel a player can quote back to us
+  if (typeof console !== 'undefined') console.error('[character sheets] unexpected failure:', detail);
+  if (reportedFailure) return;
+  reportedFailure = true;
+  try {
+    showBanner(
+      'Something went wrong, and part of the sheet may not have updated. Your characters are '
+      + 'still saved — export a backup from the menu, then reload the page.',
+      'crash',
+    );
+  } catch {
+    // The banner is the thing that broke. There is nowhere left to report to, and throwing
+    // from inside the error handler would only recurse.
+  }
+}
+
+window.addEventListener('error', (event) => {
+  // A failed <img>/<link> fetch fires 'error' here too, retargeted to the element rather
+  // than the window. A missing icon is not a crash and must not raise the banner.
+  if (event.target && event.target !== window && event.target.nodeType === 1) return;
+  reportUnexpectedFailure(event.error || event.message);
+});
+window.addEventListener('unhandledrejection', (event) => reportUnexpectedFailure(event.reason));
+
 /* ------------------------------------------------------------ the loop */
 
 function render(type) {
