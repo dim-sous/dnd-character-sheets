@@ -67,6 +67,18 @@
   --text-lg:  18px;        /* headings, and icon glyphs */
   --text-xl:  22px;        /* the big display numbers: HP, ability mods, tile values */
 
+  /* Stacking order (#126), as names rather than five ad-hoc numbers. The VALUES don't matter;
+     the ORDER does, and it was previously only discoverable by grepping for z-index and
+     sorting the results in your head — 29, 30, 35, 40, 50, with the 29 existing purely to sit
+     one below the topbar. Spaced by 10 so something can be slipped between two layers without
+     renumbering the rest. */
+  --z-below-topbar: 10;    /* sticky card heads — must pass UNDER the topbar */
+  --z-topbar: 20;
+  --z-tabbar: 30;
+  --z-scrim: 40;
+  --z-drawer: 50;          /* the off-canvas sidebar, above its own scrim */
+  --z-skip-link: 60;       /* reachable from anywhere, so above everything */
+
   --radius: 10px;
   --tap: 44px;             /* minimum comfortable touch target */
   /* Fixed so the sticky stack below the topbar is arithmetic, not guesswork. */
@@ -266,6 +278,46 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 /* --------------------------------------------------------------- shell */
 
+/* Skip link (#126). First thing in the tab order, off-screen until focused. With a permanent
+   roster column on a laptop and a five-tab bar on a phone, a keyboard user otherwise traverses
+   the whole character list before reaching the sheet. Moved with `transform` rather than
+   `display`/`visibility`, which would take it out of the tab order and defeat the point. */
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: var(--space-2);
+  z-index: var(--z-skip-link);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-3);
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  transform: translateY(-250%);
+}
+.skip-link:focus { transform: none; }
+/* The target is focused programmatically by the jump, so it must not paint a ring like a
+   control would — it is a landmark, not something you interact with. */
+.main:focus { outline: none; }
+
+/* No JavaScript (#126). Everything below the shell is built by ES modules, so without them the
+   page is an empty frame with no explanation. Says the data is untouched on purpose: someone
+   arriving with a script blocker on has not lost anything. */
+.noscript {
+  margin: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+
 .app { min-height: 100dvh; }
 
 .main {
@@ -277,7 +329,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 }
 
 .topbar {
-  position: sticky; top: 0; z-index: 30;
+  position: sticky; top: 0; z-index: var(--z-topbar);
   display: flex; align-items: center; gap: var(--space-2);
   height: calc(var(--topbar-h) + env(safe-area-inset-top));
   padding: var(--space-1) var(--space-2);
@@ -334,7 +386,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 /* ------------------------------------------------------------- sidebar */
 
 .sidebar {
-  position: fixed; inset: 0 auto 0 0; z-index: 50;
+  position: fixed; inset: 0 auto 0 0; z-index: var(--z-drawer);
   display: flex; flex-direction: column;
   width: min(84vw, 320px);
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
@@ -372,7 +424,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .sidebar__foot { padding: var(--space-3); border-top: 1px solid var(--line); }
 .sidebar__foot > .btn--primary { width: 100%; margin-bottom: var(--space-2); }
 
-.scrim { position: fixed; inset: 0; z-index: 40; background: rgba(20, 14, 8, .45); }
+.scrim { position: fixed; inset: 0; z-index: var(--z-scrim); background: rgba(20, 14, 8, .45); }
 
 /* --------------------------------------------------------------- tiles */
 
@@ -620,7 +672,7 @@ body.is-arranging .list__head { flex-wrap: wrap; }
 .arrange-bar { display: none; }
 body.is-arranging .arrange-bar {
   display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
-  position: sticky; top: calc(var(--topbar-h) + env(safe-area-inset-top)); z-index: 29;
+  position: sticky; top: calc(var(--topbar-h) + env(safe-area-inset-top)); z-index: var(--z-below-topbar);
   padding: var(--space-2) var(--space-3);
   background: color-mix(in srgb, var(--accent) 10%, var(--card));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
@@ -1496,7 +1548,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 /* Fixed to the bottom thumb zone on a phone; hidden on a laptop (§ laptop). */
 .tabbar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-tabbar);
   display: flex; gap: var(--space-1);
   /* Horizontal insets so the end tabs clear a landscape notch/rounded corners. */
   padding: .3rem calc(.4rem + env(safe-area-inset-right)) calc(.3rem + env(safe-area-inset-bottom)) calc(.4rem + env(safe-area-inset-left));
