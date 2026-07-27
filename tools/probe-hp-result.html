@@ -1,14 +1,19 @@
 <!doctype html>
 <!--
-  Regression check for the Hit Points tile: the result line (#74) and what a long rest does to
-  HP (#106).
+  Regression check for the Hit Points tile: what an entry announces (#74/#100) and what a long
+  rest does to HP (#106).
+
+  The visible caption under the tile is GONE — it was visual noise on a tile that already shows
+  three numbers, and the sentence it carried was always duplicated in #play-status. So there is
+  one audience now, and these checks read #play-status. That removal is also why nothing here
+  asserts on `hidden`: there is no box to take up room, so there is no stale caption to clear
+  on a rest, a character switch, or an unrelated edit.
 
   The arithmetic is covered by tests.js (`describeHpChange`, `restoreHp`). What only a browser
   can prove is the wiring and the reachability: that a real keystroke reaches the sentence, that
-  the visible line and the #play-status live region get the SAME one, that a real minus sign —
-  which this field's own tooltip used to tell players to type — is no longer swallowed, and that
-  the ordinary "never opened Edit, so Max is still 0" path no longer loses all your hit points
-  to a rest.
+  a real minus sign — which this field's own tooltip used to tell players to type — is no longer
+  swallowed, and that the ordinary "never opened Edit, so Max is still 0" path no longer loses
+  all your hit points to a rest.
 
   Run it the same way as probe.html; prints ALL PASS or the failing checks. The last two blocks
   reload the iframe to reseed, so they run LAST and bind their own document — anything appended
@@ -58,7 +63,6 @@ try {
 
   const cur = () => d.getElementById('f-hp-current');
   const temp = () => d.getElementById('f-hp-temp');
-  const line = () => d.getElementById('hp-result');
   const spoken = () => d.getElementById('play-status').textContent.trim();
   // Read the committed value off the FIELD, not localStorage: the store is debounced 400ms
   // (state.js), so reading it straight after a commit returns the previous value and every
@@ -80,8 +84,7 @@ try {
     await wait(250);
   };
 
-  ok('starts with no result line', line().hidden && line().textContent === '',
-    `hidden=${line().hidden} text="${line().textContent}"`);
+  ok('starts with nothing announced', spoken() === '', `spoken="${spoken()}"`);
   ok('seeded at 12 of 20 with temp 5', curVal() === 12 && tempVal() === 5,
     `current ${curVal()} temp ${tempVal()}`);
 
@@ -90,20 +93,15 @@ try {
    * #74 is about, and testing it after a delta has already drained temp proves nothing.
    */
   await type('19');
-  ok('an absolute set is described as a set', /Set to 19/.test(line().textContent),
-    `"${line().textContent}"`);
-  ok('and it discloses that temp was left alone', /Temp 5 unchanged/.test(line().textContent),
-    `"${line().textContent}"`);
+  ok('an absolute set is described as a set', /Set to 19/.test(spoken()), `"${spoken()}"`);
+  ok('and it discloses that temp was left alone', /Temp 5 unchanged/.test(spoken()), `"${spoken()}"`);
   ok('the set really ignored temp', curVal() === 19 && tempVal() === 5,
     `current ${curVal()} temp ${tempVal()}`);
 
   // Same field, same intent, different contract — and now it says so.
   await type('-8');
-  ok('a delta is described as a delta', /Took 8/.test(line().textContent), `"${line().textContent}"`);
-  ok('the delta names the temp absorption', /Temp absorbed 5/.test(line().textContent));
-  ok('the line is visible', !line().hidden);
-  ok('screen and screen-reader get the SAME sentence', spoken() === line().textContent.trim(),
-    `spoken="${spoken()}" visible="${line().textContent.trim()}"`);
+  ok('a delta is described as a delta', /Took 8/.test(spoken()), `"${spoken()}"`);
+  ok('the delta names the temp absorption', /Temp absorbed 5/.test(spoken()), `"${spoken()}"`);
   ok('the delta really went through temp first', curVal() === 16 && tempVal() === 0,
     `current ${curVal()} temp ${tempVal()}`);
 
@@ -123,55 +121,31 @@ try {
    * something. Blur here the way a finger does, and hold the sentence to account.
    */
   await type('-4');
-  const afterDelta = line().textContent;
-  ok('a delta leaves its sentence up', /Took 4/.test(afterDelta), `"${afterDelta}"`);
+  const afterDelta = spoken();
+  ok('a delta announces what it did', /Took 4/.test(afterDelta), `"${afterDelta}"`);
   cur().blur();
   cur().dispatchEvent(new w.Event('change', { bubbles: true }));
   await wait(300);
-  ok('blurring does not overwrite it with “No change”', line().textContent === afterDelta,
-    `"${afterDelta}" -> "${line().textContent}"`);
-  ok('and does not clear it either', !line().hidden);
+  ok('blurring does not overwrite it with “No change”', spoken() === afterDelta,
+    `"${afterDelta}" -> "${spoken()}"`);
 
   // --- an unreadable entry says so, rather than nothing -----------------------------------
   await type('abc');
-  ok('unreadable input is reported', /Couldn’t read/.test(line().textContent), `"${line().textContent}"`);
-  ok('and it is spoken too', /Couldn’t read/.test(spoken()));
+  ok('unreadable input is reported', /Couldn’t read/.test(spoken()), `"${spoken()}"`);
 
-  // --- clearing --------------------------------------------------------------------------
-  await type('');
-  ok('a blank entry clears the line rather than captioning nothing', line().hidden,
-    `hidden=${line().hidden} text="${line().textContent}"`);
-
-  // --- a long rest must not leave a stale caption -----------------------------------------
+  // --- a long rest still announces what it did --------------------------------------------
   await type('-5');
-  ok('line is up again before the rest', !line().hidden);
   w.confirm = () => true;
   d.querySelector('[data-action="long-rest"]').click();
   await wait(350);
-  ok('a long rest clears the HP line', line().hidden, `text="${line().textContent}"`);
   ok('the rest is still announced', /Long rest taken/.test(spoken()), `"${spoken()}"`);
 
-  // --- switching character must not carry the caption across -------------------------------
+  // --- switching character still commits the pending entry ---------------------------------
   await type('-3');
-  ok('line is up again before the switch', !line().hidden);
   const betaBtn = [...d.querySelectorAll('.roster__btn')].find((n) => /Beta/.test(n.textContent));
   ok('found the other character in the roster', Boolean(betaBtn));
   betaBtn.click();
   await wait(400);
-  ok('opening another character clears the line', line().hidden,
-    `text="${line().textContent}"`);
-
-  // --- it must not reappear on unrelated edits (it is handler-owned, not render-owned) -----
-  await wait(100);
-  const ac = d.getElementById('f-ac');
-  if (ac) {
-    ac.focus();
-    d.execCommand('selectAll');
-    d.execCommand('insertText', false, '15');
-    ac.dispatchEvent(new w.Event('input', { bubbles: true }));
-    await wait(250);
-  }
-  ok('an unrelated edit does not resurrect the line', line().hidden, `text="${line().textContent}"`);
 
   /*
    * #106, end to end. The pure rule is covered in tests.js; what only the browser shows is that

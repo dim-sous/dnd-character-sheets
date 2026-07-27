@@ -505,9 +505,7 @@ export function renderSheet(char) {
   // starts in view mode. Within the same character it persists across structural
   // rebuilds (so adding a row mid-edit doesn't bounce you out) — cleared here on the
   // id change, mirroring how syncActiveTab resets the active tab below.
-  // The HP result line goes with it (#74): it describes one entry on one character, so carrying
-  // "Took 8. Temp absorbed 5…" across to whoever you opened next would be a lie about them.
-  if (char.id !== renderedCharId) { editCards.clear(); exitArrange(); showHpResult(''); }
+  if (char.id !== renderedCharId) { editCards.clear(); exitArrange(); }
   renderAbilities(char);
   renderConditions();
   renderStatusPips();
@@ -713,23 +711,6 @@ export function announcePlay(message) {
   el.textContent = message;
 }
 
-/**
- * The visible twin of `announcePlay` for HP (#74): the same sentence, in the Hit Points tile.
- *
- * Sighted players had no statement of what an entry did — the field's two contracts (bare number
- * sets, signed value is a delta through temp) were documented only in a `title` tooltip, which a
- * phone never shows. Screen readers got the sentence in #100; this is the parity.
- *
- * Handler-owned, exactly like `announcePlay` and for the same reason: `renderDerived` runs on
- * every change, so writing this from a render would leave the last HP result sitting under the
- * tile while the player edited something unrelated. Call with '' to clear.
- */
-export function showHpResult(message) {
-  const el = $('#hp-result');
-  if (!el) return;
-  el.textContent = message;
-  el.hidden = !message; // no empty box taking up room in a tile with three fields already
-}
 
 /*
  * The #banner is one live region shared by two kinds of message that used to erase each
