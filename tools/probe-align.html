@@ -183,7 +183,21 @@ try {
         + `  minH=${cs.minHeight}`);
     }
   }
+  /*
+   * A one-line row must be ONE line tall. Both #135 and #137 were the same failure: items on
+   * `.row__primary` summing to exactly the container width, and a flex container deciding line
+   * breaking from hypothetical sizes before any shrinking — so a dead tie sends the last item
+   * to a second line and the row doubles in height. It is worth an assertion rather than a
+   * reading, because the symptom (a slightly tall row) is easy to look straight past.
+   */
   say('\n=== D. Inventory rows — height for one line of text ===');
+  {
+    const oneLine = [...d.querySelectorAll('.row--inventory, .row--feature, .row--feat')]
+      .filter((r) => r.getBoundingClientRect().height > 0);
+    const tall = oneLine.filter((r) => r.getBoundingClientRect().height > 70);
+    say(`  ${oneLine.length} one-line rows; ${tall.length} taller than 70px`
+      + `  -> ${tall.length === 0 ? 'PASS' : 'FAIL: ' + tall.map((r) => `${String(r.className).split(' ')[1]}=${R(r.getBoundingClientRect().height)}`).join(', ')}`);
+  }
   for (const sel of ['.row--inventory', '.row--attack', '.row--feature']) {
     for (const row of [...d.querySelectorAll(sel)].filter((r) => r.getBoundingClientRect().height > 0).slice(0, 2)) {
       const rr = row.getBoundingClientRect();
