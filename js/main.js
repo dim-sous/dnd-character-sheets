@@ -837,7 +837,17 @@ syncInert();
 state.subscribe(render);
 // Show every save state, including 'Saving…'. A stuck 'Saving…' is the signal that writes
 // are failing (private mode / full storage), so it must not be hidden behind an empty string.
-state.onStatus((message, tone) => setSaved(message, tone));
+//
+// The chip is visual only now (#123) — as a live region it announced once per keystroke.
+// So a failure has to speak somewhere else, and the banner is the right somewhere: it is
+// already how startup reports read-only storage, and "your work is not being written" is a
+// warning rather than a status. Cleared on the next successful write, by its own key, so it
+// cannot outlive the problem or stomp on another flow's warning.
+state.onStatus((message, tone) => {
+  setSaved(message, tone);
+  if (tone === 'error') showBanner(message, 'save');
+  else if (tone === 'ok') clearBanner('save');
+});
 
 // Build the sheet from the saved layout (#54) BEFORE the first render: load the per-device
 // layout, then relocate the existing card nodes into their tabs. renderSheet's tab sync

@@ -58,7 +58,12 @@
         <span class="topbar__name" id="topbar-name">—</span>
         <span class="topbar__sub" id="topbar-sub"></span>
       </div>
-      <span class="saved" id="saved" role="status" aria-live="polite"></span>
+      <!-- Visual only, no aria-live (#123). This chip repaints on every keystroke, so as a
+           live region it announced "Saving…" once per letter — 18 announcements for an
+           8-character name, drowning out the typing echo. Save FAILURES still speak: they
+           go to #banner, which is a live region and a better home for "your work is not
+           being written" than a six-character chip in the topbar. -->
+      <span class="saved" id="saved"></span>
       <button type="button" class="icon-btn" id="btn-arrange" data-action="arrange-toggle" aria-label="Arrange layout" aria-pressed="false" hidden>⚙</button>
     </header>
 
