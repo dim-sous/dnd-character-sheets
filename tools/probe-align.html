@@ -49,6 +49,7 @@ try {
     { name: 'Circle of the Moon Spells', source: 'Moon', level: '3', text: '' },
   ];
   c.feats = [{ name: 'Tough', source: 'Origin', text: '' }];
+  c.inventory = [{ name: 'A', qty: 1, notes: '' }, { name: 'Item', qty: 1, notes: '' }];
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
   localStorage.removeItem('dnd-character-sheets:layout');
   localStorage.removeItem('dnd-character-sheets:layout-default');
@@ -103,10 +104,21 @@ try {
    * that the moment a player resizes ANY tile — which is the state the report came from, and
    * the state a default-layout probe can never reach.
    */
-  for (const pass of ['default layout', 'after a tile has been resized (is-sized)']) {
-    if (pass.startsWith('after')) {
-      for (const t of d.querySelectorAll('.tile')) t.classList.add('is-sized');
-      await settle(200);
+  /*
+   * Sizing a tile means BOTH `is-sized` and an inline `--tile-h` (layout-view writes
+   * `calc(<steps> * var(--tile-step))`, --tile-step being .75rem = 12px). An earlier version of
+   * this probe added only the class: `height: var(--tile-h)` then resolved to nothing, the tile
+   * kept its intrinsic height, and it could not clip no matter what. That is how a fix which
+   * crops the tile headers on a real phone measured clean here. Size them for real, and at a
+   * height that is genuinely tight — 6 steps = 72px against ~88px of content.
+   */
+  for (const pass of ['default layout', 'sized to 6 steps (72px), the squeezed case']) {
+    if (pass.startsWith('sized')) {
+      for (const t of d.querySelectorAll('.tile')) {
+        t.classList.add('is-sized');
+        t.style.setProperty('--tile-h', 'calc(6 * var(--tile-step))');
+      }
+      await settle(250);
     }
     say(`  --- ${pass} ---`);
   for (const name of ['heroic', 'rest', 'concentration']) {
@@ -120,9 +132,12 @@ try {
     say(`  ${name.padEnd(14)} tileH=${R(tr.height)}`
       + `  labelH=${lr ? R(lr.height) : '-'} labelLines=${lr && label ? Math.round(lr.height / parseFloat(w.getComputedStyle(label).lineHeight)) : '-'}`
       + `  controlTop(rel tile)=${cr ? R(cr.top - tr.top) : '-'}`
-      + `  controlH=${cr ? R(cr.height) : '-'}`);
+      + `  controlH=${cr ? R(cr.height) : '-'}`
+      + `  LABEL-CLIPPED-TOP=${lr && lr.top < tr.top - 0.5 ? 'YES by ' + R(tr.top - lr.top) + 'px' : 'no'}`
+      + `  contentOverflow=${R(tile.scrollHeight - tile.clientHeight)}`);
   }
   }
+  for (const t of d.querySelectorAll('.tile')) t.style.removeProperty('--tile-h');
   for (const t of d.querySelectorAll('.tile')) t.classList.remove('is-sized');
   await settle(150);
 
@@ -168,6 +183,30 @@ try {
         + `  minH=${cs.minHeight}`);
     }
   }
+  say('\n=== D. Inventory rows — height for one line of text ===');
+  for (const sel of ['.row--inventory', '.row--attack', '.row--feature']) {
+    for (const row of [...d.querySelectorAll(sel)].filter((r) => r.getBoundingClientRect().height > 0).slice(0, 2)) {
+      const rr = row.getBoundingClientRect();
+      const cs = w.getComputedStyle(row);
+      const kids = [...row.children].filter((k) => k.getBoundingClientRect().height > 0)
+        .map((k) => `${k.tagName.toLowerCase()}.${String(k.className).split(' ')[0] || '-'}(${R(k.getBoundingClientRect().height)})`);
+      say(`  ${sel.padEnd(16)} H=${R(rr.height)}  flexDir=${cs.flexDirection} gap=${cs.rowGap}`
+        + ` pad=${cs.paddingTop}/${cs.paddingBottom} minH=${cs.minHeight}  children: ${kids.join(' ')}`);
+      const prim = row.querySelector('.row__primary');
+      if (prim) {
+        const pr2 = prim.getBoundingClientRect();
+        say(`      primary w=${R(pr2.width)} wrap=${w.getComputedStyle(prim).flexWrap}`);
+        for (const k of prim.children) {
+          const kr = k.getBoundingClientRect();
+          const kcs = w.getComputedStyle(k);
+          say(`        ${k.tagName.toLowerCase()}.${String(k.className).split(' ')[0] || '-'}`
+            + ` ${R(kr.width)}x${R(kr.height)} top=${R(kr.top - pr2.top)}`
+            + ` flex=${kcs.flex} maxW=${kcs.maxWidth} display=${kcs.display}`);
+        }
+      }
+    }
+  }
+
   // The first row of each list is ~24px taller. What is inside its .row__primary that the
   // others' is not?
   say('\n  --- inside .row__primary, first row vs second ---');
