@@ -478,14 +478,12 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   /* Short or tall, the contents sit in the middle of whatever room there is. */
   justify-content: center;
 }
-/* NOT `min-height: 0`. That reservation is load-bearing (#65 symptom 1): it is the only thing
-   keeping a one-line label ("Conc.") and a two-line one ("Heroic Insp.") from leaving their
-   controls at different heights across a row. Zeroing it for sized tiles quietly undid that
-   fix for anyone who had ever used the size sliders — measured at 6.6px of drift between the
-   Concentration tick and the Heroic Inspiration tick beside it, which is small enough to read
-   as sloppiness rather than as a bug and so had gone unreported for a while.
-   A sized tile that is genuinely too short still clips rather than overflowing: `.tile.is-sized`
-   sets `overflow: hidden` right above, which is what makes dropping this safe. */
+/* A sized tile has a FIXED height, so the label cannot reserve two lines it may not have room
+   for. Reserving them anyway added ~13px to every sized tile's content (a one-line "PB" label
+   went 13.2 -> 26.4) and pushed it past the height the player had chosen, cropping the header
+   off the top of the Combat tiles. Alignment across a row is handled by `.tile__body`'s auto
+   top margin instead, which can only ever consume space that is already free. */
+.tile.is-sized .tile__label { min-height: 0; }
 /* Tile children fill the tile's width — EXCEPT screen-reader-only helpers. `.visually-hidden`
    pins width to 1px, but it and this rule share specificity (0,1,0), so without the :not()
    this later rule wins and a visually-hidden label/heading inside a `.tile` (Rest's label, the
@@ -526,6 +524,13 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .tile__body {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
   gap: var(--space-1); min-height: var(--tap);   /* 44px, so a solo action tile's button clears the minimum (#77) */
+  /* Sit at the bottom of whatever room is left, so a one-line label ("Conc.") and a two-line
+     one ("Heroic Insp.") still leave their controls level across a row — the guarantee
+     `.tile__label`'s two-line reservation gives unsized tiles (#65 symptom 1), but which a
+     sized tile cannot afford to buy with height. An auto margin only ever absorbs space that
+     is ALREADY free, so unlike a min-height it can never make a tile overflow: on an unsized
+     tile (height = content) it resolves to 0 and changes nothing. */
+  margin-top: auto;
 }
 /* Action tiles (Rest): the body grows to the tile's stretched height (flex:1) and stretches
    its child on the cross axis, so the button fills the tile in BOTH dimensions instead of a
