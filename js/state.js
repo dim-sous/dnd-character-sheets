@@ -69,9 +69,26 @@ function notify(type = 'derived') {
   listeners.forEach((fn) => fn(type));
 }
 
+/**
+ * Schedule the save BEFORE telling anyone, because rendering is the thing most likely to
+ * throw and the write is the thing that must not be lost (#122).
+ *
+ * The old order was notify-then-schedule, so a render bug escaping `notify` skipped
+ * `scheduleSave()` entirely: the mutation had already landed in `characters`, nothing was
+ * queued to write it, and the player kept typing into a sheet that had quietly stopped
+ * saving. A later successful edit re-saved the whole array, so it read as "my last few
+ * changes vanished" rather than as a crash — and only if the tab survived that long.
+ *
+ * The debounce makes the order free: the write still happens SAVE_DELAY_MS later, against
+ * the same mutated `characters`, whether or not the render that follows survives.
+ *
+ * Deliberately NOT wrapped in try/catch. There is one subscriber, and swallowing its
+ * exception here would hide the render bug instead of fixing the data loss — the throw
+ * should keep travelling up to the window error handler, which puts a banner on screen.
+ */
 function emit(type = 'derived') {
-  notify(type);
   scheduleSave();
+  notify(type);
 }
 
 function scheduleSave() {

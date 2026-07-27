@@ -16,6 +16,18 @@
 </head>
 <body>
 
+<!-- First focusable thing on the page (#126). -->
+<a class="skip-link" href="#main">Skip to character sheet</a>
+
+<noscript>
+  <p class="noscript">
+    <strong>This character sheet needs JavaScript.</strong>
+    It runs entirely in your browser — nothing is sent anywhere — so with scripts blocked there
+    is nothing to show. Any characters you have already saved are still on this device and
+    untouched; enable JavaScript for this page and they will be here.
+  </p>
+</noscript>
+
 <div class="app">
 
   <!-- ---------------------------------------------------------- roster -->
@@ -50,7 +62,8 @@
   <div class="scrim" id="scrim" hidden></div>
 
   <!-- ------------------------------------------------------------ main -->
-  <main class="main">
+  <!-- tabindex="-1" so the skip link can move focus here; it is a landmark, not a control. -->
+  <main class="main" id="main" tabindex="-1">
 
     <header class="topbar">
       <button type="button" class="icon-btn topbar__menu" id="btn-menu" aria-label="Show character list">☰</button>
@@ -58,7 +71,12 @@
         <span class="topbar__name" id="topbar-name">—</span>
         <span class="topbar__sub" id="topbar-sub"></span>
       </div>
-      <span class="saved" id="saved" role="status" aria-live="polite"></span>
+      <!-- Visual only, no aria-live (#123). This chip repaints on every keystroke, so as a
+           live region it announced "Saving…" once per letter — 18 announcements for an
+           8-character name, drowning out the typing echo. Save FAILURES still speak: they
+           go to #banner, which is a live region and a better home for "your work is not
+           being written" than a six-character chip in the topbar. -->
+      <span class="saved" id="saved"></span>
       <button type="button" class="icon-btn" id="btn-arrange" data-action="arrange-toggle" aria-label="Arrange layout" aria-pressed="false" hidden>⚙</button>
     </header>
 
