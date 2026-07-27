@@ -28,6 +28,27 @@
   --bad:        #a33b2c;
   --gold:       #b08340;
 
+  /* Spacing scale (#120). Every padding/margin/gap in this stylesheet resolves to one of
+     these, so two things that look like they should line up actually do.
+
+     Before this, spacing was 23 hand-typed rem decimals — .15/.2/.25/.3/.35/.4/.45/.5/.55/
+     .6/.7/.75/.8/.85/.9 — which painted as 11 distinct off-grid pixel values across ~580
+     elements (2.4, 3.2, 4.8, 5.6, 6.4, 7.2, 9.6, 11.2, 12.8, 13.6). Nothing sat on a grid,
+     so elements that should have matched differed by 0.8–1.6px: too small to read as
+     intentional, too large to read as aligned. That gap IS the "uneven margins" complaint —
+     the layout itself measured symmetric (0 asymmetric gutters, 0 ragged left edges at both
+     widths). Use a token; if none fits, the right move is almost always the nearer token,
+     not a new value. tools/probe-spacing.html is the check. */
+  --space-0: 2px;          /* hairline — chip rows, pip clusters, icon-button gaps */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
   --radius: 10px;
   --tap: 44px;             /* minimum comfortable touch target */
   /* Fixed so the sticky stack below the topbar is arithmetic, not guesswork. */
@@ -112,7 +133,7 @@ button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 input[type="text"], input[type="number"], select, textarea {
   width: 100%;
   min-height: var(--tap);
-  padding: .4rem .6rem;
+  padding: var(--space-2);
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -183,9 +204,9 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
-  gap: .4rem;
+  gap: var(--space-2);
   min-height: var(--tap);
-  padding: .5rem .9rem;
+  padding: var(--space-2) var(--space-4);
   background: var(--card);
   color: var(--ink);
   border: 1px solid var(--line);
@@ -202,9 +223,9 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 /* "Small" means smaller text and padding, NOT a smaller target. This used to set 36px, which
    beat the base .btn's var(--tap) on source order and put every card Edit / + Add button —
    including the only route to Max HP — under the minimum (#77). */
-.btn--small { min-height: var(--tap); padding: .3rem .7rem; font-size: .85rem; }
+.btn--small { min-height: var(--tap); padding: var(--space-1) var(--space-3); font-size: .85rem; }
 
-.btn-row { display: flex; gap: .5rem; }
+.btn-row { display: flex; gap: var(--space-2); }
 .btn-row > .btn { flex: 1; }
 
 .icon-btn {
@@ -214,11 +235,11 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
   font-size: 1.25rem; cursor: pointer;
 }
 
-.rule { border: 0; border-top: 1px solid var(--line); margin: .85rem 0; }
+.rule { border: 0; border-top: 1px solid var(--line); margin: var(--space-3) 0; }
 
-.hint { margin: .5rem 0 0; font-size: .78rem; color: var(--ink-faint); line-height: 1.4; }
+.hint { margin: var(--space-2) 0 0; font-size: .78rem; color: var(--ink-faint); line-height: 1.4; }
 
-.field { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: .25rem; }
+.field { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .field > label {
   font-size: .72rem; font-weight: 600; letter-spacing: .07em;
   text-transform: uppercase; color: var(--ink-faint);
@@ -239,9 +260,9 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 .topbar {
   position: sticky; top: 0; z-index: 30;
-  display: flex; align-items: center; gap: .5rem;
+  display: flex; align-items: center; gap: var(--space-2);
   height: calc(var(--topbar-h) + env(safe-area-inset-top));
-  padding: .35rem .6rem;
+  padding: var(--space-1) var(--space-2);
   padding-top: calc(.35rem + env(safe-area-inset-top));
   /* Landscape on a notched phone: keep the menu button clear of the cutout. */
   padding-left: calc(.6rem + env(safe-area-inset-left));
@@ -271,7 +292,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .saved[data-tone="error"] { color: var(--bad); }
 
 .banner {
-  margin: .6rem; padding: .7rem .9rem;
+  margin: var(--space-2); padding: var(--space-3) var(--space-4);
   background: color-mix(in srgb, var(--bad) 12%, var(--card));
   border: 1px solid color-mix(in srgb, var(--bad) 35%, var(--line));
   border-radius: var(--radius);
@@ -282,15 +303,15 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    update is good news, so it gets the accent instead — a red bar that means
    "nothing is wrong" trains you to ignore the red bar that means something is. */
 .banner--info {
-  display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
   background: color-mix(in srgb, var(--accent) 10%, var(--card));
   border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
 }
 .banner--info .btn { margin-left: auto; }
 
-.empty { padding: 3rem 1.5rem; text-align: center; color: var(--ink-soft); }
-.empty h2 { margin: 0 0 .4rem; }
-.empty p { margin: 0 0 1.2rem; }
+.empty { padding: var(--space-8) var(--space-6); text-align: center; color: var(--ink-soft); }
+.empty h2 { margin: 0 0 var(--space-2); }
+.empty p { margin: 0 0 var(--space-5); }
 
 /* ------------------------------------------------------------- sidebar */
 
@@ -308,17 +329,17 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 .sidebar__head {
   display: flex; align-items: center; justify-content: space-between;
-  gap: .5rem; padding: .6rem .6rem .6rem 1rem;
+  gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--line);
 }
 .brand { margin: 0; font-size: 1.05rem; }
 
-.roster { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: .5rem; }
-.roster__item { margin-bottom: .35rem; }
+.roster { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: var(--space-2); }
+.roster__item { margin-bottom: var(--space-1); }
 .roster__btn {
-  display: flex; flex-direction: column; gap: .1rem;
+  display: flex; flex-direction: column; gap: var(--space-0);
   width: 100%; min-height: var(--tap);
-  padding: .55rem .7rem;
+  padding: var(--space-2) var(--space-3);
   background: none; border: 1px solid transparent; border-radius: 8px;
   text-align: left; cursor: pointer;
 }
@@ -330,8 +351,8 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .roster__name { font-family: var(--serif); font-size: 1rem; }
 .roster__meta { font-size: .75rem; color: var(--ink-faint); }
 
-.sidebar__foot { padding: .75rem; border-top: 1px solid var(--line); }
-.sidebar__foot > .btn--primary { width: 100%; margin-bottom: .5rem; }
+.sidebar__foot { padding: var(--space-3); border-top: 1px solid var(--line); }
+.sidebar__foot > .btn--primary { width: 100%; margin-bottom: var(--space-2); }
 
 .scrim { position: fixed; inset: 0; z-index: 40; background: rgba(20, 14, 8, .45); }
 
@@ -348,7 +369,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    Every box shares this grid, so any arrangement stays aligned — the #54 groundwork. ---- */
 .tiles {
   display: grid; grid-template-columns: repeat(12, 1fr);
-  gap: .4rem; margin: 0;
+  gap: var(--space-2); margin: 0;
   /* The unit the height slider counts in. Small on purpose: a tile is naturally 6–8 of these,
      so the slider's 4..16 is about half to double its own size, with useful travel each way.
      Declared here rather than on :root so it reads beside the grid it sizes — layout-view
@@ -360,8 +381,8 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    tracks gave them before. */
 .spell-stats > .tile { grid-column: span 6; }
 .tile {
-  display: flex; flex-direction: column; gap: .15rem;
-  padding: .45rem .35rem;
+  display: flex; flex-direction: column; gap: var(--space-0);
+  padding: var(--space-2) var(--space-1);
   background: var(--card);
   border: 1px solid var(--line-soft);
   border-radius: 8px;
@@ -427,7 +448,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 }
 .tile__body {
   display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
-  gap: .3rem; min-height: var(--tap);   /* 44px, so a solo action tile's button clears the minimum (#77) */
+  gap: var(--space-1); min-height: var(--tap);   /* 44px, so a solo action tile's button clears the minimum (#77) */
 }
 /* Action tiles (Rest): the body grows to the tile's stretched height (flex:1) and stretches
    its child on the cross axis, so the button fills the tile in BOTH dimensions instead of a
@@ -436,7 +457,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    (#65 symptom 3). #75 briefly removed `flex: 1` to de-emphasise Long Rest; that left a
    half-empty tile next to full ones and was reverted — Long Rest is instead de-emphasised by
    being ordered last. */
-.tile__body--actions { gap: .4rem; flex: 1; align-items: stretch; }
+.tile__body--actions { gap: var(--space-2); flex: 1; align-items: stretch; }
 .tile__body--actions .btn { flex: 1 1 auto; }
 .tile__value {
   font-family: var(--serif); font-size: 1.4rem; font-weight: 600;
@@ -490,15 +511,15 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 /* --------------------------------------------------------------- cards */
 
-.cards { display: flex; flex-direction: column; gap: .7rem; padding: .7rem; }
+.cards { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); }
 
 /* Each tab panel stacks its own cards. Only the active panel is shown; the rest carry
    the [hidden] attribute. On a laptop this is overridden to display:contents so every
    panel's cards flow into one multi-column layout (see § laptop). */
-.tabpanel { display: flex; flex-direction: column; gap: .7rem; }
+.tabpanel { display: flex; flex-direction: column; gap: var(--space-3); }
 
 .card {
-  padding: .85rem;
+  padding: var(--space-3);
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -507,14 +528,14 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .card--muted { opacity: .72; }
 
 .card__title {
-  margin: 0 0 .7rem;
+  margin: 0 0 var(--space-3);
   font-size: 1.05rem;
-  padding-bottom: .4rem;
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--line-soft);
 }
 
 .subhead {
-  margin: 1rem 0 .5rem;
+  margin: var(--space-4) 0 var(--space-2);
   font-size: .72rem; font-weight: 700; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-faint);
   font-family: var(--sans);
@@ -523,7 +544,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 
 .list__head, .slots__head {
   display: flex; align-items: center; justify-content: space-between;
-  gap: .5rem; margin-bottom: .5rem;
+  gap: var(--space-2); margin-bottom: var(--space-2);
 }
 /* A head that belongs to a TILE rather than a card (Features, Feats). Its label is that tile's
    header and has to read like every other tile's — full width, centred — so it claims its own
@@ -539,7 +560,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    Selector written as `.tile > .tile__add`, not `.tile__add`: `.tile > *:not(.visually-hidden)`
    forces every tile child to `width: 100%` and scores (0,2,0), so a bare class loses to it and
    the button stretches the full tile with `align-self: center` having nothing left to centre. */
-.tile > .tile__add { align-self: center; width: auto; margin-top: .4rem; }
+.tile > .tile__add { align-self: center; width: auto; margin-top: var(--space-2); }
 .list__head .card__title { margin: 0; border: 0; padding: 0; }
 .list__head .subhead { margin: 0; }
 
@@ -549,7 +570,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
    the DOM during arrange mode (layout-view injects/removes them), so no is-arranging gate. */
 /* Wraps (#71): at 44px per control the group no longer always fits beside the rename field on
    a 390px head, and an inline-flex that can't wrap would overflow the card instead. */
-.card__move { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: .1rem; margin-left: auto; }
+.card__move { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-0); margin-left: auto; }
 .card__move .icon-btn {
   width: var(--tap); height: var(--tap); font-size: 1.1rem;
   border: 1px solid var(--line); border-radius: 8px;
@@ -557,7 +578,7 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .card__move .icon-btn:disabled { opacity: .3; cursor: default; }
 .card__movetab {
   min-height: var(--tap); max-width: 9rem; min-width: 0;
-  padding: 0 .4rem; font-size: .78rem;
+  padding: 0 var(--space-2); font-size: .78rem;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
@@ -571,7 +592,7 @@ body.is-arranging .card__title { display: none; }
 body.is-arranging .list__head { flex-wrap: wrap; }
 .card__rename {
   flex: 1 1 8rem; min-width: 8rem; min-height: var(--tap);
-  padding: 0 .5rem; font-size: 1rem; font-weight: 600;
+  padding: 0 var(--space-2); font-size: 1rem; font-weight: 600;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
@@ -580,23 +601,23 @@ body.is-arranging .list__head { flex-wrap: wrap; }
    with the global [hidden] kill-switch; a plain display swap is safe). */
 .arrange-bar { display: none; }
 body.is-arranging .arrange-bar {
-  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
   position: sticky; top: calc(var(--topbar-h) + env(safe-area-inset-top)); z-index: 29;
-  padding: .5rem .7rem;
+  padding: var(--space-2) var(--space-3);
   background: color-mix(in srgb, var(--accent) 10%, var(--card));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
 }
 /* `flex: 0 1 auto` (not `1` with an 8rem floor) so the label and Done share ONE row instead of
    being forced apart — the mode name doesn't need to claim a line of a phone screen (#73). */
 .arrange-bar__label { flex: 0 1 auto; min-width: 0; font-size: .8rem; color: var(--ink-soft); }
-.arrange-bar__actions { display: flex; gap: .5rem; margin-left: auto; }
+.arrange-bar__actions { display: flex; gap: var(--space-2); margin-left: auto; }
 
 /* The rare half of arrange mode, folded away (#73). Tab editing alone is ~290px — 75% of what
    the bar used to be — for work you do once and then never again, and it sat open the whole
    time you were nudging tiles. */
 .arrange-more { flex-basis: 100%; }
 .arrange-more__summary {
-  display: flex; align-items: center; gap: .45rem;
+  display: flex; align-items: center; gap: var(--space-2);
   min-height: var(--tap); cursor: pointer; list-style: none;
   font-size: .8rem; color: var(--ink-soft);
 }
@@ -605,15 +626,15 @@ body.is-arranging .arrange-bar {
    leak into the summary's accessible name — same reasoning as `.conditions__marker`. */
 .arrange-more__marker { display: inline-block; color: var(--ink-faint); transition: transform .12s; }
 .arrange-more[open] > .arrange-more__summary .arrange-more__marker { transform: rotate(90deg); }
-.arrange-more__body { padding-bottom: .3rem; }
-.arrange-more__actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.arrange-more__body { padding-bottom: var(--space-1); }
+.arrange-more__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 
 .tablist-edit { flex-basis: 100%; }
-.tablist-edit__rows { list-style: none; margin: 0 0 .4rem; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
-.tabrow { display: flex; align-items: center; gap: .3rem; }
+.tablist-edit__rows { list-style: none; margin: 0 0 var(--space-2); padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.tabrow { display: flex; align-items: center; gap: var(--space-1); }
 .tabrow__name {
   flex: 1; min-width: 0; min-height: var(--tap);
-  padding: 0 .5rem; font-size: .85rem;
+  padding: 0 var(--space-2); font-size: .85rem;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
@@ -647,7 +668,7 @@ body.is-arranging [data-object].is-selected {
 
 .objbar {
   flex-basis: 100%;
-  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
 }
 /* Shown until a tile is picked, so the mode opens saying what to do rather than showing an empty
    strip. It is also the only place the OBJECT controls are explained — the bar's own label only
@@ -662,7 +683,7 @@ body.is-arranging [data-object].is-selected {
   /* `max-width` stops it stretching to 1100px of empty field on a laptop, where arrange mode
      still forces the single-column phone layout. */
   flex: 1 1 8rem; min-width: 6rem; max-width: 24rem; min-height: var(--tap);
-  padding: 0 .5rem; font-size: .9rem; font-weight: 600;
+  padding: 0 var(--space-2); font-size: .9rem; font-weight: 600;
   color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px;
 }
@@ -716,7 +737,7 @@ body.is-arranging [data-object].is-lifted {
    reachable rather than nominally available. */
 .objbar__size {
   flex: 1 1 100%;
-  display: flex; align-items: center; gap: .5rem;
+  display: flex; align-items: center; gap: var(--space-2);
   min-height: var(--tap);
 }
 .objbar__size-cap {
@@ -783,7 +804,7 @@ body.is-arranging [data-object].is-hidden {
    on one clean vertical list (on a laptop the panels otherwise merge into multi-column). The
    compound `body.is-arranging` selectors outrank the ≥900px rules on specificity alone. */
 body.is-arranging .cards { display: flex; flex-direction: column; }
-body.is-arranging .tabpanel { display: flex; flex-direction: column; gap: .7rem; }
+body.is-arranging .tabpanel { display: flex; flex-direction: column; gap: var(--space-3); }
 body.is-arranging .tabpanel[hidden] { display: none !important; } /* beat the desktop contents-reveal */
 body.is-arranging .tabbar { display: flex; }                      /* keep tab-switching on desktop */
 
@@ -821,7 +842,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
 .field-grid {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: .3rem .8rem;
+  gap: var(--space-1) var(--space-3);
   align-items: center;
 }
 .field-grid > .field { display: contents; }
@@ -831,7 +852,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
    value — ability scores, currency, the tiles. */
 .field-grid input[type="number"] { text-align: start; }
 
-.inline-fields { display: flex; flex-wrap: wrap; gap: .6rem; }
+.inline-fields { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .inline-fields > .field { flex: 1 1 7rem; }
 
 /* ----------------------------------------------------------- abilities */
@@ -842,13 +863,13 @@ body.is-arranging [data-action="add-row"] { display: none; }
    flex .abilities would make the six-group stack monolithic in Safari/iOS and slice
    it at the raw column edge instead of breaking between groups. */
 .abilities { display: block; }
-.ability-group + .ability-group { margin-top: .6rem; }
+.ability-group + .ability-group { margin-top: var(--space-2); }
 
 /* One group per ability (#14): a header row with the score and modifier, its skills below. */
 .ability-row {
-  display: flex; align-items: center; gap: .6rem;
+  display: flex; align-items: center; gap: var(--space-2);
   min-height: var(--tap);
-  padding: .3rem .5rem;
+  padding: var(--space-1) var(--space-2);
   background: var(--parchment);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
@@ -879,7 +900,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
 /* Passive Perception sits under the ability grid on the Abilities tab. */
 .passive {
   display: flex; align-items: center; justify-content: space-between;
-  gap: .5rem; margin-top: .7rem; padding-top: .7rem;
+  gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3);
   border-top: 1px solid var(--line-soft);
 }
 .passive__label {
@@ -900,7 +921,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
   display: grid;
   grid-template-columns: 1fr 1.8rem 2.6rem;
   align-items: center;
-  gap: .3rem;
+  gap: var(--space-1);
 }
 /* The three edit-only columns are a full --tap wide so the controls in them can carry a
    44px target without colliding (#86). At the previous 2.4rem they sat 43.19px centre to
@@ -914,7 +935,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
 /* One compact legend per ability group, sharing the skill grid so it can never
    misalign — and never scrolls far from the checkboxes it labels. */
 .skills__legend {
-  padding: .15rem .2rem 0;
+  padding: var(--space-0) var(--space-1) 0;
   font-size: .58rem; font-weight: 700; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-faint);
   text-align: center;
@@ -922,7 +943,7 @@ body.is-arranging [data-action="add-row"] { display: none; }
 .skills__legend > :first-child { text-align: left; }
 
 .skills { list-style: none; margin: 0; padding: 0; }
-.skill { min-height: var(--tap); border-bottom: 1px solid var(--line-soft); padding: 0 .2rem; }
+.skill { min-height: var(--tap); border-bottom: 1px solid var(--line-soft); padding: 0 var(--space-1); }
 .skill:last-child { border-bottom: 0; }
 .skill__name { font-size: .88rem; }
 
@@ -990,7 +1011,7 @@ input.skill__prof::after, input.skill__exp::after { content: ""; position: absol
 
 /* ---------------------------------------------------------------- pips */
 
-.pips { display: flex; flex-wrap: wrap; gap: .5rem; }
+.pips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* Centred only inside a TILE, where a left-packed pip row sits under a centred header and reads
    as crooked. Spell-slot pips are deliberately excluded: they live in a labelled row beside
    their level and total, not under a centred tile header, and centring them there was scope
@@ -1020,10 +1041,10 @@ input.skill__prof::after, input.skill__exp::after { content: ""; position: absol
 /* Successes and Failures side by side (was label-left / pips-right, stacked). Each column is
    its own centred stack, so the tile is one pip row tall instead of two and nothing sits off
    to one side under a centred header. Wraps back to two rows if the tile is made narrow. */
-.deathsaves { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.25rem; }
+.deathsaves { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2) var(--space-5); }
 .deathsaves__col {
   flex: 1 1 8rem; min-width: 0;
-  display: flex; flex-direction: column; align-items: center; gap: .35rem;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
 }
 .deathsaves__label {
   font-size: .72rem; letter-spacing: .04em; color: var(--ink-soft);
@@ -1031,11 +1052,11 @@ input.skill__prof::after, input.skill__exp::after { content: ""; position: absol
 
 /* ---------------------------------------------------------------- chips */
 
-.chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 .chip {
-  display: inline-flex; align-items: center; gap: .35rem;
-  min-height: var(--tap); padding: .25rem .6rem;   /* the label IS the tap target (#77) */
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: var(--tap); padding: var(--space-1) var(--space-2);   /* the label IS the tap target (#77) */
   background: var(--parchment);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -1067,7 +1088,7 @@ input.skill__prof::after, input.skill__exp::after { content: ""; position: absol
    summary travel as one centred group rather than packing left — this tile was the last
    header still sitting on the left edge under the uniformity pass. */
 .conditions__summary {
-  display: flex; align-items: center; justify-content: center; gap: .45rem;
+  display: flex; align-items: center; justify-content: center; gap: var(--space-2);
   min-height: var(--tap); cursor: pointer; list-style: none;
 }
 .conditions__summary::-webkit-details-marker { display: none; }
@@ -1089,15 +1110,15 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   font-size: .78rem; color: var(--ink-soft);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.conditions .chips { margin-top: .5rem; }
+.conditions .chips { margin-top: var(--space-2); }
 
 /* ---------------------------------------------------------- spellcasting */
 
-.spell-stats { margin-bottom: .5rem; }
+.spell-stats { margin-bottom: var(--space-2); }
 
-.slots { display: flex; flex-direction: column; gap: .4rem; }
+.slots { display: flex; flex-direction: column; gap: var(--space-2); }
 
-.slots__actions { display: flex; gap: .5rem; }
+.slots__actions { display: flex; gap: var(--space-2); }
 
 .slot__count {
   font-size: .85rem; font-weight: 600; color: var(--ink-soft);
@@ -1107,9 +1128,9 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .slot {
   display: grid;
   grid-template-columns: 3rem 1fr 4rem;
-  align-items: center; gap: .5rem;
+  align-items: center; gap: var(--space-2);
   min-height: var(--tap);
-  padding: .25rem 0;
+  padding: var(--space-1) 0;
   border-bottom: 1px solid var(--line-soft);
 }
 .slot:last-child { border-bottom: 0; }
@@ -1124,11 +1145,11 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
 /* ------------------------------------------------------ repeatable rows */
 
-.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
-.rows--tight { gap: .4rem; }
+.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.rows--tight { gap: var(--space-2); }
 
 .rows__empty {
-  padding: .7rem; text-align: center;
+  padding: var(--space-3); text-align: center;
   color: var(--ink-faint); font-size: .82rem; font-style: italic;
 }
 
@@ -1138,8 +1159,8 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    an explicit item already spans. Flex simply cannot overlap — it wraps. */
 .row {
   display: flex; flex-wrap: wrap; align-items: flex-start;
-  gap: .4rem;
-  padding: .6rem;
+  gap: var(--space-2);
+  padding: var(--space-2);
   background: var(--parchment);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
@@ -1158,7 +1179,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    default and revealed by tapping the entry (main.js flips .is-expanded). No caret, no reflow:
    the whole row is the tap target. */
 .row--attack, .row--inventory, .row--feature, .row--feat {
-  display: flex; flex-direction: column; align-items: stretch; gap: .35rem;
+  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1);
 }
 /* The primary line lays its fields out by CONTENT width — each takes only what its value needs
    (field-sizing, exactly as the notes textarea already does) and the NAME/item absorbs whatever
@@ -1173,11 +1194,11 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    made the line 386px inside a 304px row, so the document scrolled to 423 against a 375px
    viewport, past the right edge of every card, into empty space. Wrapping spends a line instead
    of the viewport, and never truncates the name to do it. */
-.row__primary { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-width: 0; }
+.row__primary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
 .row__primary input {
   /* 2.75rem = 44px: the floor is a touch target, not just a legibility minimum (#77). */
   field-sizing: content; width: auto; min-width: 2.75rem;  /* width:auto so field-sizing wins over the base input{width:100%} */
-  text-overflow: ellipsis; padding-inline: .35rem;
+  text-overflow: ellipsis; padding-inline: var(--space-1);
 }
 .row__primary > input:first-child { flex: 1 1 4rem; min-width: 0; }  /* name / item: grows into the free space */
 .row__primary > input:not(:first-child) { flex: 0 0 auto; }          /* to-hit / damage / qty: exactly content width */
@@ -1198,7 +1219,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
 /* The numbers are one flex item, so the line can only break BEFORE them — never between the
    to-hit and the damage, which is where it landed when they were loose children. */
-.row__stats { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+.row__stats { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
 .row__stats > * { flex: 0 0 auto; }
 .row__primary input:read-only { outline: none; }   /* view fields are display-only — no focus box on tap */
 
@@ -1206,7 +1227,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    input` sizing above skips it — give it the same fixed-width, tabular treatment by hand. */
 .row__hit {
   flex: 0 0 auto; min-width: 2.25rem;
-  padding-inline: .35rem; text-align: center;
+  padding-inline: var(--space-1); text-align: center;
   font-variant-numeric: tabular-nums; font-weight: 600;
 }
 
@@ -1233,12 +1254,12 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 /* wrap, not shrink: these three are fixed-basis, so a narrower phone must drop one to a
    second line rather than squeeze "Custom" out of the picker. */
 .is-editing .row--attack > .row__hitcalc {
-  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
 }
 .row__ability { flex: 0 0 6.25rem; }   /* fits "Custom" plus the dropdown arrow at 16px */
 .row__misc { flex: 0 0 3.5rem; }
 .row__prof {
-  flex: 0 0 auto; display: inline-flex; align-items: center; gap: .3rem;
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-1);
   min-height: var(--tap); font-size: .8rem; color: var(--ink-faint);
 }
 
@@ -1260,7 +1281,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row--feat > .row__primary::after {
   content: "▸";
   flex: none; align-self: center;
-  margin-left: .1rem;
+  margin-left: var(--space-0);
   color: var(--ink-faint); font-size: .7rem;
   transition: transform .12s;
 }
@@ -1272,7 +1293,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row--feature > .row__detail, .row--feat > .row__detail { display: none; }
 .row.is-expanded > .row__detail,
 .is-editing .row--feature > .row__detail, .is-editing .row--feat > .row__detail { display: flex; }
-.row__detail { flex-wrap: wrap; gap: .4rem; align-items: center; }
+.row__detail { flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .row__detail > input { flex: 1 1 6rem; min-width: 0; }
 .row__detail > .row__level { flex: 0 1 4rem; }
 /* Neutralise the base `.row > textarea{flex-basis:100%}` reasoning one level down: here the
@@ -1324,7 +1345,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    in view mode and revealing its Add/remove controls in edit mode. */
 
 /* Title-row action group: the +Add and Edit buttons sit together, right of the title. */
-.head-actions { display: flex; align-items: center; gap: .4rem; }
+.head-actions { display: flex; align-items: center; gap: var(--space-2); }
 
 /* Quiet by default so it doesn't fight the sheet — a low-weight text button that turns
    into a clear accent "Done" chip once its card is unlocked.
@@ -1387,9 +1408,9 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 /* auto-fit rather than a fixed 5 columns: at 375px five fixed columns leave each
    input too narrow to show a four-digit number. */
-.currency { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr)); gap: .4rem; }
+.currency { display: grid; grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr)); gap: var(--space-2); }
 .currency .field > label { text-align: center; }
-.currency input { padding-left: .2rem; padding-right: .2rem; }
+.currency input { padding-left: var(--space-1); padding-right: var(--space-1); }
 
 /* ----------------------------------------------------------- hit points */
 
@@ -1405,8 +1426,8 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 }
 .hp__field {
   flex: 1 1 0; min-width: 0;
-  display: flex; flex-direction: column; align-items: center; gap: .15rem;
-  padding: 0 .35rem;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-0);
+  padding: 0 var(--space-1);
 }
 .hp__field + .hp__field { border-left: 1px solid var(--line-soft); } /* the "separated" seam */
 .hp__sublabel {
@@ -1430,7 +1451,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
    attribute when the sentence is empty, so an untouched tile is exactly the height it was.
    Quiet by design: it is a caption for the numbers above it, not a fourth thing to read. */
 .hp__result {
-  margin: .35rem 0 0;
+  margin: var(--space-1) 0 0;
   font-size: .72rem; line-height: 1.35; text-align: center;
   color: var(--ink-soft);
   text-wrap: balance;
@@ -1458,7 +1479,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 /* Fixed to the bottom thumb zone on a phone; hidden on a laptop (§ laptop). */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 35;
-  display: flex; gap: .2rem;
+  display: flex; gap: var(--space-1);
   /* Horizontal insets so the end tabs clear a landscape notch/rounded corners. */
   padding: .3rem calc(.4rem + env(safe-area-inset-right)) calc(.3rem + env(safe-area-inset-bottom)) calc(.4rem + env(safe-area-inset-left));
   background: var(--card); /* fallback: the bar sits over scrolling content */
@@ -1472,7 +1493,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 .tab {
   flex: 1 1 0; min-width: 44px; min-height: 44px;   /* comfortable touch target */
   display: flex; align-items: center; justify-content: center;
-  padding: .2rem;
+  padding: var(--space-1);
   background: none; border: 0; border-radius: 8px;
   font-family: var(--sans);
   font-size: .74rem; color: var(--ink-soft); cursor: pointer;
@@ -1504,7 +1525,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   }
   .sidebar__close, .topbar__menu, .scrim { display: none; }
 
-  .main { padding-bottom: 2rem; }
+  .main { padding-bottom: var(--space-7); }
 
   /* No thumb zone on a laptop: the tab bar goes away and every panel shows at once. */
   .tabbar { display: none; }
@@ -1518,8 +1539,8 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   /* Balanced multi-column card flow. break-inside keeps a whole card — and its inner
      grid — intact, so the WIS/CHA clipping and screen-height gaps the old fixed .col
      grid fought never arise. Same technique the print block already uses. */
-  .cards { display: block; column-count: 2; column-gap: 1rem; padding: 1rem; }
-  .card { break-inside: avoid; margin-bottom: 1rem; }
+  .cards { display: block; column-count: 2; column-gap: var(--space-4); padding: var(--space-4); }
+  .card { break-inside: avoid; margin-bottom: var(--space-4); }
 }
 
 @media (min-width: 1280px) {
@@ -1530,7 +1551,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 
 .dialog {
   max-width: min(92vw, 26rem);
-  padding: 1.2rem;
+  padding: var(--space-5);
   background: var(--card);
   color: var(--ink);
   border: 1px solid var(--line);
@@ -1538,11 +1559,11 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
 }
 .dialog::backdrop { background: rgba(20, 14, 8, .5); }
-.dialog__title { margin: 0 0 .6rem; font-size: 1.15rem; }
-.dialog__body { margin: 0 0 .6rem; font-size: .88rem; }
+.dialog__title { margin: 0 0 var(--space-2); font-size: 1.15rem; }
+.dialog__body { margin: 0 0 var(--space-2); font-size: .88rem; }
 .dialog__actions {
-  display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end;
-  margin: 1rem 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end;
+  margin: var(--space-4) 0 0; padding: 0;
 }
 
 /* ================================================================= print */
@@ -1561,8 +1582,8 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */
   .tabpanel { display: contents; }
   .tabpanel[hidden] { display: contents !important; }
-  .cards { display: block; column-count: 2; column-gap: 1rem; padding: 0; }
-  .card { break-inside: avoid; box-shadow: none; margin-bottom: .6rem; border-color: #999; }
+  .cards { display: block; column-count: 2; column-gap: var(--space-4); padding: 0; }
+  .card { break-inside: avoid; box-shadow: none; margin-bottom: var(--space-2); border-color: #999; }
   /* The merged #14 cards exceed a print column — break-inside:avoid on a card taller
      than the column is defeated anyway and splits at an arbitrary row. Let those two
      fragment deliberately, keeping each ability group / status block intact. */

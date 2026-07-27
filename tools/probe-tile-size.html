@@ -99,9 +99,15 @@ try {
     `hp gridColumn "${tile('hp').style.gridColumn}"`);
   // The point of the 3/6/12 mapping: three quarter-tiles plus their gaps equal one old track,
   // so a migrated tile is the width it always was rather than merely "about right".
+  //
+  // Read the gap off the grid rather than hardcoding it. It was `6.4` here — the pixel value
+  // of the old `.4rem` — which made this assertion fail the moment #120 moved the grid onto
+  // the --space-* scale, reporting a migration bug that did not exist. The invariant worth
+  // holding is "four quarters plus their gaps fill the row", not "the gap is 6.4px".
+  const colGap = parseFloat(w.getComputedStyle(grid()).columnGap) || 0;
   ok('a quarter tile is a quarter of the row, gaps included',
-    Math.abs(width('pb') - (4 * width('hp') + 3 * 6.4)) <= 2,
-    `full ${width('pb')} vs 4x quarter ${width('hp')} + gaps = ${Math.round(4 * width('hp') + 3 * 6.4)}`);
+    Math.abs(width('pb') - (4 * width('hp') + 3 * colGap)) <= 2,
+    `full ${width('pb')} vs 4x quarter ${width('hp')} + 3x${colGap}px gap = ${Math.round(4 * width('hp') + 3 * colGap)}`);
   ok('and the backfilled objects took registry defaults', tile('speed').style.gridColumn === 'span 3',
     `speed gridColumn "${tile('speed').style.gridColumn}"`);
 
