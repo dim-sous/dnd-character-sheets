@@ -18,7 +18,7 @@ import {
   renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
   clearNudge, showUpdatePrompt, showRecovery, activateTab, reactivateTab, clearCardEdits,
-  announcePlay, showHpResult,
+  announcePlay,
 } from './render.js';
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
@@ -155,16 +155,7 @@ function commitHpCurrent(el) {
  */
 function reportHp(before, after, raw) {
   const sentence = rules.describeHpChange(before, after, raw);
-  if (sentence) {
-    showHpResult(sentence);
-    announcePlay(sentence);
-    return;
-  }
-  // No sentence means nothing to report — but "nothing to report" has two causes, and only one
-  // of them should wipe the line. An emptied field is the player clearing it, so the caption
-  // goes too. The other is the idempotent re-commit that fires when the field blurs after Enter
-  // already committed; clearing there would erase the description of what they just did.
-  if (String(raw).trim() === '') showHpResult('');
+  if (sentence) announcePlay(sentence);
 }
 
 document.addEventListener('keydown', (event) => {
@@ -379,9 +370,6 @@ const ACTIONS = {
         `Long rest taken. Hit points ${char ? char.hp.current : 0}${max}. `
         + 'Temp HP, death saves and concentration cleared. Hit dice restored.',
       );
-      // A rest rewrites the numbers the HP line was describing, so leaving "Took 8. Temp
-      // absorbed 5…" under the tile would caption the wrong state (#74).
-      showHpResult('');
     }
     // Re-home focus (#100). The flush above blurs whatever was focused — including this very
     // button when it was activated by keyboard — and nothing put it back, so the next Tab

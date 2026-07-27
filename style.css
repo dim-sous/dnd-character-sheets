@@ -1517,18 +1517,6 @@ select:disabled { appearance: none; -webkit-appearance: none; }
    size to weight it above its siblings; it read as unbalanced against the rest of the card and
    was reverted. Frequency-of-use is encoded by ORDER and by tile span, not by type scale. */
 
-/* What the last entry did (#74). Present only after an entry — `showHpResult` sets the `hidden`
-   attribute when the sentence is empty, so an untouched tile is exactly the height it was.
-   Quiet by design: it is a caption for the numbers above it, not a fourth thing to read. */
-.hp__result {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-xs); line-height: 1.35; text-align: center;
-  color: var(--ink-soft);
-  text-wrap: balance;
-}
-/* At 0 the sentence ends with "make death saving throws" — it should carry the same weight as
-   the reddened number it is explaining, rather than staying a soft grey aside. */
-.is-dying .hp__result { color: var(--bad); }
 
 /* Current HP reddens at or below half — and, since #75, does NOT switch off at 0. isBloodied
    required current > 0, so the app's only HP-conditional cue vanished at exactly the moment
