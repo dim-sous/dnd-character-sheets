@@ -1,0 +1,238 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Spacing / alignment audit</title>
+<!--
+  A one-off design audit probe (not a regression check): measures spacing and alignment
+  CONSISTENCY in the running app, which the touch-target/contrast probe does not look at.
+
+  Reports, per width:
+    A. Off-scale spacing  — every computed padding/margin/gap that is not one of the
+                            --space-* tokens (#120). Anything here is a value someone typed
+                            by hand instead of reaching for the scale.
+    B. Gutter symmetry    — elements whose left inset from their container != right inset.
+    C. Padding symmetry   — elements whose padding-left != padding-right (or top != bottom).
+    D. Vertical rhythm    — the set of distinct gaps between sibling blocks in a container.
+    E. Ragged left edges  — sibling blocks in a card that do not share an x origin.
+    F. Type scale         — every distinct computed font-size actually painted.
+
+  This is a measurement, not a verdict: some asymmetry is deliberate (optical centring, a
+  trailing chevron). The output is a list to triage, not a list of bugs.
+-->
+<style>
+  body { margin: 0; font: 12px/1.45 ui-monospace, monospace; }
+  #fr { width: 390px; height: 900px; border: 0; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="fr"></iframe>
+<script type="module">
+const VIEWPORT = Number(new URLSearchParams(location.search).get('w')) || 390;
+// The --space-* scale from style.css :root. Kept in sync by hand — it is nine numbers, and
+// reading them out of the stylesheet would make the probe agree with whatever is there.
+const SCALE = [2, 4, 8, 12, 16, 20, 24, 32, 48];
+const out = document.getElementById('out');
+const lines = [];
+const say = (s) => lines.push(s);
+
+try {
+  // Kill the service worker first, or this measures the previous build (CLAUDE.md).
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Thorin Blackhand'; c.class = 'Fighter'; c.level = 5;
+  c.subclass = 'Battle Master'; c.species = 'Mountain Dwarf';
+  c.background = 'Emerald Enclave Captain'; c.alignment = 'Lawful Good'; c.player = 'Dimitris';
+  c.hp.max = 30; c.hp.current = 20; c.ac = 15; c.speed = 30;
+  c.spellcasting.ability = 'int';
+  c.spellcasting.slots[1] = { total: 4, used: 1 };
+  c.attacks = [
+    { name: 'Dagger', ability: 'dex', proficient: true, damage: '1d4', notes: '' },
+    { name: 'Longbow of the Deep Wood', ability: 'dex', proficient: true, damage: '1d8+2 piercing', notes: 'Range 150/600' },
+  ];
+  c.inventory = [{ name: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const fr = document.getElementById('fr');
+  fr.style.width = `${VIEWPORT}px`;
+  await new Promise((res) => { fr.onload = res; fr.src = '../index.html'; });
+  const d = fr.contentDocument;
+  const w = fr.contentWindow;
+  const settle = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+  await settle(500);
+
+  const num = (v) => parseFloat(v) || 0;
+  const R = (n) => Math.round(n * 100) / 100;
+  // `.visually-hidden` is a 1px clipped box with -1px margins — present to a screen reader,
+  // absent to the eye. Counting it as a stacked sibling invents seams that nobody can see:
+  // it reported a "7px gap" in the Character card that was really list__head -> clipped
+  // label -> textarea, i.e. one 8px gap with a phantom in the middle.
+  const visible = (el) => el.checkVisibility?.({ contentVisibilityAuto: true, opacityProperty: false, visibilityProperty: true })
+    && !el.closest('details:not([open])')
+    && !el.classList.contains('visually-hidden');
+  const label = (el) => {
+    const cls = (el.className || '').toString().trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+    return `${el.tagName.toLowerCase()}${cls ? '.' + cls : ''}`;
+  };
+
+  // Walk every visible element in every tab panel. Panels are all in the DOM; inactive ones
+  // carry `hidden`, so activate each tab in turn at phone width. At >=900px they are all shown.
+  const panels = [...d.querySelectorAll('[role="tabpanel"]')];
+  const tabs = [...d.querySelectorAll('[role="tab"]')];
+
+  const offGrid = new Map();     // "prop:value" -> {count, examples:Set}
+  const asymPad = new Map();
+  const gutters = new Map();     // "container > child" -> Set of "L/R"
+  const fontSizes = new Map();
+  const rhythm = new Map();      // container label -> Set of gaps
+  const raggedLeft = [];
+
+  function measurePanel(panel, panelName) {
+    const els = [...panel.querySelectorAll('*')].filter(visible);
+    for (const el of els) {
+      const cs = w.getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+
+      // --- F. type scale
+      const fs = R(num(cs.fontSize));
+      if (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) {
+        if (!fontSizes.has(fs)) fontSizes.set(fs, new Set());
+        if (fontSizes.get(fs).size < 4) fontSizes.get(fs).add(label(el));
+      }
+
+      // --- A. off-grid spacing (4px grid)
+      for (const prop of ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+                          'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+                          'rowGap', 'columnGap']) {
+        const v = R(num(cs[prop]));
+        if (v === 0 || !Number.isFinite(v)) continue;
+        if (!SCALE.some((step) => Math.abs(step - v) < 0.51)) {
+          const key = `${v}px`;
+          if (!offGrid.has(key)) offGrid.set(key, { count: 0, ex: new Set() });
+          const rec = offGrid.get(key);
+          rec.count++;
+          if (rec.ex.size < 5) rec.ex.add(`${label(el)}{${prop.replace(/([A-Z])/g, '-$1').toLowerCase()}}`);
+        }
+      }
+
+      // --- C. padding symmetry
+      const pl = R(num(cs.paddingLeft)), pr = R(num(cs.paddingRight));
+      const pt = R(num(cs.paddingTop)), pb = R(num(cs.paddingBottom));
+      if (Math.abs(pl - pr) > 0.51) {
+        const key = `${label(el)}  L${pl} R${pr}`;
+        asymPad.set(key, (asymPad.get(key) || 0) + 1);
+      }
+      if (Math.abs(pt - pb) > 0.51 && (pt > 0 || pb > 0)) {
+        const key = `${label(el)}  T${pt} B${pb}`;
+        asymPad.set(key, (asymPad.get(key) || 0) + 1);
+      }
+    }
+
+    // --- B/D/E: block-level children of each container
+    const containers = [...panel.querySelectorAll('.card, .tiles, .tabpanel, .rows, .fields, .tile__body')]
+      .filter(visible);
+    for (const cont of containers) {
+      const cr = cont.getBoundingClientRect();
+      const kids = [...cont.children].filter((k) => visible(k) && k.getBoundingClientRect().height > 0);
+      if (kids.length < 2) continue;
+      const ccs = w.getComputedStyle(cont);
+      const isFlexRow = ccs.display.includes('flex') && ccs.flexDirection.startsWith('row');
+      const isGrid = ccs.display.includes('grid');
+
+      // gutter symmetry: only meaningful for full-width block children
+      for (const k of kids) {
+        const kr = k.getBoundingClientRect();
+        if (kr.width < cr.width * 0.6) continue;    // not a full-bleed child
+        const L = R(kr.left - cr.left), Rt = R(cr.right - kr.right);
+        if (Math.abs(L - Rt) > 0.51) {
+          const key = `${label(cont)} > ${label(k)}`;
+          if (!gutters.has(key)) gutters.set(key, new Set());
+          gutters.get(key).add(`L${L}/R${Rt}`);
+        }
+      }
+
+      if (isFlexRow || isGrid) continue;   // vertical rhythm only for stacked children
+
+      // vertical rhythm: distinct gaps between consecutive stacked siblings.
+      // Name the sibling PAIR, not just the gap size — "gaps: 0, 7, 8" tells you a stack is
+      // uneven but not which seam to go and look at, and the seam is the whole point.
+      const gaps = new Map();
+      for (let i = 1; i < kids.length; i++) {
+        const a = kids[i - 1].getBoundingClientRect(), b = kids[i].getBoundingClientRect();
+        if (b.top < a.bottom - 1) continue;    // wrapped / overlapping — not a stack
+        const g = R(b.top - a.bottom);
+        if (!gaps.has(g)) gaps.set(g, `${label(kids[i - 1])}|${label(kids[i])}`);
+      }
+      if (gaps.size > 1) {
+        const key = `${panelName} ${label(cont)}`;
+        if (!rhythm.has(key)) rhythm.set(key, new Map());
+        gaps.forEach((pair, g) => rhythm.get(key).set(g, pair));
+      }
+
+      // ragged left edge among stacked full-ish-width children
+      const lefts = new Set();
+      for (const k of kids) {
+        const kr = k.getBoundingClientRect();
+        if (kr.width < cr.width * 0.5) continue;
+        lefts.add(R(kr.left - cr.left));
+      }
+      if (lefts.size > 1) {
+        raggedLeft.push(`${panelName} ${label(cont)}  x-origins: ${[...lefts].sort((a, b) => a - b).join(', ')}`);
+      }
+    }
+  }
+
+  if (VIEWPORT >= 900) {
+    for (const p of panels) measurePanel(p, p.id || 'panel');
+  } else {
+    for (let i = 0; i < tabs.length; i++) {
+      tabs[i].click();
+      await settle(250);
+      const p = panels.find((x) => !x.hasAttribute('hidden'));
+      if (p) measurePanel(p, p.id || `panel${i}`);
+    }
+  }
+
+  const theme = w.matchMedia('(prefers-color-scheme: dark)').matches ? 'DARK' : 'LIGHT';
+  say(`==== width ${VIEWPORT}px, theme ${theme} ====`);
+
+  say(`\n--- A. OFF-SCALE SPACING (not a --space-* token) --- ${offGrid.size} distinct values`);
+  [...offGrid.entries()].sort((a, b) => b[1].count - a[1].count).forEach(([v, rec]) => {
+    say(`  ${v.padEnd(9)} x${String(rec.count).padStart(3)}   ${[...rec.ex].join('  ')}`);
+  });
+
+  say(`\n--- B. ASYMMETRIC GUTTERS (child inset L != R inside its container) --- ${gutters.size}`);
+  [...gutters.entries()].slice(0, 25).forEach(([k, s]) => say(`  ${k.padEnd(46)} ${[...s].join(' ')}`));
+
+  say(`\n--- C. ASYMMETRIC PADDING --- ${asymPad.size} distinct`);
+  [...asymPad.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25)
+    .forEach(([k, n]) => say(`  x${String(n).padStart(3)}  ${k}`));
+
+  say(`\n--- D. INCONSISTENT VERTICAL RHYTHM (multiple gap sizes in one stack) --- ${rhythm.size}`);
+  [...rhythm.entries()].slice(0, 25).forEach(([k, m]) => {
+    say(`  ${k}`);
+    [...m.entries()].sort((a, b) => a[0] - b[0]).forEach(([g, pair]) =>
+      say(`      ${String(g).padStart(6)}px  between  ${pair}`));
+  });
+
+  say(`\n--- E. RAGGED LEFT EDGES --- ${raggedLeft.length}`);
+  raggedLeft.slice(0, 20).forEach((s) => say(`  ${s}`));
+
+  say(`\n--- F. PAINTED TYPE SCALE --- ${fontSizes.size} distinct font-sizes`);
+  [...fontSizes.entries()].sort((a, b) => b[0] - a[0]).forEach(([fs, ex]) =>
+    say(`  ${String(fs).padStart(6)}px   ${[...ex].join('  ')}`));
+
+  out.textContent = lines.join('\n');
+} catch (err) {
+  out.textContent = `PROBE ERROR: ${err && err.stack || err}`;
+}
+</script>

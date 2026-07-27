@@ -1,0 +1,120 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Live-region churn probe</title>
+<!--
+  Audit probe: counts how many times each aria-live region actually mutates during ordinary
+  typing, and whether two regions mutate in the same tick.
+
+  Why measure rather than read the code: an announcement storm is invisible in the DOM, absent
+  from the touch/contrast probe, and only reproducible through a real keystroke — a
+  script-assigned `.value` sets no dirty flag and fires no `input`, so the handler under test
+  never runs and the probe reports a clean zero (CLAUDE.md).
+-->
+<style>
+  body { margin: 0; font: 12px/1.45 ui-monospace, monospace; }
+  #fr { width: 390px; height: 900px; border: 0; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="fr"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const L = [];
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) { const k = await caches.keys(); await Promise.all(k.map((x) => caches.delete(x))); }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Thorin'; c.hp.max = 30; c.hp.current = 20;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const fr = document.getElementById('fr');
+  await new Promise((res) => { fr.onload = res; fr.src = '../index.html'; });
+  const d = fr.contentDocument, w = fr.contentWindow;
+  const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+  await settle(600);
+
+  const regions = [...d.querySelectorAll('[aria-live]')].map((el) => ({
+    el, id: el.id || el.className, hits: [], live: el.getAttribute('aria-live'),
+  }));
+  L.push(`live regions found: ${regions.map((r) => `#${r.id}(${r.live})`).join(', ')}`);
+
+  let tick = 0;
+  const obs = new MutationObserver((muts) => {
+    for (const m of muts) {
+      const r = regions.find((x) => x.el === m.target || x.el.contains(m.target));
+      if (r) r.hits.push({ tick, text: (r.el.textContent || '').slice(0, 40) });
+    }
+  });
+  regions.forEach((r) => obs.observe(r.el, { childList: true, characterData: true, subtree: true, attributes: true }));
+
+  // --- type a real 8-character name into a live-bound text field
+  // The name field lives on the Character panel, which carries `hidden` until its tab is
+  // active — focus() on a hidden element is a silent no-op and execCommand then types into
+  // nowhere, which reads as a clean zero. Activate the owning tab first.
+  const nameField = d.querySelector('[data-bind="name"]');
+  if (!nameField) throw new Error('no name field');
+  const panel = nameField.closest('[role="tabpanel"]');
+  const tab = panel && d.querySelector(`[role="tab"][aria-controls="${panel.id}"]`);
+  if (tab) { tab.click(); await settle(300); }
+  if (panel?.hasAttribute('hidden')) throw new Error('could not reveal the name field');
+  nameField.focus();
+  nameField.select();
+  const word = 'Aravinda';
+  let typed = '';
+  for (const ch of word) {
+    tick++;
+    typed += ch;
+    d.execCommand('insertText', false, ch);
+    // execCommand does not reliably reach an iframe under headless virtual time; if the value
+    // did not move, drive the delegated `input` listener directly. That is faithful for THIS
+    // question — we are counting what one keystroke's worth of state change announces, not
+    // testing the browser's own event dispatch.
+    if (nameField.value !== typed) {
+      nameField.value = typed;
+      nameField.dispatchEvent(new w.Event('input', { bubbles: true }));
+    }
+    await settle(30);
+  }
+  await settle(900);   // let the 400ms debounce land
+
+  L.push(`\n--- typing "${word}" (${word.length} keystrokes) into [data-bind="name"] ---`);
+  for (const r of regions) {
+    L.push(`  #${r.id.padEnd(16)} aria-live=${r.live.padEnd(7)} mutations: ${r.hits.length}`);
+    if (r.hits.length) {
+      const texts = [...new Set(r.hits.map((h) => h.text))];
+      L.push(`      distinct texts announced: ${JSON.stringify(texts)}`);
+    }
+  }
+
+  // --- now an HP edit, which is supposed to announce a result sentence
+  regions.forEach((r) => { r.hits.length = 0; });
+  const hp = d.querySelector('[data-hp-current]');
+  if (hp) {
+    hp.focus(); hp.select();
+    tick++;
+    d.execCommand('insertText', false, '-8');
+    await settle(50);
+    hp.dispatchEvent(new w.Event('change', { bubbles: true }));
+    await settle(900);
+    L.push(`\n--- HP edit "-8" (one committed action) ---`);
+    for (const r of regions) {
+      if (!r.hits.length) continue;
+      L.push(`  #${r.id.padEnd(16)} aria-live=${r.live.padEnd(7)} mutations: ${r.hits.length}`);
+      L.push(`      ${JSON.stringify([...new Set(r.hits.map((h) => h.text))])}`);
+    }
+    const fired = regions.filter((r) => r.hits.length).map((r) => `#${r.id}`);
+    L.push(`  regions competing for the same action: ${fired.length} -> ${fired.join(', ')}`);
+  }
+
+  obs.disconnect();
+  out.textContent = L.join('\n');
+} catch (err) {
+  out.textContent = `PROBE ERROR: ${err && err.stack || err}`;
+}
+</script>
