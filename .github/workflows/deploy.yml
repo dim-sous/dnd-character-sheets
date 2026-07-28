@@ -66,11 +66,40 @@ jobs:
 
       - uses: actions/configure-pages@v5
 
-      # Uploads the working directory as-is. This matches what branch-based Pages
-      # already published, so nothing becomes newly public by switching.
+      # Publish the APP, not the repo (#148).
+      #
+      # This used to upload the working directory as-is, inherited from branch-based Pages.
+      # That put tools/ on the live site, and fifteen probe pages in there seed localStorage
+      # through the app's OWN storage key — which is exactly right on localhost and is data
+      # loss on the deployed origin: opening /tools/probe.html replaced the visitor's saved
+      # characters with the audit fixture, permanently, with no undo for character data (#107)
+      # and export as the only backup. probe-arrange-place.html additionally saved a wrecked
+      # layout as the player's default.
+      #
+      # A hostname guard inside each probe was the other option and is the wrong one: it is a
+      # per-file allow-list that grows a hole every time a probe is added, which is the same
+      # mistake #115 settled by suppressing by POSITION instead of by name. The boundary
+      # belongs here, once, where "what is the site" is decided.
+      #
+      # The excluded set is stamp-sw.py's SKIP_DIRS, and that is not a coincidence — the
+      # precache list has never included tools/, so until now the service worker and the
+      # published site disagreed about what the app was. tests.html/tests.js stay published:
+      # they are in SKIP_FILES to keep them off players' phones, not because they are unsafe,
+      # and a page that proves the arithmetic is worth having at a URL.
+      - name: Stage the site
+        run: |
+          mkdir -p _site
+          rsync -a --delete \
+            --exclude='.git' --exclude='.github' --exclude='tools' \
+            --exclude='backups' --exclude='node_modules' --exclude='_site' \
+            ./ _site/
+          test -f _site/index.html && test -f _site/js/main.js
+          test ! -e _site/tools
+          echo "staged $(find _site -type f | wc -l) files"
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
 
       - id: deployment
         uses: actions/deploy-pages@v4
