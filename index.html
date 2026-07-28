@@ -609,6 +609,74 @@
   </main>
 </div>
 
+<!-- #149: the spell picker. A dialog rather than a panel on the Spells tab, because it is a
+     search UI with three filter axes and a description to read — on a 390px phone that is the
+     whole screen, and a card that grew to fill the screen would push the sheet it belongs to
+     off it. showModal gives focus trapping and Escape for free.
+
+     It stays open after a pick: stocking a spellbook is six spells in a row, and closing on
+     each one would be six trips back through the card, the section and the button. -->
+<dialog class="dialog dialog--picker" id="spell-picker" aria-labelledby="spell-picker-title">
+  <div class="picker">
+    <div class="picker__head">
+      <h2 class="dialog__title" id="spell-picker-title">Add a spell</h2>
+      <button type="button" class="icon-btn" data-action="spell-picker-close" aria-label="Close the spell library">✕</button>
+    </div>
+
+    <!-- type=search, so a phone keyboard offers a clear button and the right return key. -->
+    <label class="visually-hidden" for="spell-search">Search the spell library</label>
+    <input type="search" id="spell-search" class="picker__search" placeholder="Search by name or text" autocomplete="off" enterkeyhint="search">
+
+    <!-- Filters behind a disclosure: on a phone the three axes are ~150px of chips, which
+         would leave two results visible. Opened by default it would also hide the thing the
+         player came for. The count in the summary is what stops a filtered-to-nothing list
+         reading as an empty library. -->
+    <details class="picker__filters">
+      <summary class="picker__filtersummary">
+        <span class="picker__filtermarker" aria-hidden="true">▸</span>Filters
+      </summary>
+      <div class="picker__filterbody">
+        <fieldset class="picker__axis">
+          <legend>Level</legend>
+          <div class="chips" id="spell-filter-levels"></div>
+        </fieldset>
+        <fieldset class="picker__axis">
+          <legend>Class</legend>
+          <div class="chips" id="spell-filter-classes"></div>
+        </fieldset>
+        <fieldset class="picker__axis">
+          <legend>School</legend>
+          <div class="chips" id="spell-filter-schools"></div>
+        </fieldset>
+        <button type="button" class="btn btn--small" data-action="spell-filters-clear">Clear filters</button>
+      </div>
+    </details>
+
+    <div class="picker__bar">
+      <span class="picker__count" id="spell-picker-count"></span>
+      <!-- Live region: what a pick did, and the loading/offline state of the library. The
+           results list itself is not live — repainting 60 rows on every keystroke would make
+           a screen reader read the library aloud. -->
+      <span class="picker__status" id="spell-picker-status" role="status" aria-live="polite"></span>
+    </div>
+
+    <ul class="picker__results rows" id="spell-results"></ul>
+    <button type="button" class="btn btn--small picker__more" id="spell-picker-more" data-action="spell-more" hidden>Show more</button>
+
+    <div class="picker__foot">
+      <!-- The escape hatch. Every field in this app is free-form and the library is a typing
+           shortcut, not a source of truth — homebrew and anything outside the SRD comes in
+           here. It is also what the "+ Add" button this search replaced used to do. -->
+      <button type="button" class="btn btn--small" id="spell-picker-custom" data-action="spell-pick-custom">Add a blank spell</button>
+      <button type="button" class="btn btn--small btn--primary" data-action="spell-picker-close">Done</button>
+    </div>
+
+    <!-- CC-BY-4.0 requires attribution wherever the material appears. Written by the picker
+         from the data file itself, so it cannot drift from what shipped. -->
+    <p class="picker__attrib" id="spell-picker-attrib"></p>
+  </div>
+</dialog>
+
 <dialog class="dialog" id="import-dialog">
   <form method="dialog">
     <h2 class="dialog__title">Import backup</h2>
@@ -715,9 +783,16 @@
         <output class="spelllevel__count"></output>
       </summary>
       <ul class="rows rows--tight spelllevel__rows"></ul>
-      <!-- Carries its level with it, so adding here creates a spell already at this level
-           rather than a cantrip that has to be re-filed (state.addRow's `preset`). -->
-      <button type="button" class="btn btn--small spelllevel__add" data-action="add-row" data-list="spells">+ Add</button>
+      <!-- #149: "+ Add" became "Search". It carries its level with it, which now pre-filters
+           the picker to this section rather than presetting a blank row's level — a spell's
+           level belongs to the spell, so picking a cantrip from the 3rd-level section still
+           files it under Cantrips. The blank row this used to make is still one tap away,
+           inside the picker, where a name typed into the search becomes its name.
+
+           Edit-gated exactly as the old button was: `[data-action]` is in the same
+           show-in-edit-mode rule, so adding stays a setup action and play mode stays a list
+           you read and tick. -->
+      <button type="button" class="btn btn--small spelllevel__add" data-action="spell-search" data-list="spells">Search</button>
     </details>
   </section>
 </template>
@@ -765,6 +840,25 @@
       <input type="text" class="row__wide" data-bind-suffix="duration" placeholder="Duration" aria-label="Duration">
       <textarea rows="1" class="row__components" data-bind-suffix="components" placeholder="Components" aria-label="Components"></textarea>
       <textarea rows="2" data-bind-suffix="notes" placeholder="What it does" aria-label="Spell notes"></textarea>
+    </div>
+  </li>
+</template>
+
+<!-- #149: one search result. Two controls, deliberately: tapping the result READS it (the
+     description is why the library ships with full text at all) and a separate button ADDS it.
+     One control that did both would make a mis-tap add a spell, and reading before committing
+     is the normal way to use a spell list. Same idiom as the sheet's own rows, so the gesture
+     is already learned. -->
+<template id="tpl-spell-result">
+  <li class="result">
+    <button type="button" class="result__main" data-action="spell-preview" aria-expanded="false">
+      <span class="result__name"></span>
+      <span class="result__meta"></span>
+    </button>
+    <button type="button" class="btn btn--small result__add" data-action="spell-pick">Add</button>
+    <div class="result__detail">
+      <p class="result__stats"></p>
+      <p class="result__text"></p>
     </div>
   </li>
 </template>

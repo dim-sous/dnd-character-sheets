@@ -1,0 +1,325 @@
+<!doctype html>
+<!--
+  #149 — the SRD spell picker.
+
+  tests.js covers the pure half: ranking, the filter algebra, and the shape of the row a library
+  entry becomes (including that its keys match ROW_TEMPLATES.spells() exactly, which is the
+  failure nothing else would notice — normalizeRow is template-driven, so an invented key is
+  dropped on save and a missing one loads blank).
+
+  This covers what only a browser can answer:
+
+    - the 330KB data file is loaded on FIRST OPEN and not at boot. That is the whole reason the
+      import is dynamic, and a stray static import somewhere would undo it silently — the app
+      would still work, just slower to start, for every player who never opens the picker;
+    - "Search" replaced "+ Add" and is still Edit-gated, so play mode remains a list you read;
+    - a pick reaches the character through state.addRow with every field filled — the round trip
+      the pure test cannot make, since it ends at a plain object;
+    - a spell files itself by ITS OWN level, not the section the picker was opened from;
+    - the picker stays open across picks and marks what it has already added;
+    - the custom/blank escape hatch still works when the library never loads (offline, first
+      open) — the picker must not become the only way to add a spell;
+    - the dialog's controls clear 44px and the results list is the only thing that scrolls.
+
+  Run it like the other probes; it prints ALL PASS or the failures. It reseeds localStorage,
+  including the layout keys, so it never inherits another run's arrangement.
+-->
+<meta charset="utf-8">
+<title>spell picker probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+const is = (name, actual, expected) => {
+  const pass = Object.is(actual, expected);
+  results.push(`${pass ? 'PASS' : 'FAIL'}  ${name}   got ${JSON.stringify(actual)}${pass ? '' : ` — expected ${JSON.stringify(expected)}`}`);
+};
+/*
+ * The array/object form. `is` is Object.is, so two identical arrays are never equal by it — and
+ * the failure is invisible in the output, because the report prints "got [...] — expected [...]"
+ * with the same text on both sides. That happened twice on this probe's first run.
+ */
+const eq = (name, actual, expected) => {
+  const pass = JSON.stringify(actual) === JSON.stringify(expected);
+  results.push(`${pass ? 'PASS' : 'FAIL'}  ${name}   got ${JSON.stringify(actual)}${pass ? '' : ` — expected ${JSON.stringify(expected)}`}`);
+};
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const c = blankCharacter();
+  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5;
+  c.abilities.int = 16;
+  c.spellcasting.ability = 'int';
+  // One spell already on the sheet, so the "already added" marking has something to mark and
+  // the Spells card has a section to open in play mode.
+  c.spellcasting.spells = [
+    { name: 'Fire Bolt', level: 0, prepared: false, castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
+  ];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+  }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const frame = document.getElementById('frame');
+  await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+  await wait(1200);
+  const d = frame.contentDocument;
+  const w = frame.contentWindow;
+
+  const dialog = () => d.getElementById('spell-picker');
+  const section = (level) => d.querySelector(`#spells .spelllevel[data-level="${level}"]`);
+  const searchBtn = (level) => section(level)?.querySelector('.spelllevel__add');
+  const cardEdit = (id) => d.querySelector(`[data-editcard="${id}"] .card__edit`);
+  const rowsIn = (level) => [...section(level).querySelectorAll('.row--spell')];
+  const stored = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters[0].spellcasting.spells;
+  const resultRows = () => [...d.querySelectorAll('#spell-results .result')];
+  const resultNamed = (name) => resultRows().find((r) => r.querySelector('.result__name').textContent === name);
+  const box = (el) => el.getBoundingClientRect();
+  const type = (el, text) => {
+    el.focus();
+    d.execCommand('selectAll');
+    // execCommand, not .value — a script-assigned value sets no dirty flag and fires no input
+    // event, so the handler under test never runs while the probe reports PASS (CLAUDE.md).
+    d.execCommand('insertText', false, text);
+  };
+
+  /*
+   * The load-on-demand claim, checked FIRST and from the outside: performance entries name every
+   * resource the page has fetched. A static import anywhere would have pulled spell-data.js in
+   * during boot and this is the only thing that would notice.
+   */
+  const fetched = () => w.performance.getEntriesByType('resource')
+    .some((e) => e.name.includes('spell-data.js'));
+  ok('the 330KB library is NOT loaded at boot', fetched() === false);
+
+  d.getElementById('tab-spells').click();
+  await wait(300);
+
+  // --- the button that replaced "+ Add" -------------------------------------------------
+  ok('play mode offers no way to add a spell', searchBtn(0).checkVisibility() === false);
+  ok('...and there is no "+ Add" left anywhere in the card',
+    !d.querySelector('#spells [data-action="add-row"]'));
+
+  cardEdit('spells').click();
+  await wait(400);
+  /*
+   * Edit shows all ten sections and starts an untouched one CLOSED (#146), and a closed
+   * <details> is content containment — its descendants are correctly un-hit-testable. So the
+   * section has to be opened before the button in it can be measured at all; asking
+   * checkVisibility() straight after the Edit flip measures the disclosure, not the button.
+   */
+  section(3).querySelector('details').open = true;
+  await wait(200);
+  ok('Edit reveals it', searchBtn(3).checkVisibility() === true);
+  is('...labelled Search', searchBtn(3).textContent.trim(), 'Search');
+  is('...with an accessible name that stands alone',
+    searchBtn(3).getAttribute('aria-label'), 'Search for a level 3 spell to add');
+  is('...and cantrips are named, not numbered, there too',
+    searchBtn(0).getAttribute('aria-label'), 'Search for a cantrip to add');
+  const btnBox = box(searchBtn(3));
+  ok('the button clears 44px', Math.min(btnBox.width, btnBox.height) >= 44,
+    `${Math.round(btnBox.width)}x${Math.round(btnBox.height)}`);
+
+  // --- opening it -----------------------------------------------------------------------
+  searchBtn(3).click();
+  await wait(1500);                       // the dynamic import has to resolve
+  ok('the picker opens as a modal dialog', dialog().open === true);
+  ok('...and NOW the library has been fetched', fetched() === true);
+  ok('the search box has focus', d.activeElement === d.getElementById('spell-search'));
+  ok('the SRD attribution is on screen (CC-BY requires it)',
+    /SRD 5\.2\.1/.test(d.getElementById('spell-picker-attrib').textContent));
+
+  // Opened from the 3rd-level section: that level is pre-selected as a FILTER.
+  const levelChips = [...d.querySelectorAll('#spell-filter-levels .chip__box')];
+  eq('the section it was opened from pre-selects its level',
+    levelChips.filter((b) => b.checked).map((b) => b.dataset.value), ['3']);
+  ok('every visible result really is level 3',
+    resultRows().every((r) => /^Level 3 /.test(r.querySelector('.result__meta').textContent)),
+    resultRows()[0]?.querySelector('.result__meta').textContent);
+  ok('there are results to look at', resultRows().length > 5, `${resultRows().length} rows`);
+
+  // --- search ----------------------------------------------------------------------------
+  type(d.getElementById('spell-search'), 'fireball');
+  await wait(300);
+  is('typing filters the list to the match', resultRows().length, 1);
+  is('...which is the spell asked for',
+    resultRows()[0].querySelector('.result__name').textContent, 'Fireball');
+  is('the summary names level, school and classes',
+    resultRows()[0].querySelector('.result__meta').textContent, 'Level 3 Evocation · Sorcerer, Wizard');
+
+  // Reading before committing: the reason full SRD text ships at all.
+  const fireball = resultRows()[0];
+  ok('the description starts hidden',
+    fireball.querySelector('.result__text').checkVisibility() === false);
+  fireball.querySelector('.result__main').click();
+  await wait(200);
+  ok('tapping the result reveals it', fireball.querySelector('.result__text').checkVisibility() === true);
+  is('...and the control says so', fireball.querySelector('.result__main').getAttribute('aria-expanded'), 'true');
+  ok('...with the real rules text in it',
+    /20-foot-radius Sphere/.test(fireball.querySelector('.result__text').textContent));
+  ok('...and its casting stats above it',
+    /150 feet/.test(fireball.querySelector('.result__stats').textContent));
+
+  // --- adding ------------------------------------------------------------------------------
+  const before = stored().length;
+  fireball.querySelector('.result__add').click();
+  await wait(700);                        // past the 400ms storage debounce
+  is('picking adds exactly one spell', stored().length, before + 1);
+  const added = stored()[before];
+  is('...with the name', added.name, 'Fireball');
+  is('...at its own level', added.level, 3);
+  eq('...carrying every field the library had',
+    [added.castingTime, added.range, added.duration, added.components.includes('guano')],
+    ['Action', '150 feet', 'Instantaneous', true]);
+  ok('...and the description as the free-text note', /Fire damage/.test(added.notes));
+  is('...but NOT pre-prepared', added.prepared, false);
+  ok('the picker stays open, so a spellbook can be stocked in one visit', dialog().open === true);
+  /*
+   * And the section behind it is still open. A pick is a structural render, and before #146 that
+   * re-derived every section's open state from the mode — so in Edit (which is the only mode
+   * this button exists in) the section the player was filling would shut on every single pick,
+   * and the spells they were adding would vanish as they added them. The picker made that bug
+   * six times worse per visit, which is why the two shipped together.
+   */
+  ok('...and the section behind it did not shut on the pick (#146)',
+    section(3).querySelector('details').open === true);
+  is('the added result now says so', fireball.querySelector('.result__add').textContent, 'Added');
+  ok('...and cannot be added twice by mistake', fireball.querySelector('.result__add').disabled === true);
+  ok('a pick is announced', /Fireball added to Level 3/.test(d.getElementById('spell-picker-status').textContent),
+    `"${d.getElementById('spell-picker-status').textContent}"`);
+
+  /*
+   * Drop the pre-selected level filter — a real tap on the chip, the gesture a player makes.
+   *
+   * This has to happen BEFORE the two checks below, and getting that wrong is what the first
+   * run of this probe did: it searched for a cantrip with the level-3 filter still on, found
+   * nothing, and threw. The filter was working perfectly. Worth keeping as a note, because a
+   * "no results" in a picker looks identical whether the search is broken or the filters are
+   * simply doing their job — which is exactly why the picker shows a filter count and an empty
+   * state that names the filters rather than the library.
+   */
+  const lvl3Chip = d.querySelector('#spell-filter-levels .chip__box[data-value="3"]');
+  lvl3Chip.click();
+  await wait(300);
+  ok('unticking a filter chip really unticks it', lvl3Chip.checked === false);
+  ok('...and the list widens past that level',
+    resultRows().some((r) => !/^Level 3 /.test(r.querySelector('.result__meta').textContent)),
+    `${resultRows().length} rows, first "${resultRows()[0]?.querySelector('.result__meta').textContent}"`);
+
+  // A spell already on the sheet when the picker opened is marked from the start.
+  type(d.getElementById('spell-search'), 'fire bolt');
+  await wait(300);
+  const bolt = resultNamed('Fire Bolt');
+  ok('a spell already on the sheet is marked before you touch it',
+    Boolean(bolt) && bolt.querySelector('.result__add').disabled === true);
+
+  /*
+   * The level is the SPELL's, not the section's. Opened from level 3, picking a cantrip must
+   * file it under Cantrips — a picker that stamped the section's level onto the row would put
+   * Light in the 3rd-level section and quietly cost the player a spell slot's worth of trust.
+   */
+  type(d.getElementById('spell-search'), 'light');
+  await wait(300);
+  const light = resultNamed('Light');
+  ok('a cantrip is reachable from the 3rd-level section', Boolean(light));
+  light.querySelector('.result__add').click();
+  await wait(700);
+  const cantrip = stored().find((s) => s.name === 'Light');
+  is('...and files itself under Cantrips, not level 3', cantrip.level, 0);
+
+  // --- the escape hatch --------------------------------------------------------------------
+  type(d.getElementById('spell-search'), 'Blade of My Own Invention');
+  await wait(300);
+  is('a search with no SRD match shows none', resultRows().length, 0);
+  ok('...and says so without pretending the library is empty',
+    /add it as your own/i.test(d.querySelector('#spell-results .rows__empty').textContent));
+  is('...while the custom button offers exactly what was typed',
+    d.getElementById('spell-picker-custom').textContent, 'Add “Blade of My Own Invention” as a custom spell');
+  d.getElementById('spell-picker-custom').click();
+  await wait(700);
+  const custom = stored().find((s) => s.name === 'Blade of My Own Invention');
+  ok('...and adds it as a plain row', Boolean(custom));
+  is('...at the level the picker was opened from, since it has none of its own', custom.level, 3);
+
+  // --- filters -----------------------------------------------------------------------------
+  type(d.getElementById('spell-search'), '');
+  await wait(200);
+  d.querySelector('#spell-filter-classes .chip__box[data-value="Cleric"]').click();
+  d.querySelector('#spell-filter-schools .chip__box[data-value="Necromancy"]').click();
+  await wait(300);
+  ok('class AND school narrow together',
+    resultRows().length > 0 && resultRows().every((r) => {
+      const meta = r.querySelector('.result__meta').textContent;
+      return meta.includes('Necromancy') && meta.includes('Cleric');
+    }), `${resultRows().length} rows, first "${resultRows()[0]?.querySelector('.result__meta').textContent}"`);
+  d.querySelector('[data-action="spell-filters-clear"]').click();
+  await wait(300);
+  ok('Clear filters restores the whole library',
+    resultRows().length > 20 && [...d.querySelectorAll('#spell-picker .chip__box')].every((b) => !b.checked),
+    `${resultRows().length} rows`);
+  ok('...and the count line says how many there really are',
+    /\d+ spells/.test(d.getElementById('spell-picker-count').textContent),
+    `"${d.getElementById('spell-picker-count').textContent}"`);
+
+  // --- geometry: this is a phone-sized dialog ------------------------------------------------
+  const scroller = d.getElementById('spell-results');
+  ok('the results list is the part that scrolls',
+    scroller.scrollHeight > scroller.clientHeight + 1,
+    `${scroller.scrollHeight} in ${scroller.clientHeight}`);
+  ok('...and the dialog itself does not', dialog().scrollHeight <= dialog().clientHeight + 1,
+    `${dialog().scrollHeight} in ${dialog().clientHeight}`);
+  ok('the dialog fits the 390px viewport', box(dialog()).width <= 390, `${Math.round(box(dialog()).width)}px`);
+  const smalls = [...d.querySelectorAll('#spell-picker button, #spell-picker input, #spell-picker summary')]
+    .filter((el) => el.checkVisibility())
+    .map((el) => ({ el, r: box(el) }))
+    .filter(({ r }) => Math.min(r.width, r.height) < 44 && r.width > 0);
+  ok('every visible control in the picker clears 44px', smalls.length === 0,
+    smalls.slice(0, 4).map(({ el, r }) => `${el.className || el.id} ${Math.round(r.width)}x${Math.round(r.height)}`).join('; '));
+
+  // --- closing ------------------------------------------------------------------------------
+  d.querySelector('#spell-picker [data-action="spell-picker-close"]').click();
+  await wait(300);
+  ok('Close shuts the dialog', dialog().open === false);
+  /*
+   * Focus has to land back on a control, not on <body>. The button that opened the picker was
+   * destroyed by the structural render that added the spells, so the browser's own
+   * focus-restoration has nothing to restore to.
+   */
+  // The hand-back is deferred past the browser's own focus restoration, and which of the two
+  // lands first is not deterministic — so poll rather than sample once. See spell-picker.js.
+  for (let i = 0; i < 12 && d.activeElement !== searchBtn(3); i += 1) await wait(50);
+  ok('...and focus goes back to the section it was opened from',
+    d.activeElement === searchBtn(3),
+    `activeElement: ${d.activeElement?.className || d.activeElement?.tagName}; `
+    + `button present: ${Boolean(searchBtn(3))}; section open: ${section(3)?.querySelector('details')?.open}`);
+
+  is('everything picked is on the sheet', rowsIn(3).length, 2);   // Fireball + the custom spell
+  is('...and the cantrip landed in its own section', rowsIn(0).length, 2);  // Fire Bolt + Light
+
+  ok('the document does not scroll sideways at 390px',
+    d.documentElement.scrollWidth <= 390, `scrollWidth ${d.documentElement.scrollWidth}`);
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
+}
+</script>

@@ -395,7 +395,15 @@ function renderSpells(char) {
     $('.spelllevel__heading', node).textContent = label;
     $('.spelllevel__title', node).textContent = label;
     $('.spelllevel__count', node).dataset.derived = `spellsPrepared.${level}`;
-    $('.spelllevel__add', node).dataset.rowLevel = String(level);
+    const addBtn = $('.spelllevel__add', node);
+    addBtn.dataset.rowLevel = String(level);
+    // #149: ten buttons all reading "Search" is what a screen reader hears without this. The
+    // visible label stays short because the section heading is right above it; the accessible
+    // name has to stand alone, because a button list does not carry the heading with it.
+    addBtn.setAttribute(
+      'aria-label',
+      level === 0 ? 'Search for a cantrip to add' : `Search for a ${label.toLowerCase()} spell to add`,
+    );
 
     /*
      * Open by default in play mode, so the card reads as a spell list rather than as ten shut
