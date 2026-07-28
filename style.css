@@ -1413,8 +1413,7 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    min-width stays 0, so a name too long even for a whole line ellipsizes rather than pushing the
    document sideways. */
 .row--feature .row__primary > input,
-.row--feat .row__primary > input,
-.row--spell .row__primary > input { flex: 1 1 min-content; max-width: 100%; }
+.row--feat .row__primary > input { flex: 1 1 min-content; max-width: 100%; }
 
 /* The numbers are one flex item, so the line can only break BEFORE them — never between the
    to-hit and the damage, which is where it landed when they were loose children. */
@@ -1565,6 +1564,54 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   align-items: center; justify-content: center;
   padding: 0; background: none; border: 0;
 }
+
+/* #154: the spell row loses the slab for the same reason — and NOT by joining the rule above,
+   which also centres its content. Centring is right for one row alone in a tile and wrong for a
+   column of eighteen, which has to share a left edge or the card reads as a ransom note.
+
+   Dark mode was the worst case of the pattern this rule keeps undoing. Measured: `--parchment`
+   is the PAGE colour, ten RGB units DARKER than the `--card` the row sits in, and the name field
+   inside then paints back to card colour — so every spell was a hole punched in the card with a
+   smaller card inside it, two visible borders deep. Row height went 62px → 44px, the same 44 as
+   the Hit Point Dice row it now matches.
+
+   The rows stay legible as separate things without a box: they are one line each, 8px apart
+   (`.rows--tight`), under the level's left rule. */
+.row--spell { padding: 0; background: none; border: 0; }
+
+/* Both halves take the full width of the row rather than shrinking to their content.
+   `.row__remove`'s `margin-left: auto` can only push against free space, and a shrink-to-fit
+   primary line has none — which is why the ✕ and the caret sat hard against the end of the name
+   instead of lining up down the card, and why every row's controls landed somewhere different. */
+.row--spell > .row__primary,
+.row--spell > .row__detail { flex: 1 1 100%; min-width: 0; }
+
+/* ONE LINE PER SPELL (#154). A wrapped row is 96px instead of 44 and puts two lone controls
+   under a name; in a list of eighteen that is a ragged column, and the sheet's whole point is
+   scanning it. So the line never wraps and the name gives way instead — `flex: 1 1 0` with
+   `min-width: 0` lets it shrink below its content, where `text-overflow: ellipsis` (already on
+   `.row__primary input`) takes over.
+
+   This deliberately reverses #147's trade FOR SPELLS ONLY, and the numbers are why. Measured at
+   390px: tick 44 + name 194 + ✕ 44 + caret 44 + three 8px gaps = 350 against a 308px box. In
+   PLAY mode — where a player spends essentially all of their time and the ✕ is hidden — the name
+   still gets ~220px and nothing in a normal spell list truncates. Only Edit, which is transient
+   and where the field is editable and scrollable, gives up the last few characters of a very long
+   name. A Feature row keeps #147's behaviour: that card holds a handful of rows, not eighteen,
+   and has no 44px tick eating the line. */
+.row--spell > .row__primary { flex-wrap: nowrap; }
+.row--spell .row__primary > input { flex: 1 1 0; min-width: 0; max-width: none; }
+
+/* An UNTICKED spell was showing an empty gap where its control is. The base checkbox draws its
+   box as `--line` on `--card`, which measures 1.38:1 in dark (#3d352c on #241f1a) — WCAG 1.4.11
+   asks 3:1 for the boundary of a control, and the probe's contrast audit only reads TEXT, so
+   nothing here was ever going to catch it. `--ink-faint` is the quietest token that clears it:
+   5.7:1 in dark, 5.9:1 in light. The de-slabbing above is what made it obvious — with the row's
+   own box gone, the column of ticks is the only thing giving the list a left edge.
+
+   Scoped to this tick on purpose: the same 1.38:1 applies to every checkbox in the app, which is
+   its own finding and its own change. */
+.row__prepared input[type="checkbox"] { border-color: var(--ink-faint); }
 .row--hitdie > .row__narrow { flex: 0 1 3.6rem; }
 /* The size is the qualifier, not the value: quieter than the counts it follows, and read-only
    in play (it is not `data-live`), so it flattens to plain text there like Max HP does. */

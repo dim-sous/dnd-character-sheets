@@ -345,6 +345,36 @@ try {
       if (box.width === 0 && box.height === 0) continue;
       if (!el.value) continue;
       if (el.scrollWidth <= el.clientWidth + 1) continue;
+      if (el.closest('.row__primary')) continue;   // counted separately — see truncatedRowNames
+      out.push(`${label(el)} "${el.value}" needs ${el.scrollWidth} in ${el.clientWidth}`);
+    }
+    return out;
+  }
+
+  /**
+   * The same measurement for a LIST ROW's name field, reported but not fatal (#154).
+   *
+   * This is a decision, not an exemption, and it is worth being precise about which. A spell row
+   * is one line by design: the card is eighteen rows deep and the sheet's whole job there is
+   * scanning it, so when a name cannot fit beside the tick and the two buttons, the name gives
+   * way and ellipsizes rather than the row growing to 96px and putting two lone controls under a
+   * title. Measured at 390px in Edit, that costs the last ~6 characters of a 28-character name;
+   * in play mode, where a player spends essentially all of their time and the ✕ is hidden,
+   * nothing in a normal spell list truncates at all.
+   *
+   * So the number stays measured and stays printed — a regression that starts cropping every name
+   * in the card is still visible here, and so is one that starts cropping a field OUTSIDE a row,
+   * which remains a hard failure. What changed is only that a truncation the owner asked for no
+   * longer flips four runs to FAIL, because an assertion that is expected to fail teaches people
+   * to ignore the report.
+   */
+  function truncatedRowNames() {
+    const out = [];
+    for (const el of sceneRoot().querySelectorAll('.row__primary input[type="text"]')) {
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 && box.height === 0) continue;
+      if (!el.value) continue;
+      if (el.scrollWidth <= el.clientWidth + 1) continue;
       out.push(`${label(el)} "${el.value}" needs ${el.scrollWidth} in ${el.clientWidth}`);
     }
     return out;
@@ -604,6 +634,7 @@ try {
       scrollWidth: d.documentElement.scrollWidth,
       overflows: d.documentElement.scrollWidth > w.innerWidth,
       clipped: clippedFields(),
+      truncatedNames: truncatedRowNames(),
       covered: coveredControls(),
       escaped: escapedPseudos(),
       contrast: contrastFailures(),
@@ -741,7 +772,7 @@ try {
 
   report.scenes = report.scenes.filter(
     (s) => s.failures.length || s.overflows || s.clipped.length || s.covered.length
-      || s.escaped.length || s.contrast.length,
+      || s.escaped.length || s.contrast.length || s.truncatedNames.length,
   );
   report.totalFailures = report.scenes.reduce(
     (n, s) => n + s.failures.reduce((m, f) => m + f.count, 0), 0,
@@ -765,6 +796,12 @@ try {
   // Deduplicated: the same field is measured once per scene it appears in, and one cropped
   // Name would otherwise be reported eight times.
   report.clippedFields = [...new Set(report.scenes.flatMap((s) => s.clipped))];
+  /*
+   * #154: a row name that ellipsizes is the design, so this is a NOTE on the verdict rather than
+   * a failure — see truncatedRowNames(). Deduplicated the same way, and printed even on a PASS,
+   * because the point of measuring it is that someone reads the number.
+   */
+  report.truncatedRowNames = [...new Set(report.scenes.flatMap((s) => s.truncatedNames))];
 
   /*
    * Reported per scene, not deduplicated to a flat set like the cropped fields: WHICH scene a
@@ -805,9 +842,14 @@ try {
   if (report.overflowScenes.length) parts.push(`${report.overflowScenes.length} scene(s) scroll sideways`);
   if (report.clippedFields.length) parts.push(`${report.clippedFields.length} field(s) crop their value`);
   if (coveredTotal) parts.push(`${coveredTotal} control(s) covered by something else`);
-  report.verdict = parts.length === 0
-    ? `PASS — at ${VIEWPORT}px in the ${THEME} theme, every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, every text colour clears WCAG AA against what is actually behind it, nothing scrolls sideways, and no field crops its value`
-    : `FAIL — at ${VIEWPORT}px in the ${THEME} theme: ${parts.join('; ')}`;
+  // A row name ellipsizing is a decision (#154), so it rides along as a NOTE — never silent,
+  // never fatal. Anything else cropping its value is still a failure above.
+  const note = report.truncatedRowNames.length
+    ? ` [note: ${report.truncatedRowNames.length} row name(s) ellipsize by design — ${report.truncatedRowNames[0]}]`
+    : '';
+  report.verdict = (parts.length === 0
+    ? `PASS — at ${VIEWPORT}px in the ${THEME} theme, every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, every text colour clears WCAG AA against what is actually behind it, nothing scrolls sideways, and no field outside a list row crops its value`
+    : `FAIL — at ${VIEWPORT}px in the ${THEME} theme: ${parts.join('; ')}`) + note;
   out.textContent = JSON.stringify(report, null, 1);
 } catch (err) {
   out.textContent = `PROBE ERROR\n${err && err.stack || err}`;
