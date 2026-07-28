@@ -1398,6 +1398,24 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    Attacks only: an inventory row's second field is a 4-character quantity and always fits. */
 .row--attack .row__primary > input:first-child { flex: 1 1 min-content; }
 
+/* ...and the same answer for the three rows that carry #147's reveal button, one control wider.
+   A 44px button plus its gap takes 52px off every name on the line, and in Edit the ✕ takes
+   another 52: measured at 390px, "Improved Divine Smite (Oath of Devotion)" needed 305px and was
+   given 253 in play mode and 201 in Edit — a player could not read the name of their own feature.
+   The pseudo-caret this replaced was only ~25px kinder, so most of this was already true; it had
+   simply never been measured, because probe.html seeded no features or feats until #145 and the
+   lists rendered their empty state under a PASS.
+
+   `flex-basis: min-content` makes the name's hypothetical size its full text, so the line breaks
+   only when the name genuinely cannot share it — and then the BUTTONS drop to a second line
+   rather than every name in the card paying 52px for them. `max-width: 100%` because the base
+   rule's `calc(100% - 1.5rem)` reserves room for the ::after caret these rows no longer have.
+   min-width stays 0, so a name too long even for a whole line ellipsizes rather than pushing the
+   document sideways. */
+.row--feature .row__primary > input,
+.row--feat .row__primary > input,
+.row--spell .row__primary > input { flex: 1 1 min-content; max-width: 100%; }
+
 /* The numbers are one flex item, so the line can only break BEFORE them — never between the
    to-hit and the damage, which is where it landed when they were loose children. */
 .row__stats { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
@@ -1466,13 +1484,13 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 /* Which rows respond to a tap (#76). Tapping an entry reveals its hidden part — but an
    attack/inventory row with no note has nothing to reveal, so the identical gesture worked on
    one row and did nothing on the next. `.row--expandable` is set by renderDerived when a note
-   exists; Feature/Feat rows always have a detail block, so they carry the caret unconditionally.
-   The caret rotates when open, matching the Conditions disclosure marker. Edit mode shows every
-   hidden part anyway, so the affordance would be a lie there. */
-.row--expandable > .row__primary::after,
-.row--feature > .row__primary::after,
-.row--feat > .row__primary::after,
-.row--spell > .row__primary::after {
+   exists. Edit mode shows an attack's note inline anyway, so the affordance would be a lie there.
+
+   #147 took Feature/Feat/Spell rows OFF this pseudo-caret and gave them a real button below —
+   their hidden half is a block of fields that has to be openable one row at a time in Edit too,
+   and a pseudo-element cannot be tabbed to, cannot say whether it is open, and cannot be given a
+   44px target without covering the ✕ beside it. */
+.row--expandable > .row__primary::after {
   content: "▸";
   flex: none; align-self: center;
   margin-left: var(--space-0);
@@ -1482,15 +1500,41 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row.is-expanded > .row__primary::after { transform: rotate(90deg); }
 .is-editing .row > .row__primary::after { content: none; }
 
+/* The reveal control for the three rows whose hidden half is a block of fields (#147). Sized and
+   shaped like `.row__remove` beside it — same 44px box, same quiet border-on-hover — because
+   they are the two row-level buttons and a player should not have to learn two shapes. Unlike ✕
+   it exists in BOTH modes: Edit is exactly where opening one row at a time matters. */
+.row__expand {
+  flex: none;
+  width: var(--tap); height: var(--tap);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid transparent; border-radius: 8px;
+  color: var(--ink-faint); font-size: var(--text-2xs); cursor: pointer;
+  transition: transform .12s, color .12s, border-color .12s;
+}
+.row__expand:hover { color: var(--ink-soft); border-color: var(--line); }
+.row.is-expanded .row__expand { transform: rotate(90deg); }
+/* ✕ carries `margin-left: auto` and is `display:none` outside Edit, so in play mode the caret has
+   to take the auto margin itself or it sits against the name field and the column of carets down
+   a card wanders with the name lengths. In Edit the ✕ is back and takes it, and a SECOND auto
+   margin here would split the free space between the two buttons and strand the ✕ mid-row.
+   (Not `:first-of-type` — the hidden ✕ is still a <button> in the DOM, so the caret is never the
+   first one of its type.) */
+.row__expand { margin-left: auto; }
+.is-editing .row__expand { margin-left: 0; }
+
 /* #67: the same reveal for Features/Feats, whose hidden part is a BLOCK of fields (source /
    level / text) rather than one note — so it flexes rather than displaying as a block.
    #141's spell row is the same shape again (level / casting time / range / duration /
-   components / notes) and joins every rule here rather than restating them. */
+   components / notes) and joins every rule here rather than restating them.
+
+   #147: `.is-editing` is deliberately NOT a second way in. Edit used to force every detail block
+   open, so unlocking a card of eight features unfolded eight blocks of three fields at once and
+   the row you wanted was a screen and a half down. `is-expanded` — one row, set by the player —
+   is now the only thing that opens one, in both modes. */
 .row--feature > .row__detail, .row--feat > .row__detail,
 .row--spell > .row__detail { display: none; }
-.row.is-expanded > .row__detail,
-.is-editing .row--feature > .row__detail, .is-editing .row--feat > .row__detail,
-.is-editing .row--spell > .row__detail { display: flex; }
+.row.is-expanded > .row__detail { display: flex; }
 .row__detail { flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .row__detail > input { flex: 1 1 6rem; min-width: 0; }
 .row__detail > .row__level { flex: 0 1 4rem; }
@@ -1802,7 +1846,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      line of screen chrome. Unconditional, like the #84 attack rules below: a card left in Edit
      mode still prints the finished sheet. An empty tile then prints as its heading over blank
      space, which is a better thing to hand a player than an instruction they cannot follow. */
-  .sidebar, .scrim, .topbar, .tabbar, .row__remove, [data-action="add-row"], .rows__empty,
+  .sidebar, .scrim, .topbar, .tabbar, .row__remove, .row__expand, [data-action="add-row"], .rows__empty,
   .list__head .btn,
   /* .obj-ctl / .obj-rename dropped here (#72): the in-tile overlay is gone, and the object
      controls now live inside .arrange-bar, which this line already hides. */
@@ -1861,7 +1905,9 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   .spelllevel__summary { min-height: 0; }
   .spelllevel { break-inside: avoid; }
   /* ...and for the same reason the #76 expand caret is noise on paper: there is nothing to
-     tap, and the content it would reveal is already printed above. */
+     tap, and the content it would reveal is already printed above. #147's button is the same
+     control in a form that can be tapped and tabbed to, so it goes the same way — it is listed
+     with ✕ and "+ Add" in the strip-the-chrome rule at the top of this block. */
   .row > .row__primary::after { content: none !important; }
   .row__primary input { text-overflow: clip; }
 }

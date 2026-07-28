@@ -742,6 +742,7 @@
       </label>
       <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
       <button type="button" class="row__remove" data-action="remove-row" data-list="spells" aria-label="Remove spell">✕</button>
+      <button type="button" class="row__expand" data-action="toggle-row" aria-expanded="false" aria-label="Details">▸</button>
     </div>
     <div class="row__detail">
       <label class="row__levelpick">
@@ -820,6 +821,15 @@
     <div class="row__primary">
       <input type="text" data-bind-suffix="name" placeholder="Feature name" aria-label="Feature name">
       <button type="button" class="row__remove" data-action="remove-row" data-list="features" aria-label="Remove feature">✕</button>
+      <!-- #147: the reveal is a real control on the rows whose hidden half is a BLOCK of fields.
+           An attack or inventory row hides one optional note that Edit shows inline anyway, so
+           "tap the row, anywhere" and a ::after caret are enough for those. These three are not:
+           Edit used to open every row at once, which is a page of scrolling to reach the one
+           being edited, and the obvious fix — start them shut in Edit too — needs something to
+           tap. There is nothing: the name input grows to fill the line, so the row has no
+           background left. A pseudo-element also cannot carry aria-expanded, cannot be reached
+           by keyboard, and cannot be given a 44px target without covering the ✕ beside it. -->
+      <button type="button" class="row__expand" data-action="toggle-row" aria-expanded="false" aria-label="Details">▸</button>
     </div>
     <div class="row__detail">
       <input type="text" size="12" data-bind-suffix="source" placeholder="Source" aria-label="Feature source">
@@ -834,6 +844,7 @@
     <div class="row__primary">
       <input type="text" data-bind-suffix="name" placeholder="Feat name" aria-label="Feat name">
       <button type="button" class="row__remove" data-action="remove-row" data-list="feats" aria-label="Remove feat">✕</button>
+      <button type="button" class="row__expand" data-action="toggle-row" aria-expanded="false" aria-label="Details">▸</button>
     </div>
     <div class="row__detail">
       <input type="text" size="12" data-bind-suffix="source" placeholder="Source" aria-label="Feat source">

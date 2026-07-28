@@ -235,6 +235,20 @@ function objIdOf(el) {
   return el.closest('[data-object]')?.dataset.object ?? getSelectedObject()?.objectId;
 }
 
+/**
+ * Open or shut one row's hidden half (#76, #147). Ephemeral display state — a class on the row,
+ * like card edit mode — so it survives no structural render and touches no character data.
+ *
+ * One function because there are two ways in and they must not disagree: the `.row__expand`
+ * button (#147, and the only way in Edit mode or from a keyboard) and the tap-anywhere gesture
+ * on an attack/inventory/feature row. The button carries `aria-expanded`, so a gesture that set
+ * the class directly would leave the button announcing "collapsed" over an open block.
+ */
+function setRowExpanded(row, open = !row.classList.contains('is-expanded')) {
+  row.classList.toggle('is-expanded', open);
+  row.querySelector('.row__expand')?.setAttribute('aria-expanded', String(open));
+}
+
 const ACTIONS = {
   'death-save': (el) => {
     const char = state.getActive();
@@ -390,6 +404,9 @@ const ACTIONS = {
     el.dataset.rowLevel == null ? undefined : { level: Number(el.dataset.rowLevel) },
   ),
   'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),
+  // #147: the reveal, as a control rather than a gesture. No character mutation and no render —
+  // a class on the row, like card edit mode, dropped by the next structural render.
+  'toggle-row': (el) => setRowExpanded(el.closest('.row')),
 
   'download-corrupt': () => exportRaw(state.getCorruptRaw()),
   'start-fresh': () => { state.startFresh(); clearBanner('recovery'); },
@@ -494,11 +511,11 @@ document.addEventListener('click', (event) => {
     // an attack/inventory row, whose sole hidden content is one optional note.
     const detail = entryRow.querySelector('.row__detail');
     if (detail) {
-      entryRow.classList.toggle('is-expanded');
+      setRowExpanded(entryRow);
       return;
     }
     const notes = entryRow.querySelector('.row__notes');
-    if (notes && notes.value.trim()) entryRow.classList.toggle('is-expanded');
+    if (notes && notes.value.trim()) setRowExpanded(entryRow);
     return;
   }
 
