@@ -269,6 +269,11 @@ const ACTIONS = {
   // Layout arrange mode (#54): a display preference under its own key, distinct from the
   // per-card CONTENT edit above. Entering it drops any open content edit so they never overlap.
   'arrange-toggle': () => {
+    // Flush a half-typed field into the character BEFORE the mode goes up, for the same reason
+    // the roster switch does (#94): once arranging, a `change` from inside a tile is ignored on
+    // purpose, so an uncommitted HP edit sitting in a still-focused field would be dropped rather
+    // than saved. A desktop blurs on the button's own mousedown; iOS does not.
+    document.activeElement?.blur?.();
     if (toggleArrange()) clearCardEdits(state.getActive());
   },
   'move-card-up': (el) => reorderCard(cardIdOf(el), -1),
@@ -402,9 +407,14 @@ document.addEventListener('click', (event) => {
   // tap that lands ON an object is swallowed; the tab bar, roster and drawer stay usable while
   // arranging, which is why this doesn't return unconditionally.
   //
-  // While placing (#73) the tiles go quiet: the live targets are the "Move here" lines between
-  // them, and re-selecting mid-move would silently abandon the move you started.
-  const objNode = isArranging() && !isPlacing() ? event.target.closest('[data-object]') : null;
+  // Two questions, and answering them with one variable left a hole. Whether the tap can SELECT:
+  // not while placing (#73), where the live targets are the "Move here" lines between the tiles
+  // and re-selecting mid-move would silently abandon the move you started. Whether it must be
+  // SUPPRESSED: throughout arrange mode, placing included — while placing the tiles are meant to
+  // be quiet, not live, and folding that into the same expression woke every [data-action] inside
+  // a tile back up for the duration of a move, which is exactly what #115 set out to stop.
+  const inObject = isArranging() ? event.target.closest('[data-object]') : null;
+  const objNode = inObject && !isPlacing() ? inObject : null;
 
   const actionEl = event.target.closest('[data-action]');
   /*
@@ -426,14 +436,28 @@ document.addEventListener('click', (event) => {
    * children — which means there is no allow-list to keep in step with the ACTIONS map, and
    * nothing to forget when the next control lands in a tile.
    */
-  if (actionEl && !(objNode && objNode.contains(actionEl))) {
+  if (actionEl && !(inObject && inObject.contains(actionEl))) {
     const handler = ACTIONS[actionEl.dataset.action];
     if (handler) handler(actionEl);
     return;
   }
 
-  if (objNode) {
-    selectObject(cardIdOf(objNode), objNode.dataset.object);
+  if (inObject) {
+    /*
+     * The browser's OWN default action for the tap goes the same way, and this is the half #115
+     * missed: the suppression above only reaches what this app dispatches, and a <summary>
+     * opening its <details> or a chip's <label> ticking its checkbox happen one layer below
+     * anything in the ACTIONS map. So the Conditions tile — a <details> wrapping the condition
+     * chips — folded itself open and shut every time it was tapped to move it, and once open, a
+     * tap that landed on a chip gave the character a condition. Blinded, mid-rearrange, with no
+     * undo for character data (#107).
+     *
+     * Same answer as #115, one layer down: suppress by POSITION. A tap inside a tile means
+     * "select this tile" and cannot be made to mean anything else, so there is no per-control
+     * list here to fall out of step with the markup.
+     */
+    event.preventDefault();
+    if (objNode) selectObject(cardIdOf(objNode), objNode.dataset.object);
     return;
   }
 
@@ -783,6 +807,16 @@ const CHANGE_ROUTES = [
 
 function dispatch(routes, target) {
   if (!target || target.nodeType !== 1) return;
+  /*
+   * Nothing inside a tile edits character data while arranging — the third and last way in.
+   * The click handler suppresses by position and the CSS makes a tile's descendants
+   * pointer-inert, but neither reaches a control activated from the KEYBOARD: tab onto a
+   * condition chip inside the Conditions tile, press Space, and `change` fires with no pointer
+   * event anywhere in the story. Same test as the click handler, for the same reason — every
+   * layout control lives OUTSIDE the tiles (the arrange bar, the card head, the drop slots
+   * between them), so position decides it and no allow-list has to be kept in step.
+   */
+  if (isArranging() && target.closest?.('[data-object]')) return;
   for (const route of routes) {
     const el = route.find(target);
     if (el) { route.run(el); return; }
