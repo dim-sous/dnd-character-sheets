@@ -340,7 +340,7 @@ try {
    */
   function clippedFields() {
     const out = [];
-    for (const el of d.querySelectorAll('input[type="text"]')) {
+    for (const el of sceneRoot().querySelectorAll('input[type="text"]')) {
       const box = el.getBoundingClientRect();
       if (box.width === 0 && box.height === 0) continue;
       if (!el.value) continue;
@@ -389,13 +389,24 @@ try {
    * whichever unrelated tile happens to sit at those coordinates as the culprit. `<details>` is
    * the app's own idiom for "not on screen right now", so this defers to it.
    */
+  /*
+   * The scene's root (#149). A modal <dialog> puts the rest of the document in the top layer's
+   * inert shadow: by spec nothing outside it can be tapped, tabbed to or hit-tested. So with the
+   * spell picker open, the sheet behind it is not a page full of covered controls — it is
+   * correctly switched off, and walking it would report every control on the page as blocked by
+   * one element, which is the exact shape of the scrim bug the heuristic below exists to shout
+   * about. Scope every walk to the dialog instead, and measure the thing that is actually on
+   * screen.
+   */
+  const sceneRoot = () => d.querySelector('dialog[open]') ?? d;
+
   function coveredControls() {
     const out = [];
     // Controls skipped because transient chrome is over them, tallied per blocker: a bar covering
     // a band is the design, but one element covering most of a scene is the scrim bug below.
     const behindChrome = new Map();
     let considered = 0;
-    for (const el of d.querySelectorAll(SELECTOR)) {
+    for (const el of sceneRoot().querySelectorAll(SELECTOR)) {
       const box = el.getBoundingClientRect();
       if (box.width === 0 && box.height === 0) continue;
       const cs = w.getComputedStyle(el);
@@ -487,7 +498,7 @@ try {
    */
   function escapedPseudos() {
     const found = new Map();
-    for (const el of d.querySelectorAll('*')) {
+    for (const el of sceneRoot().querySelectorAll('*')) {
       if (w.getComputedStyle(el).position !== 'static') continue;
       for (const pseudo of ['::after', '::before']) {
         const cs = w.getComputedStyle(el, pseudo);
@@ -533,7 +544,7 @@ try {
    */
   function contrastFailures() {
     const found = new Map();
-    for (const el of d.querySelectorAll('*')) {
+    for (const el of sceneRoot().querySelectorAll('*')) {
       // Own text only — an element whose text lives in children is styled by those children.
       const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
       if (!own) continue;
@@ -564,7 +575,7 @@ try {
   function auditScene(name) {
     const groups = new Map();
     const seen = new Set();
-    for (const el of d.querySelectorAll(SELECTOR)) {
+    for (const el of sceneRoot().querySelectorAll(SELECTOR)) {
       if (seen.has(el)) continue;
       seen.add(el);
       const box = el.getBoundingClientRect();
@@ -651,6 +662,26 @@ try {
   for (const row of d.querySelectorAll('.row--spell')) row.classList.add('is-expanded');
   await settle(200);
   report.scenes.push(auditScene('spells / list edit, rows expanded'));
+  await edit('spells');
+
+  /*
+   * #149: the spell picker. A modal dialog with a search box, three axes of filter chips, a
+   * result list and an expandable description — the largest new surface since arrange mode, and
+   * none of it is on the sheet, so no other scene reaches a single control in it.
+   *
+   * Opened from the FIRST section (cantrips) purely because it is the first; the filters and the
+   * first result are opened by hand so the chips and the description text get measured too. The
+   * dialog has to be closed again before the arrange scenes, which need the sheet back.
+   */
+  await edit('spells');
+  d.querySelector('#spells .spelllevel__add')?.click();
+  await settle(1500);                       // the 330KB library arrives by dynamic import
+  d.querySelector('.picker__filters')?.setAttribute('open', '');
+  d.querySelector('#spell-results .result')?.classList.add('is-expanded');
+  await settle(400);
+  report.scenes.push(auditScene('spells / picker open'));
+  d.querySelector('#spell-picker')?.close();
+  await settle(200);
   await edit('spells');
 
   await tab('gear');

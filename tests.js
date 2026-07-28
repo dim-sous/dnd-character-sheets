@@ -33,6 +33,14 @@ import {
   CARD_REGISTRY, CARD_ORDER, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
   GRID_COLUMNS, SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_MAX,
 } from './js/layout-registry.js';
+// #149: the spell picker's search is pure, so the ranking is testable — and the ranking is the
+// half of a picker that fails quietly (a search for "fire" that does not offer Fireball first is
+// not broken, just wrong forever). The 330KB data file comes in too: it is GENERATED, and a
+// regeneration that drops a field or half the library looks identical in a diff.
+import {
+  searchSpells, spellToRow, spellSummary, normalizeText, SPELL_CLASSES, SPELL_SCHOOLS,
+} from './js/spell-library.js';
+import { SRD_SPELLS, SRD_ATTRIBUTION } from './js/spell-data.js';
 
 const results = [];
 let group = '';
@@ -1578,6 +1586,124 @@ describe('spell list (#141)');
     Object.keys(CARD_REGISTRY).every((id) => CARD_ORDER.includes(id)), true);
   is('the default layout carries both new cards',
     ['spellslots', 'spells'].every((id) => cardsOf(DEFAULT_LAYOUT, 'spells').includes(id)), true);
+}
+
+/* ------------------------------------------------- the spell library (#149) */
+
+{
+  describe('spell library — search');
+
+  // A fixture, not the real library: these assert the RANKING and the filter algebra, and both
+  // have to be readable from the expectation. The real data gets its own integrity block below.
+  const lib = [
+    { name: 'Fire Bolt', level: 0, school: 'Evocation', classes: ['Sorcerer', 'Wizard'], castingTime: 'Action', range: '120 feet', components: 'V, S', duration: 'Instantaneous', concentration: false, ritual: false, text: 'Hurl a mote of fire.' },
+    { name: 'Fireball', level: 3, school: 'Evocation', classes: ['Sorcerer', 'Wizard'], castingTime: 'Action', range: '150 feet', components: 'V, S, M', duration: 'Instantaneous', concentration: false, ritual: false, text: 'A bright streak flashes, dealing Fire damage.' },
+    { name: 'Cure Wounds', level: 1, school: 'Abjuration', classes: ['Cleric', 'Druid'], castingTime: 'Action', range: 'Touch', components: 'V, S', duration: 'Instantaneous', concentration: false, ritual: false, text: 'Restore Hit Points.' },
+    { name: 'Alarm', level: 1, school: 'Abjuration', classes: ['Ranger', 'Wizard'], castingTime: '1 minute or Ritual', range: '30 feet', components: 'V, S, M', duration: '8 hours', concentration: false, ritual: true, text: 'Set an alarm against intrusion.' },
+    { name: 'Bless', level: 1, school: 'Enchantment', classes: ['Cleric', 'Paladin'], castingTime: 'Action', range: '30 feet', components: 'V, S, M', duration: 'Concentration, up to 1 minute', concentration: true, ritual: false, text: 'Bless up to three creatures.' },
+    { name: "Otiluke's Resilient Sphere", level: 4, school: 'Abjuration', classes: ['Wizard'], castingTime: 'Action', range: '30 feet', components: 'V, S, M', duration: 'Concentration, up to 1 minute', concentration: true, ritual: false, text: 'A sphere encloses a creature.' },
+  ];
+  const names = (options) => searchSpells(lib, options).map((s) => s.name);
+
+  is('no options lists the whole library', names({}).length, lib.length);
+  is('...cantrips first, then by level and name',
+    names({}), ['Fire Bolt', 'Alarm', 'Bless', 'Cure Wounds', 'Fireball', "Otiluke's Resilient Sphere"]);
+
+  // The reason the ranking exists: substring order alone is alphabetical, so "fire" would offer
+  // Fire Bolt and bury Fireball — which is the spell anyone typing "fire" is looking for.
+  is('an exact name wins outright', names({ text: 'fireball' })[0], 'Fireball');
+  is('a name beginning with the query beats one merely containing it',
+    names({ text: 'fire' }), ['Fire Bolt', 'Fireball']);
+  is('a description match ranks below every name match',
+    names({ text: 'fire damage' }), ['Fireball']);
+  is('matching is case-insensitive', names({ text: 'BLESS' }), ['Bless']);
+  // A phone keyboard types a straight apostrophe; the SRD writes a curly one.
+  is('a straight apostrophe finds a curly one', names({ text: "otiluke's" }), ["Otiluke's Resilient Sphere"]);
+  is('so does no apostrophe at all', names({ text: 'resilient' }), ["Otiluke's Resilient Sphere"]);
+  is('a query nothing answers returns nothing', names({ text: 'eldritch blast' }), []);
+
+  // Filters: OR within an axis, AND across them — "level 1 or 3, and a Wizard spell".
+  is('one level', names({ levels: [1] }), ['Alarm', 'Bless', 'Cure Wounds']);
+  is('two levels are an OR', names({ levels: [0, 3] }), ['Fire Bolt', 'Fireball']);
+  is('a class', names({ classes: ['Cleric'] }), ['Bless', 'Cure Wounds']);
+  is('a school', names({ schools: ['Enchantment'] }), ['Bless']);
+  is('level AND class', names({ levels: [1], classes: ['Wizard'] }), ['Alarm']);
+  is('class AND school AND text', names({ classes: ['Wizard'], schools: ['Evocation'], text: 'fire' }),
+    ['Fire Bolt', 'Fireball']);
+  is('concentration only', names({ concentration: true }), ['Bless', "Otiluke's Resilient Sphere"]);
+  is('rituals only', names({ ritual: true }), ['Alarm']);
+  is('...and false is a filter, not "unset"', names({ concentration: false }).includes('Bless'), false);
+  is('an empty filter array means all, not none', names({ levels: [], classes: [] }).length, lib.length);
+  is('limit caps the results', names({ limit: 2 }), ['Fire Bolt', 'Alarm']);
+  is('filters are case-insensitive too', names({ classes: ['wizard'], levels: [4] }),
+    ["Otiluke's Resilient Sphere"]);
+
+  is('normalizeText folds case and curly apostrophes', normalizeText(' Otiluke’s '), "otiluke's");
+
+  describe('spell library — a library entry as a row');
+
+  const row = spellToRow(lib[1]);
+  // The keys have to match the row TEMPLATE exactly. normalizeRow is template-driven, so a key
+  // this function invents is dropped on the next save and a key it forgets loads as '' — either
+  // way the spell silently arrives half-filled, and nothing else in the app would notice.
+  is('it produces exactly the row template\'s keys',
+    Object.keys(row).sort(), Object.keys(ROW_TEMPLATES.spells()).sort());
+  is('the name comes across', row.name, 'Fireball');
+  is('the level comes across as a number', row.level, 3);
+  is('the description lands in the free-text note', row.notes, lib[1].text);
+  is('casting time, range, duration and components come with it',
+    [row.castingTime, row.range, row.duration, row.components],
+    ['Action', '150 feet', 'Instantaneous', 'V, S, M']);
+  // Adding a spell is not preparing it. The tick is the one thing on this card a player touches
+  // every long rest, and pre-ticking it would claim they had already made that call.
+  is('it is not prepared', row.prepared, false);
+  is('a cantrip keeps level 0', spellToRow(lib[0]).level, 0);
+  is('garbage in still produces a valid row', Object.keys(spellToRow(undefined)).sort(),
+    Object.keys(ROW_TEMPLATES.spells()).sort());
+
+  is('the summary line names level, school and classes',
+    spellSummary(lib[1]), 'Level 3 Evocation · Sorcerer, Wizard');
+  is('a cantrip says Cantrip, not Level 0',
+    spellSummary(lib[0]), 'Cantrip Evocation · Sorcerer, Wizard');
+  is('concentration and ritual are called out',
+    [spellSummary(lib[4]).includes('Concentration'), spellSummary(lib[3]).includes('Ritual')],
+    [true, true]);
+
+  describe('spell library — the generated data');
+
+  /*
+   * js/spell-data.js is written by tools/build-spell-data.py and committed. A parse that drops a
+   * field, or half the library, is invisible in review — 330KB of generated JSON reads as "some
+   * spells" either way — so the shape is asserted here rather than trusted.
+   */
+  is('the library is the size of the SRD spell list', SRD_SPELLS.length > 300, true);
+  is('every spell carries every field the picker shows',
+    SRD_SPELLS.filter((s) => !s.name || !s.school || !s.castingTime || !s.range
+      || !s.components || !s.duration || !s.text).map((s) => s.name), []);
+  is('every level is one the sheet has a section for',
+    [...new Set(SRD_SPELLS.map((s) => s.level))].sort((a, b) => a - b)
+      .every((level) => SPELL_LIST_LEVELS.includes(level)), true);
+  is('every school is one the picker offers as a filter',
+    [...new Set(SRD_SPELLS.map((s) => s.school))].filter((s) => !SPELL_SCHOOLS.includes(s)), []);
+  is('every class is one the picker offers as a filter',
+    [...new Set(SRD_SPELLS.flatMap((s) => s.classes))].filter((c) => !SPELL_CLASSES.includes(c)), []);
+  // The description is plain text: it lands in a textarea, so leftover markdown would print as
+  // literal asterisks in the middle of the sentence a player reads at the table.
+  is('no markdown emphasis survived the conversion',
+    SRD_SPELLS.filter((s) => /[*_]/.test(s.text) || /<[a-z]/i.test(s.text)).map((s) => s.name), []);
+  is('the SRD attribution ships with the data', /SRD 5\.2\.1/.test(SRD_ATTRIBUTION), true);
+
+  // One spell end to end, so a regeneration that shifts the field mapping by one is caught.
+  const fireball = SRD_SPELLS.find((s) => s.name === 'Fireball');
+  is('Fireball is a level 3 Evocation', [fireball.level, fireball.school], [3, 'Evocation']);
+  is('...cast at 150 feet with a bat guano component',
+    [fireball.range, /guano/.test(fireball.components)], ['150 feet', true]);
+  is('...and it is neither concentration nor a ritual',
+    [fireball.concentration, fireball.ritual], [false, false]);
+  const alarm = SRD_SPELLS.find((s) => s.name === 'Alarm');
+  is('a "1 minute or Ritual" casting time is flagged as a ritual', alarm.ritual, true);
+  const bless = SRD_SPELLS.find((s) => s.name === 'Bless');
+  is('a "Concentration, up to…" duration is flagged as concentration', bless.concentration, true);
 }
 
 export { results };

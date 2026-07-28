@@ -250,13 +250,25 @@ try {
     [0, 1, 2].every((l) => section(l).querySelector('details').open));
   ok('the name field unlocks in Edit', nameField(rowsIn(1)[0]).readOnly === false);
 
-  // --- "+ Add" inside a section creates a spell AT that level ---------------------------
+  /*
+   * --- adding inside a section files the spell AT that level ----------------------------
+   *
+   * #149 turned this section's "+ Add" into "Search": the button now opens the spell picker
+   * pre-filtered to the section's level, and the blank row it used to make is the picker's
+   * custom entry. The assertion is unchanged and deliberately so — what a player does here is
+   * still "add a spell to THIS level", and the point of the check is where the row lands.
+   */
   const before = stored().length;
   section(5).querySelector('details').open = true;
   await wait(150);
   section(5).querySelector('.spelllevel__add').click();
+  await wait(1600);                                  // the picker's 330KB library is a dynamic import
+  ok('the section button opens the picker', d.getElementById('spell-picker').open === true);
+  d.getElementById('spell-picker-custom').click();   // the blank row "+ Add" used to make
   await wait(700);
-  is('Add appends one spell', stored().length, before + 1);
+  d.querySelector('#spell-picker [data-action="spell-picker-close"]').click();
+  await wait(400);
+  is('adding appends one spell', stored().length, before + 1);
   is('...already at that section\'s level, not as a cantrip', stored()[before].level, 5);
   is('...and it lands in that section', rowsIn(5).length, 1);
   /*

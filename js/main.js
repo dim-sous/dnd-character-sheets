@@ -21,6 +21,9 @@ import {
   announcePlay,
 } from './render.js';
 import {
+  openSpellPicker, SPELL_PICKER_ACTIONS, onSpellPickerInput, onSpellPickerChange,
+} from './spell-picker.js';
+import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
   tabAdd, tabRemove, tabRename, tabMove, toggleObject, resizeObject, resizeObjectHeight, endResize,
@@ -407,6 +410,25 @@ const ACTIONS = {
   // #147: the reveal, as a control rather than a gesture. No character mutation and no render —
   // a class on the row, like card edit mode, dropped by the next structural render.
   'toggle-row': (el) => setRowExpanded(el.closest('.row')),
+
+  /*
+   * #149: the spell library. The button carries its section's level, which pre-FILTERS the
+   * picker rather than presetting a row — a spell's level belongs to the spell, so picking a
+   * cantrip while the 3rd-level section is open still files it under Cantrips.
+   *
+   * `existing` is passed by value at open time so the picker can mark what is already on the
+   * sheet; it keeps its own set from there. onAdd is the only thing the picker can do to a
+   * character, which is what keeps spell-picker.js out of the state module entirely.
+   */
+  'spell-search': (el) => {
+    const char = state.getActive();
+    openSpellPicker({
+      level: el.dataset.rowLevel == null ? null : Number(el.dataset.rowLevel),
+      existing: (char?.spellcasting?.spells ?? []).map((spell) => spell.name),
+      onAdd: (row) => state.addRow('spells', row),
+    });
+  },
+  ...SPELL_PICKER_ACTIONS,
 
   'download-corrupt': () => exportRaw(state.getCorruptRaw()),
   'start-fresh': () => { state.startFresh(); clearBanner('recovery'); },
@@ -810,6 +832,13 @@ function askImport(incomingCount, existingCount) {
 const INPUT_ROUTES = [
   { name: 'resize slider', find: (t) => (isActionRange(t) ? t : null), run: runRangeAction },
   /*
+   * #149: the picker's search box. Disjoint from the field route below by construction — it
+   * carries no data-bind or data-toggle, because nothing in the picker is character data. It
+   * has to be a route rather than a listener on the input for the same reason everything else
+   * here is: one listener, one table, precedence written down (#125).
+   */
+  { name: 'spell search', find: (t) => (t.id === 'spell-search' ? t : null), run: onSpellPickerInput },
+  /*
    * Live fields update as you type. Structural ones (they change how much DOM exists) wait for
    * `change` — rebuilding mid-keystroke would throw the caret away. Current HP also waits: a
    * signed value like "-8" is a delta (damage/heal), so writing it live would set current HP
@@ -832,6 +861,9 @@ const INPUT_ROUTES = [
 
 const CHANGE_ROUTES = [
   { name: 'structural field', find: (t) => (t.dataset?.structural === 'true' ? t : null), run: applyField },
+  // #149: a picker filter chip. Also disjoint: it is a checkbox with no data-bind/data-toggle,
+  // so applyField would ignore it anyway — but a route that ignores things is not a route.
+  { name: 'spell filter', find: (t) => (t.dataset?.spellFilter ? t : null), run: onSpellPickerChange },
   // Two ways to register an HP change: tap away (blur → change) or press Enter.
   { name: 'current HP', find: (t) => (t.dataset?.hpCurrent ? t : null), run: commitHpCurrent },
   { name: 'send card to tab', find: (t) => t.closest?.('.card__movetab') ?? null, run: commitCardMoveTab },

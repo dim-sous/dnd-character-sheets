@@ -1656,9 +1656,13 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-/* "+ Add" and per-row remove (✕) exist only in edit mode; view mode is uncluttered. */
-[data-action="add-row"], .row__remove { display: none; }
-.is-editing [data-action="add-row"] { display: inline-flex; }
+/* "+ Add" and per-row remove (✕) exist only in edit mode; view mode is uncluttered.
+   #149's spell "Search" is the same control wearing a different name — it is how a spell gets
+   added now — so it is gated with them rather than becoming the one way to change the sheet
+   from play mode. */
+[data-action="add-row"], [data-action="spell-search"], .row__remove { display: none; }
+.is-editing [data-action="add-row"],
+.is-editing [data-action="spell-search"] { display: inline-flex; }
 .is-editing .row__remove { display: inline-flex; align-items: center; justify-content: center; }
 
 /* View mode renders locked fields as flat read-only text, so the sheet reads as something
@@ -1831,6 +1835,95 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end;
   margin: var(--space-4) 0 0; padding: 0;
 }
+
+/* ---- the spell picker (#149) ----------------------------------------------------
+   A near-full-screen sheet on a phone, a wide panel on a laptop. The import dialog above is a
+   question with three answers and sizes to its text; this one is a search over 339 spells with
+   three filter axes and a description to read, so it takes the screen. Capped at 92vh rather
+   than 100 so it still reads as a layer over the sheet rather than a new page. */
+.dialog--picker {
+  width: min(96vw, 40rem);
+  max-width: min(96vw, 40rem);
+  height: min(92vh, 52rem);
+  padding: 0;                     /* the .picker grid owns the padding, so the list can scroll edge to edge */
+  overflow: hidden;
+}
+/* Grid, not flow: the results are the only part that scrolls, and everything else has to stay
+   put while it does. `minmax(0, 1fr)` on the list row is what allows a grid child to be SMALLER
+   than its content — without it the list grows the dialog and the whole thing scrolls, taking
+   the search box and the filters off screen with it. */
+.picker {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto;
+  height: 100%;
+  padding: var(--space-4);
+  gap: var(--space-2);
+}
+.picker__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.picker__head .dialog__title { margin: 0; }
+.picker__search { width: 100%; min-height: var(--tap); font-size: var(--text-md); }
+
+.picker__filtersummary {
+  display: flex; align-items: center; gap: var(--space-1);
+  min-height: var(--tap);              /* a summary is a control (#77) */
+  font-size: var(--text-sm); font-weight: 600; color: var(--ink-soft);
+  cursor: pointer; list-style: none;
+}
+.picker__filtersummary::-webkit-details-marker { display: none; }
+.picker__filtermarker { transition: transform .12s; display: inline-block; }
+.picker__filters[open] .picker__filtermarker { transform: rotate(90deg); }
+.picker__filterbody { display: flex; flex-direction: column; gap: var(--space-2); padding-block: var(--space-2); }
+.picker__axis { border: 0; margin: 0; padding: 0; min-width: 0; }
+.picker__axis legend { padding: 0 0 var(--space-1); font-size: var(--text-xs); color: var(--ink-soft); }
+/* The condition chip is red because a condition is bad news. A filter is not — it is on or off,
+   so it takes the accent the rest of the app uses for "this is selected". */
+.chip--filter:has(:checked) {
+  background: color-mix(in srgb, var(--accent) 15%, var(--card));
+  border-color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 80%, var(--ink));
+}
+.chip--filter:has(:checked) .chip__box { background: var(--accent); border-color: var(--accent); }
+
+.picker__bar { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.picker__count, .picker__status { font-size: var(--text-xs); color: var(--ink-soft); }
+.picker__status { text-align: right; }
+
+.picker__results { overflow-y: auto; margin: 0; padding: 0; list-style: none; -webkit-overflow-scrolling: touch; }
+.picker__more { justify-self: center; }
+.picker__foot { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: space-between; }
+.picker__attrib { margin: 0; font-size: var(--text-2xs); color: var(--ink-faint); }
+
+/* A result: name + summary on the left, Add on the right, description underneath when opened.
+   Grid rather than flex so the description spans both columns without a wrapper. */
+.result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-2);
+  align-items: center;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+/* The whole left side is the reveal control, so the target is the row rather than a 9px caret —
+   and it is a real <button>, so it is tabbable and says whether it is open. */
+.result__main {
+  display: flex; flex-direction: column; gap: 2px;
+  min-height: var(--tap); padding: var(--space-1) 0;
+  background: none; border: 0; text-align: left; cursor: pointer; color: inherit;
+  min-width: 0;
+}
+.result__name { font-weight: 600; font-size: var(--text-sm); }
+.result__meta { font-size: var(--text-xs); color: var(--ink-soft); }
+.result__add { flex: none; min-width: 4rem; }
+.result__add--done { opacity: .6; }
+/* Hidden until the result is opened. `display:none` rather than `hidden`, because the element
+   is a grid child either way and the attribute would fight the grid's implicit row. */
+.result__detail { display: none; grid-column: 1 / -1; }
+.result.is-expanded .result__detail { display: block; }
+.result__stats { margin: 0 0 var(--space-1); font-size: var(--text-xs); color: var(--ink-soft); }
+/* pre-wrap: the description is plain text with real paragraph breaks in it (the generator keeps
+   them), and collapsing them would run "Using a Higher-Level Spell Slot" onto the end of the
+   sentence before it. */
+.result__text { margin: 0; font-size: var(--text-sm); white-space: pre-wrap; }
 
 /* ================================================================= print */
 
