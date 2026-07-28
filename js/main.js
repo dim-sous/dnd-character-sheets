@@ -475,7 +475,19 @@ document.addEventListener('click', (event) => {
   // visible line over a detail block — so tap-to-reveal comes for free and there is no new
   // gesture to learn or to test.
   const entryRow = event.target.closest('.row--attack, .row--inventory, .row--feature, .row--feat, .row--spell');
-  if (entryRow && !entryRow.closest('.is-editing')
+  /*
+   * A control that is live in PLAY mode owns its own tap (#146). Until the spell row there was
+   * never one on a primary line — every other row locks its fields in view mode, which is why
+   * the exclusions above only ever named the hidden half of the row — and ticking Prepared
+   * therefore also folded the detail block open underneath the player's finger, on the one
+   * action this card exists for.
+   *
+   * The test is `data-live` (plus the <label> that wraps it and forwards the tap), not the
+   * class: `data-live` is already the attribute that means "editable without Edit", so the next
+   * live control put on a row line inherits this instead of re-opening the bug.
+   */
+  const livePrimaryControl = event.target.closest('[data-live], label');
+  if (entryRow && !entryRow.closest('.is-editing') && !livePrimaryControl
       && !event.target.closest('.row__notes') && !event.target.closest('.row__detail')) {
     // #67 rows carry a .row__detail block (source / level / text) that ALWAYS has fields worth
     // revealing, so they toggle unconditionally — the note-less guard below only makes sense for

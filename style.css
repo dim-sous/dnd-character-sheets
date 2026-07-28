@@ -1362,7 +1362,12 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    viewport, past the right edge of every card, into empty space. Wrapping spends a line instead
    of the viewport, and never truncates the name to do it. */
 .row__primary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
-.row__primary input {
+/* `:not([type="checkbox"])` is load-bearing (#146), not tidiness. This selector is (0,1,1) and so
+   is the base `input[type="checkbox"]` block — but this one is 1100 lines further down, so it won
+   the tie and painted the spell row's Prepared tick 44 wide by 22 tall: a content-sized text field
+   with a tick drawn in it. Sizing here is for the row's TEXT fields; a checkbox is already sized
+   by its own rule, and `.row__prepared` around it already carries the 44px target. */
+.row__primary input:not([type="checkbox"]) {
   /* 2.75rem = 44px: the floor is a touch target, not just a legibility minimum (#77). */
   field-sizing: content; width: auto; min-width: 2.75rem;  /* width:auto so field-sizing wins over the base input{width:100%} */
   text-overflow: ellipsis; padding-inline: var(--space-1);

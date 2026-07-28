@@ -203,17 +203,51 @@ try {
   is('unticking Prepared updates the level count', section(1).querySelector('.spelllevel__count').textContent, '0 of 2');
   is('...and the card total', d.querySelector('.spells__count').textContent, '1 prepared');
   ok('...without collapsing the section being ticked in', section(1).querySelector('details').open === true);
+
+  /*
+   * #146 — the tick owns its own tap. It bubbled to the tap-to-reveal handler, so the one action
+   * this card exists for in play mode also folded the row's detail block open underneath the
+   * player's finger.
+   *
+   * Asserted after ONE click, and that is the whole point: the first draft of this check sat
+   * after the tick-and-untick pair below and passed against the unfixed code, because two taps
+   * toggled the class back to where it started. A check on a toggle has to land on an odd number
+   * of them or it is asserting nothing.
+   */
+  ok('ticking Prepared does not expand the row (#146)', shieldRow.classList.contains('is-expanded') === false);
+  ok('...and the detail block stayed hidden',
+    shieldRow.querySelector('.row__detail').checkVisibility() === false);
+
   prepared.click();
   await wait(400);
   is('re-ticking puts the count back', section(1).querySelector('.spelllevel__count').textContent, '1 of 2');
+
+  /*
+   * And it looks like a checkbox. `.row__primary input` (0,1,1) sits 1100 lines below the base
+   * `input[type="checkbox"]` block (0,1,1) and won the tie, so the tick painted 44 wide by 22
+   * tall with the check drawn small in the middle of it. Measured, not read off the stylesheet —
+   * that is the trap this repo keeps falling into.
+   */
+  const tickBox = prepared.getBoundingClientRect();
+  ok('the tick is a square box, not a stretched field (#146)',
+    Math.abs(tickBox.width - tickBox.height) <= 1 && tickBox.width <= 30,
+    `${Math.round(tickBox.width)}x${Math.round(tickBox.height)}`);
 
   // --- Edit mode shows every level, so a spell can be added to any of them --------------
   editBtn().click();
   await wait(400);
   is('Edit shows all ten levels', levelsShown().join(','), '0,1,2,3,4,5,6,7,8,9');
   ok('an empty level says so', /No spells at this level/.test(section(7).textContent));
-  ok('sections start closed in Edit (ten open empties is a page of nothing)',
-    sections().every((s) => !s.querySelector('details').open));
+  /*
+   * #146 split this in two. A level the player has never seen still starts closed — Edit reveals
+   * all ten and seven of them are empty here — but a section that was already on screen keeps
+   * whatever the player left it at, because the Edit flip is a structural render like any other
+   * and re-deriving `open` from the mode is exactly what made "+ Add" shut the drawer it added to.
+   */
+  ok('a level the player has never opened starts closed in Edit (ten open empties is a page of nothing)',
+    [3, 4, 5, 6, 7, 8, 9].every((l) => !section(l).querySelector('details').open));
+  ok('...but a section already on screen survives the Edit flip open (#146)',
+    [0, 1, 2].every((l) => section(l).querySelector('details').open));
   ok('the name field unlocks in Edit', nameField(rowsIn(1)[0]).readOnly === false);
 
   // --- "+ Add" inside a section creates a spell AT that level ---------------------------
@@ -225,6 +259,16 @@ try {
   is('Add appends one spell', stored().length, before + 1);
   is('...already at that section\'s level, not as a cantrip', stored()[before].level, 5);
   is('...and it lands in that section', rowsIn(5).length, 1);
+  /*
+   * #146 — and the section is still open, so the row you just created is on screen. Adding is a
+   * structural render, and a structural render used to re-derive every section's open state from
+   * the mode: in Edit that meant shut, so the drawer closed the instant you added to it and the
+   * new row went out of sight. Adding a spell took opening the same section twice.
+   */
+  ok('...with the section still open, so the new row is visible (#146)',
+    section(5).querySelector('details').open === true);
+  ok('...and the untouched sections did not spring open with it',
+    [3, 4, 6, 7].every((l) => !section(l).querySelector('details').open));
 
   // --- the level select re-files a row (structural) --------------------------------------
   const select = rowsIn(5)[0].querySelector('.row__levelselect');
