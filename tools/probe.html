@@ -147,7 +147,11 @@ try {
    * same job one level down, where six controls share a wrapping flex line.
    */
   c.spellcasting.spells = [
-    { name: 'Fire Bolt', level: 0, prepared: false, castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
+    // #158: a cantrip with a stale `prepared: true` (a real state — re-filing a prepared spell
+    // down to level 0 makes one) and a long cantrip name, so the audit measures the section that
+    // now renders WITHOUT a tick rather than assuming it looks like the others.
+    { name: 'Fire Bolt', level: 0, prepared: true, castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
+    { name: 'Primal Savagery', level: 0, prepared: false, castingTime: '1 action', range: 'Self', duration: 'Instant', components: 'S', notes: 'Acid damage on a melee spell attack.' },
     {
       name: 'Otiluke’s Irresistible Dance', level: 3, prepared: true,
       castingTime: '1 action', range: '30 feet', duration: 'Concentration, up to 1 minute',

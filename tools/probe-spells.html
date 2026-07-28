@@ -176,7 +176,12 @@ try {
   // --- the counts ---------------------------------------------------------------------
   is('a level count reads "prepared of known"',
     section(1).querySelector('.spelllevel__count').textContent, '1 of 2');
-  is('a level with none prepared still counts', section(0).querySelector('.spelllevel__count').textContent, '0 of 2');
+  /*
+   * #158: Cantrips read as a plain count. "0 of 2" claimed one of two cantrips was ready and the
+   * other was not, which cannot be true — a cantrip is always available.
+   */
+  is('the Cantrips heading counts them rather than claiming a "prepared of"',
+    section(0).querySelector('.spelllevel__count').textContent, '2');
   is('the card total names what it counts',
     d.querySelector('.spells__count').textContent, '2 prepared');
 
@@ -421,6 +426,54 @@ try {
   const edgeContrast = ratio(boxEdge, behind);
   ok('an unticked Prepared box is visible against the card (WCAG 1.4.11, 3:1)',
     edgeContrast >= 3, `${edgeContrast.toFixed(2)}:1`);
+
+  /*
+   * --- #158: a cantrip is always ready, so it has no tick and is never filtered out ------
+   */
+  const cantripRow = rowsIn(0)[0];
+  ok('a cantrip row still HAS its prepared control in the DOM',
+    Boolean(cantripRow.querySelector('[data-bind$=".prepared"]')));
+  /*
+   * ...and that is deliberate rather than sloppy. renderDerived reads the checkbox to decide what
+   * a collapsed level shows; a row with no checkbox at all is a null-deref there and a permanent
+   * "not prepared" everywhere else. It is hidden, not deleted — and hidden means gone for every
+   * purpose that matters: off screen, out of the tab order, out of the accessibility tree.
+   */
+  /*
+   * `{ visibilityProperty: true }` is required, and the first draft of this check did not pass it:
+   * checkVisibility() considers `display: none` and content-visibility by DEFAULT and answers
+   * `true` for a `visibility: hidden` element. The check reported a failure against correct CSS —
+   * which is the friendlier way round, but the same class of mistake as measuring a closed
+   * <details> by its rect.
+   */
+  ok('...but it is not shown',
+    cantripRow.querySelector('.row__prepared').checkVisibility({ visibilityProperty: true }) === false);
+  const cantripTick = cantripRow.querySelector('[data-bind$=".prepared"]');
+  cantripTick.focus();
+  ok('...and it cannot be reached by keyboard', d.activeElement !== cantripTick);
+  /*
+   * The 44px of layout stays, so cantrip names sit on the same left edge as every other level's.
+   * Measured: without it they move 52px left and Cantrips is the one section that does not line
+   * up with the card below it.
+   */
+  const cantripName = nameField(cantripRow).getBoundingClientRect().left;
+  const spellName = nameField(rowsIn(1)[0]).getBoundingClientRect().left;
+  ok('a cantrip name lines up with every other spell name',
+    Math.abs(cantripName - spellName) < 1, `cantrip ${Math.round(cantripName)}, level 1 ${Math.round(spellName)}`);
+  ok('a level-1 row still shows its tick', rowsIn(1)[0].querySelector('.row__prepared').checkVisibility());
+
+  /*
+   * And the collapse exemption, which is the half that would fail silently: with no tick to set,
+   * a Cantrips section filtered by "is it prepared" collapses to a heading over nothing — the
+   * exact failure #155 stopped being a <details> to avoid.
+   */
+  await setOpen(0, false);
+  is('a collapsed Cantrips section still shows every cantrip',
+    rowsIn(0).filter((r) => r.checkVisibility()).length, rowsIn(0).length);
+  ok('...and keeps its rail rather than collapsing to a bare heading',
+    section(0).getBoundingClientRect().height > 60,
+    `${Math.round(section(0).getBoundingClientRect().height)}px tall`);
+  await setOpen(0, true);
 
   /*
    * --- #155: collapsed means "show me what I have prepared" -----------------------------

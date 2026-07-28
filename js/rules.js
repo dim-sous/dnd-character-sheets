@@ -182,13 +182,40 @@ export function spellsAtLevel(char, level) {
 }
 
 /**
- * How many spells are ticked prepared — at one level, or across the whole list when `level` is
- * omitted. Counting a checkbox the player ticked is arithmetic, not a rule: nothing here knows
- * how many spells a class may prepare, and nothing stops them from ticking more.
+ * Whether a spell of this level is something you PREPARE (#158).
+ *
+ * Cantrips are not. In the 2024 rules a cantrip is always known and always available: it is never
+ * prepared and never counts against a prepared-spells limit. So the card offers no tick on a
+ * cantrip row and counts none of them as prepared.
+ *
+ * This is one of the few rules the app encodes, and it belongs in the same list as the long-rest
+ * recovery and the 2024 exhaustion penalty: it is class-independent, needs no knowledge of any
+ * prepare limit, and cannot be got wrong. It differs from those in one way worth naming, because
+ * the rest are all hand-overridable and this one removes a control: a `prepared: true` already
+ * stored against a cantrip is left exactly where it is — it round-trips through export/import
+ * untouched, and it comes back the moment a player re-files that spell at a real level. What
+ * changes is that nothing counts it and nothing shows a control for it.
+ */
+export function canPrepare(level) {
+  const at = Number(level);
+  return Number.isFinite(at) && at > 0;
+}
+
+/**
+ * How many spells are ticked prepared — at one level, or across the whole preparable list when
+ * `level` is omitted. Counting a checkbox the player ticked is arithmetic, not a rule: nothing
+ * here knows how many spells a class may prepare, and nothing stops them from ticking more.
+ *
+ * The one rule it does apply is `canPrepare` (#158): the whole-list total skips cantrips, so a
+ * stale tick on one — from an old save, or from re-filing a prepared spell down to level 0 —
+ * cannot inflate "N prepared" from a row that no longer shows a tick to clear it. Asking for
+ * level 0 explicitly still counts the ticks, because that is what the caller asked for and this
+ * function should not pretend stored data says something else.
  */
 export function preparedCount(char, level) {
+  const all = (char.spellcasting && char.spellcasting.spells) || [];
   const rows = level == null
-    ? ((char.spellcasting && char.spellcasting.spells) || []).map((spell) => ({ spell }))
+    ? all.filter((spell) => canPrepare(spell.level)).map((spell) => ({ spell }))
     : spellsAtLevel(char, level);
   return rows.filter((row) => row.spell.prepared).length;
 }

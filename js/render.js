@@ -762,11 +762,18 @@ function derivedValue(char, key) {
      *
      * The "of N" is a count of what is written down, never of what the class may prepare —
      * nothing here knows that number, and nothing stops the player exceeding it.
+     *
+     * Cantrips read as a plain count (#158). "0 of 2" said one of two cantrips was ready and the
+     * other was not, which is not a thing that can be true: a cantrip is always available, so
+     * there is no "of" to state and no tick on the row to make one. The card total skips them
+     * for the same reason — see rules.canPrepare.
      */
     case 'spellsPrepared': {
       if (arg === '') return `${rules.preparedCount(char)} prepared`;
       const known = rules.spellsAtLevel(char, arg).length;
-      return known === 0 ? '' : `${rules.preparedCount(char, arg)} of ${known}`;
+      if (known === 0) return '';
+      if (!rules.canPrepare(arg)) return String(known);
+      return `${rules.preparedCount(char, arg)} of ${known}`;
     }
     // #84: an attack row's to-hit — the only derived value keyed by ARRAY POSITION rather
     // than a domain key. Safe because every length change emits 'structural' (state.js

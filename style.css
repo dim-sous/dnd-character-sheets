@@ -1310,13 +1310,27 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
    The Search button goes with them: adding to a level you have folded away is not a thing anyone
    means to do, and it would sit under the prepared rows looking like part of the list. */
-.spelllevel.is-collapsed .row--spell:not(.is-prepared) { display: none; }
+.spelllevel:not([data-level="0"]).is-collapsed .row--spell:not(.is-prepared) { display: none; }
+/* ...except Cantrips, which are ALWAYS ready (#158), so a collapsed Cantrips section shows all
+   of them. Without this exemption the section with no ticks to set would collapse to a bare
+   heading over nothing — the exact failure #155 stopped being a <details> to avoid. `data-level`
+   is already on the section (renderSpells writes it), so the rule reads off what is there. */
 .spelllevel.is-collapsed .spelllevel__add,
 .spelllevel.is-collapsed .rows__empty { display: none; }
 /* With every row hidden, the rail would be a stray 2px stub under the heading. */
-.spelllevel.is-collapsed .spelllevel__rows:not(:has(.row--spell.is-prepared)) {
+.spelllevel:not([data-level="0"]).is-collapsed .spelllevel__rows:not(:has(.row--spell.is-prepared)) {
   margin: 0; padding: 0; border-left: 0;
 }
+
+/* No tick on a cantrip (#158): there is no decision behind it, so the control should not be
+   there to invite one.
+
+   `visibility: hidden` rather than `display: none`, and that is the whole design of this rule.
+   It takes the box out of the tab order and off the screen while KEEPING its 44px of layout, so
+   cantrip names stay on the same left edge as every other level's — measured, dropping the box
+   entirely moves them 52px left and Cantrips becomes the one section that does not line up with
+   the card. The gutter is dead space by choice: nothing to tap, nothing to see, one column. */
+.spelllevel[data-level="0"] .row__prepared { visibility: hidden; }
 /* The card total, beside the title in the head. `margin-left: auto` would fight the head's own
    space-between, so it simply sits where the flex puts it: after the title, before Edit. */
 .spells__count { font-size: var(--text-xs); color: var(--ink-soft); }
