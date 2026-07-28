@@ -14,8 +14,10 @@
       because a structural render would collapse the section being ticked in;
     - changing a row's level is a STRUCTURAL change and must re-file the row;
     - "+ Add" inside a section creates a spell at that section's level, not a cantrip;
-    - the beforeprint handler opens every shut section (a closed <details> is content
-      containment, not display:none, so CSS alone could not be trusted to reveal it).
+    - a collapsed level still shows the spells you have PREPARED and hides the rest (#155),
+      which is why the level stopped being a <details>: a shut one hides all of its content;
+    - the @media print rule that reveals a collapsed level's rows is actually PARSED — the
+      beforeprint handler that used to do that in JS is gone with the <details>.
 
   Run it like the others; it prints ALL PASS or the failures. It reseeds localStorage,
   including the layout keys, so it never inherits another run's arrangement.
@@ -43,6 +45,15 @@ const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'} 
  */
 const is = (name, actual, expected) => {
   const pass = Object.is(actual, expected);
+  results.push(`${pass ? 'PASS' : 'FAIL'}  ${name}   got ${JSON.stringify(actual)}${pass ? '' : ` — expected ${JSON.stringify(expected)}`}`);
+};
+/*
+ * The array/object form. `is` is Object.is, so two identical arrays are NEVER equal by it — and
+ * the report prints the same text on both sides of the failure, which reads like a bug in the app
+ * rather than in the check. (It cost a probe run on #149 to learn that.)
+ */
+const eq = (name, actual, expected) => {
+  const pass = JSON.stringify(actual) === JSON.stringify(expected);
   results.push(`${pass ? 'PASS' : 'FAIL'}  ${name}   got ${JSON.stringify(actual)}${pass ? '' : ` — expected ${JSON.stringify(expected)}`}`);
 };
 
@@ -94,6 +105,16 @@ try {
   const nameField = (row) => row.querySelector('[data-bind$=".name"]');
   const stored = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters[0].spellcasting.spells;
   const editBtn = () => card().querySelector('[data-action="toggle-card-edit"]');
+  /*
+   * #155: a level is no longer a <details>. `isOpen` reads the state the app writes, and
+   * `setOpen` uses the REAL gesture — a click on the heading button — because that is the path a
+   * player takes and the one that has to keep aria-expanded and the row visibility in step.
+   */
+  const summaryOf = (level) => section(level).querySelector('.spelllevel__summary');
+  const isOpen = (level) => !section(level).classList.contains('is-collapsed');
+  const setOpen = async (level, open) => {
+    if (isOpen(level) !== open) { summaryOf(level).click(); await wait(150); }
+  };
 
   d.getElementById('tab-spells').click();
   await wait(300);
@@ -150,7 +171,7 @@ try {
     section(1).querySelector('h3.spelllevel__heading') !== null
     && !section(1).querySelector('summary h3'));
   ok('sections start open in play mode',
-    sections().every((s) => s.querySelector('details').open));
+    sections().every((s) => !s.classList.contains('is-collapsed')));
 
   // --- the counts ---------------------------------------------------------------------
   is('a level count reads "prepared of known"',
@@ -177,8 +198,7 @@ try {
 
   editBtn().click();
   await wait(400);
-  section(0).querySelector('details').open = true;   // Edit opens closed; a shut <details> is unfocusable
-  await wait(200);
+  await setOpen(0, true);   // Edit starts an untouched level shut, and a hidden field is unfocusable
   // execCommand, not .value — a script-assigned value sets no dirty flag, fires no input
   // event, and the handler under test never runs (CLAUDE.md).
   const field = nameField(rowsIn(0)[1]);
@@ -201,12 +221,12 @@ try {
       shieldRow.querySelector('.row__prepared').getBoundingClientRect().height) >= 44,
     `${Math.round(shieldRow.querySelector('.row__prepared').getBoundingClientRect().width)}x${Math.round(shieldRow.querySelector('.row__prepared').getBoundingClientRect().height)}`);
 
-  section(1).querySelector('details').open = true;
+  await setOpen(1, true);
   prepared.click();
   await wait(400);
   is('unticking Prepared updates the level count', section(1).querySelector('.spelllevel__count').textContent, '0 of 2');
   is('...and the card total', d.querySelector('.spells__count').textContent, '1 prepared');
-  ok('...without collapsing the section being ticked in', section(1).querySelector('details').open === true);
+  ok('...without collapsing the section being ticked in', isOpen(1) === true);
 
   /*
    * #146 — the tick owns its own tap. It bubbled to the tap-to-reveal handler, so the one action
@@ -249,9 +269,9 @@ try {
    * and re-deriving `open` from the mode is exactly what made "+ Add" shut the drawer it added to.
    */
   ok('a level the player has never opened starts closed in Edit (ten open empties is a page of nothing)',
-    [3, 4, 5, 6, 7, 8, 9].every((l) => !section(l).querySelector('details').open));
+    [3, 4, 5, 6, 7, 8, 9].every((l) => !isOpen(l)));
   ok('...but a section already on screen survives the Edit flip open (#146)',
-    [0, 1, 2].every((l) => section(l).querySelector('details').open));
+    [0, 1, 2].every((l) => isOpen(l)));
   ok('the name field unlocks in Edit', nameField(rowsIn(1)[0]).readOnly === false);
 
   /*
@@ -263,8 +283,7 @@ try {
    * still "add a spell to THIS level", and the point of the check is where the row lands.
    */
   const before = stored().length;
-  section(5).querySelector('details').open = true;
-  await wait(150);
+  await setOpen(5, true);
   section(5).querySelector('.spelllevel__add').click();
   await wait(1600);                                  // the picker's 330KB library is a dynamic import
   ok('the section button opens the picker', d.getElementById('spell-picker').open === true);
@@ -282,9 +301,9 @@ try {
    * new row went out of sight. Adding a spell took opening the same section twice.
    */
   ok('...with the section still open, so the new row is visible (#146)',
-    section(5).querySelector('details').open === true);
+    isOpen(5) === true);
   ok('...and the untouched sections did not spring open with it',
-    [3, 4, 6, 7].every((l) => !section(l).querySelector('details').open));
+    [3, 4, 6, 7].every((l) => !isOpen(l)));
 
   // --- the level select re-files a row (structural) --------------------------------------
   const select = rowsIn(5)[0].querySelector('.row__levelselect');
@@ -359,8 +378,7 @@ try {
 
   editBtn().click();
   await wait(400);
-  section(2).querySelector('details').open = true;
-  await wait(200);
+  await setOpen(2, true);
   ok('one line in Edit too, where the ✕ joins the line',
     lineHeight(longRow()) <= 60, `${Math.round(lineHeight(longRow()))}px tall`);
   /*
@@ -404,19 +422,123 @@ try {
   ok('an unticked Prepared box is visible against the card (WCAG 1.4.11, 3:1)',
     edgeContrast >= 3, `${edgeContrast.toFixed(2)}:1`);
 
-  // --- print: every shut section opens, then goes back ----------------------------------
-  editBtn().click();                                  // Edit closes them all
+  /*
+   * --- #155: collapsed means "show me what I have prepared" -----------------------------
+   *
+   * The feature this section stopped being a <details> for. A shut level keeps its prepared
+   * spells on screen and drops the rest, which is the state a druid or a cleric wants during
+   * play — the full list is a long-rest concern.
+   */
+  await setOpen(1, true);
+  const namesIn = (level) => rowsIn(level)
+    .filter((r) => r.checkVisibility())
+    .map((r) => nameField(r).value);
+  const preparedIn = (level) => rowsIn(level)
+    .filter((r) => r.querySelector('[data-bind$=".prepared"]').checked)
+    .map((r) => nameField(r).value);
+
+  ok('an open level shows everything', namesIn(1).length === rowsIn(1).length,
+    `${namesIn(1).length} of ${rowsIn(1).length} visible`);
+
+  await setOpen(1, false);
+  eq('a collapsed level shows exactly the prepared spells', namesIn(1), preparedIn(1));
+  ok('...which is fewer than it holds', namesIn(1).length < rowsIn(1).length,
+    `${namesIn(1).length} of ${rowsIn(1).length}`);
+  is('...and the heading button says it is collapsed',
+    summaryOf(1).getAttribute('aria-expanded'), 'false');
+  /*
+   * Hidden has to mean GONE, not merely invisible. <details> gave that for free; a class-based
+   * collapse does not, and without `display: none` every unprepared spell's name field, level
+   * select and ✕ would stay tabbable behind a control announcing "collapsed".
+   */
+  const hiddenRow = rowsIn(1).find((r) => !r.checkVisibility());
+  const hiddenField = nameField(hiddenRow);
+  hiddenField.focus();
+  ok('a hidden row is out of the tab order, not just out of sight',
+    d.activeElement !== hiddenField, `activeElement: ${d.activeElement?.tagName}`);
+  ok('...and the Search button goes with them', !summaryOf(1).closest('.spelllevel')
+    .querySelector('.spelllevel__add').checkVisibility());
+
+  /*
+   * Ticking Prepared while collapsed adds the spell to what is shown — and does it on the DERIVED
+   * pass. A structural render here would rebuild the section the player is looking at, which is
+   * the #146 bug wearing a new hat.
+   */
+  const wasShown = namesIn(1).length;
+  const hiddenTick = hiddenRow.querySelector('[data-bind$=".prepared"]');
+  const hiddenName = hiddenField.value;
+  hiddenTick.click();
+  await wait(300);
+  ok('ticking Prepared on a hidden spell brings it into a collapsed level',
+    namesIn(1).includes(hiddenName), `showing ${namesIn(1).join(', ')}`);
+  is('...one more than before', namesIn(1).length, wasShown + 1);
+  ok('...without expanding the level', !isOpen(1));
+  hiddenTick.click();
+  await wait(300);
+  ok('unticking takes it back out', !namesIn(1).includes(hiddenName));
+
+  // Collapsed survives a structural render, the same way open does (#146).
+  editBtn().click();
   await wait(400);
-  const shutBefore = sections().filter((s) => !s.querySelector('details').open).length;
-  ok('there are shut sections to open', shutBefore > 0, `${shutBefore} shut`);
-  W.dispatchEvent(new W.Event('beforeprint'));
-  await wait(200);
-  ok('beforeprint opens every section',
-    sections().every((s) => s.querySelector('details').open), `${sections().filter((s) => !s.querySelector('details').open).length} still shut`);
-  W.dispatchEvent(new W.Event('afterprint'));
-  await wait(200);
-  is('afterprint puts them back as they were',
-    sections().filter((s) => !s.querySelector('details').open).length, shutBefore);
+  ok('a collapsed level is still collapsed after the Edit flip', !isOpen(1));
+  editBtn().click();
+  await wait(400);
+  await setOpen(1, true);
+  ok('opening it brings the rest back', namesIn(1).length === rowsIn(1).length,
+    `${namesIn(1).length} of ${rowsIn(1).length}`);
+  is('...and the button says so', summaryOf(1).getAttribute('aria-expanded'), 'true');
+
+  /*
+   * The shape of the disclosure itself. The <h3> used to sit outside the <summary>, visually
+   * hidden, because browsers strip heading semantics from <summary> descendants — the button
+   * flattens its contents the same way, so a heading INSIDE it would reintroduce exactly that
+   * bug. Heading wraps button is the shape that works.
+   */
+  const heading = section(1).querySelector('h3.spelllevel__heading');
+  ok('the level still has a real heading', Boolean(heading));
+  ok('...and the button is inside it, not the other way round',
+    heading.contains(summaryOf(1)) && !summaryOf(1).querySelector('h3'));
+  ok('...with the title visible in it, not duplicated in a hidden twin',
+    heading.querySelector('.spelllevel__title').checkVisibility());
+  /*
+   * The count stays OUTSIDE the button. renderDerived repaints it on every tick anywhere in the
+   * app, and inside the button it would be part of the control's accessible name — so every
+   * Prepared tick would silently rename a focusable control.
+   */
+  ok('the count is not part of the button\'s accessible name',
+    !summaryOf(1).contains(section(1).querySelector('.spelllevel__count')));
+  const sBox = summaryOf(1).getBoundingClientRect();
+  ok('the heading button clears 44px', Math.min(sBox.width, sBox.height) >= 44,
+    `${Math.round(sBox.width)}x${Math.round(sBox.height)}`);
+
+  /*
+   * --- print ---------------------------------------------------------------------------
+   *
+   * #155 deleted the beforeprint/afterprint handler this used to assert. It existed because a
+   * closed <details> is content containment: `details:not([open]) > *` stays unrendered whatever
+   * `display` you give it, so the reveal had to be scripted and then undone. A collapsed level is
+   * now an ordinary section with `display: none` rows, and one @media print rule turns them back
+   * on.
+   *
+   * So the assertion moves to the CSSOM, and that is not a consolation prize — it guards the
+   * exact failure CLAUDE.md records: an unbalanced comment above a rule makes CSS error recovery
+   * swallow the whole block, and every other probe still passes while a printed sheet silently
+   * loses the spells under each heading. A rule that is PARSED is a rule that exists.
+   */
+  const printRules = [...d.styleSheets]
+    .flatMap((sheet) => { try { return [...sheet.cssRules]; } catch { return []; } })
+    .filter((rule) => rule.media && [...rule.media].includes('print'))
+    .flatMap((rule) => [...rule.cssRules]);
+  const revealRule = printRules.find((rule) =>
+    rule.selectorText && rule.selectorText.includes('.spelllevel.is-collapsed .row--spell'));
+  ok('a print rule reveals the rows a collapsed level hides', Boolean(revealRule),
+    `${printRules.length} print rules parsed`);
+  is('...and it reveals them as flex, not merely un-hides them',
+    revealRule && revealRule.style.getPropertyValue('display'), 'flex');
+  is('...with !important, since it is beating another display:none, not a UA default',
+    revealRule && revealRule.style.getPropertyPriority('display'), 'important');
+  ok('the JS reopen dance is gone with the <details> it existed for',
+    !d.querySelector('.spelllevel__disclosure') && !d.querySelector('#spells details'));
 
   // --- a non-caster has no spell card at all ---------------------------------------------
   editBtn().click();

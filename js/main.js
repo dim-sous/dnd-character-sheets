@@ -15,7 +15,7 @@ import {
   recordFirstSeen, recordBackup, snoozeBackup, snoozeInstall,
 } from './nudges.js';
 import {
-  renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit,
+  renderRoster, renderSheet, renderDerived, renderSlotPips, toggleCardEdit, setLevelOpen,
   invalidateRoster, setSaved, showBanner, clearBanner, showNotice, showNudge,
   clearNudge, showUpdatePrompt, showRecovery, activateTab, reactivateTab, clearCardEdits,
   announcePlay,
@@ -410,6 +410,16 @@ const ACTIONS = {
   // #147: the reveal, as a control rather than a gesture. No character mutation and no render —
   // a class on the row, like card edit mode, dropped by the next structural render.
   'toggle-row': (el) => setRowExpanded(el.closest('.row')),
+  /*
+   * #155: the same shape one level up, for a spell level. Collapsing shows what is prepared and
+   * hides the rest, so this is not "hide the section" — it is the filter a player wants during
+   * play, and the reason the level stopped being a <details>: a shut one is content containment
+   * and hides everything in it, with no way to reveal part.
+   */
+  'toggle-spelllevel': (el) => {
+    const section = el.closest('.spelllevel');
+    if (section) setLevelOpen(section, section.classList.contains('is-collapsed'));
+  },
 
   /*
    * #149: the spell library. The button carries its section's level, which pre-FILTERS the
@@ -1007,27 +1017,14 @@ if (startup.corrupt) {
 }
 
 /*
- * Every spell level prints, whether or not its disclosure was left open (#141).
+ * #155 deleted the beforeprint/afterprint handler that used to open every shut spell level.
  *
- * This is JS rather than a print rule because a closed <details> is not `display:none` — it is
- * content containment, the same trap CLAUDE.md documents for measuring one — so overriding
- * `display` on its children does not reliably reveal them, and "reliably" is the whole
- * requirement here: a level heading printed with its spells missing is the one output a player
- * cannot detect from the paper in their hand.
- *
- * The screen state is restored afterwards, so printing does not silently unfold the card the
- * player was reading. `afterprint` fires on cancel as well as on print. Which sections were
- * open is captured at beforeprint rather than tracked, so nothing has to stay in step.
+ * It existed because a closed <details> is content containment, so print CSS could not reveal
+ * its rows — `details:not([open]) > *` stays unrendered whatever `display` you give it, which is
+ * why the reveal had to be JS and why it had to be put back afterwards. A collapsed level is now
+ * an ordinary section whose unprepared rows are `display: none`, so one print rule reveals them
+ * (see the @media print block in style.css) and there is nothing to restore.
  */
-let printReopen = [];
-window.addEventListener('beforeprint', () => {
-  printReopen = [...document.querySelectorAll('.spelllevel__disclosure:not([open])')];
-  for (const details of printReopen) details.open = true;
-});
-window.addEventListener('afterprint', () => {
-  for (const details of printReopen) details.open = false;
-  printReopen = [];
-});
 
 // Phones kill tabs without warning; pagehide is the reliable last call. Flush the layout on
 // its own key alongside the character store (both have independent debounced writes).
