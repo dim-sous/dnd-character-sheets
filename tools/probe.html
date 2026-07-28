@@ -602,6 +602,54 @@ try {
     return [...found.entries()].map(([k, n]) => (n > 1 ? `${k} (x${n})` : k));
   }
 
+  /**
+   * WCAG 1.4.11 — the boundary of a CONTROL, not its text (#159).
+   *
+   * The contrast audit above reads text only, and that gap shipped an app in which every
+   * unchecked checkbox was invisible: `input:read-only` matches checkboxes, so a rule meant for
+   * locked text fields painted `border-color: transparent` over all of them. Nothing here
+   * measured a control's own edge, so four runs of PASS said nothing about whether the PROF and
+   * EXP columns of Abilities & Skills had anything in them. They did not.
+   *
+   * What counts as the visible edge: the border if it is not transparent, otherwise the
+   * background. If BOTH are transparent the control has no edge at all, which is 1.00:1 and the
+   * failure this exists to name. Checkboxes only for now — they are the controls this stylesheet
+   * draws itself from scratch; a <button> carries text the contrast audit already reads.
+   */
+  function controlEdgeFailures() {
+    const found = new Map();
+    for (const el of sceneRoot().querySelectorAll('input[type="checkbox"], input[type="radio"]')) {
+      const box = el.getBoundingClientRect();
+      if (box.width <= 2 || box.height <= 2) continue;
+      if (el.closest('details:not([open])')) continue;
+      if (el.closest(':disabled, [aria-disabled="true"]') || el.disabled) continue;
+      if (el.checkVisibility && !el.checkVisibility({
+        contentVisibilityAuto: true, visibilityProperty: true,
+      })) continue;
+      const cs = w.getComputedStyle(el);
+      const border = colour(cs.borderTopColor);
+      const fill = colour(cs.backgroundColor);
+      // The edge a player can actually see. A transparent border over a transparent fill is a
+      // control with no boundary at all — the #159 case, and it lands here as 1.00:1.
+      const edge = border && border.a > 0 ? border : fill;
+      /*
+       * From the PARENT up, not from the element. `effectiveBg` composites the element's own
+       * background first, which is right for text — text sits on its own background — and wrong
+       * for an edge, which is judged against what surrounds it. The first run of this check
+       * reported a TICKED box as "#d08477 on #d08477 = 1.00:1": the accent fill measured against
+       * itself. The failure it exists to catch is the opposite one, so a false alarm here would
+       * have been the fastest way to get the whole check deleted.
+       */
+      const bg = effectiveBg(el.parentElement || el);
+      if (!edge) continue;
+      const ratio = contrast(over(edge, bg), bg);
+      if (ratio + 0.005 >= 3) continue;
+      const key = `${label(el)} edge ${hex(over(edge, bg))} on ${hex(bg)} = ${ratio.toFixed(2)}:1, needs 3`;
+      found.set(key, (found.get(key) ?? 0) + 1);
+    }
+    return [...found.entries()].map(([k, n]) => (n > 1 ? `${k} (x${n})` : k));
+  }
+
   function auditScene(name) {
     const groups = new Map();
     const seen = new Set();
@@ -638,6 +686,7 @@ try {
       covered: coveredControls(),
       escaped: escapedPseudos(),
       contrast: contrastFailures(),
+      controlEdges: controlEdgeFailures(),
       failures: rows,
     };
   }
@@ -775,7 +824,7 @@ try {
 
   report.scenes = report.scenes.filter(
     (s) => s.failures.length || s.overflows || s.clipped.length || s.covered.length
-      || s.escaped.length || s.contrast.length || s.truncatedNames.length,
+      || s.escaped.length || s.contrast.length || s.truncatedNames.length || s.controlEdges.length,
   );
   report.totalFailures = report.scenes.reduce(
     (n, s) => n + s.failures.reduce((m, f) => m + f.count, 0), 0,
@@ -837,9 +886,13 @@ try {
   // appears on. The count in each line is per scene, which is the useful number (12 tile labels
   // on one Combat screen reads differently from one stray hint).
   report.contrastFailures = [...new Set(report.scenes.flatMap((s) => s.contrast))];
+  // #159: a control whose own boundary is under 3:1 — the audit's blind spot until an entire
+  // app's worth of checkboxes turned out to be painting nothing at all.
+  report.controlEdgeFailures = [...new Set(report.scenes.flatMap((s) => s.controlEdges))];
 
   const parts = [];
   if (report.contrastFailures.length) parts.push(`${report.contrastFailures.length} text colour pairing(s) under WCAG AA`);
+  if (report.controlEdgeFailures.length) parts.push(`${report.controlEdgeFailures.length} control edge(s) under 3:1 (WCAG 1.4.11)`);
   if (report.escapedPseudos.length) parts.push(`${report.escapedPseudos.length} pseudo-element(s) escape their owner`);
   if (report.totalFailures) parts.push(`${report.totalFailures} control(s) under ${TAP}px`);
   if (report.overflowScenes.length) parts.push(`${report.overflowScenes.length} scene(s) scroll sideways`);
@@ -851,7 +904,7 @@ try {
     ? ` [note: ${report.truncatedRowNames.length} row name(s) ellipsize by design — ${report.truncatedRowNames[0]}]`
     : '';
   report.verdict = (parts.length === 0
-    ? `PASS — at ${VIEWPORT}px in the ${THEME} theme, every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, every text colour clears WCAG AA against what is actually behind it, nothing scrolls sideways, and no field outside a list row crops its value`
+    ? `PASS — at ${VIEWPORT}px in the ${THEME} theme, every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, every text colour clears WCAG AA against what is actually behind it, every control's own edge clears 3:1, nothing scrolls sideways, and no field outside a list row crops its value`
     : `FAIL — at ${VIEWPORT}px in the ${THEME} theme: ${parts.join('; ')}`) + note;
   out.textContent = JSON.stringify(report, null, 1);
 } catch (err) {
