@@ -633,7 +633,10 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 }
 .subhead:first-child { margin-top: 0; }
 
-.list__head, .slots__head {
+/* `.slots__head` dropped alongside these: the slots got their own card, so their heading is a
+   `.card__title` in a `.list__head` like every other card's, and the sub-head that used to sit
+   inside Spellcasting no longer exists. */
+.list__head {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--space-2); margin-bottom: var(--space-2);
 }
@@ -1248,6 +1251,70 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .rows--tight { gap: var(--space-2); }
 
+/* ------------------------------------------------------------- spell list (#141) */
+
+/* One collapsible section per spell level. The disclosure mechanics copy the Conditions tile
+   exactly — same marker element, same rotation, same list-style kill — because that is the
+   app's one collapsible idiom and a second one would be a second thing to learn.
+
+   What differs is the alignment: Conditions centres its summary inside a tile, where the title
+   is the only content. Here the summary is a row heading with a count on the far right, so it
+   packs left and lets the count sit at the end, the way `.list__head` already does. */
+.spelllevel + .spelllevel { margin-top: var(--space-2); }
+.spelllevel__summary {
+  display: flex; align-items: center; gap: var(--space-2);
+  min-height: var(--tap); cursor: pointer; list-style: none;
+}
+.spelllevel__summary::-webkit-details-marker { display: none; }
+/* A real element, aria-hidden in the markup, so the glyph can't leak into the summary's
+   accessible name the way CSS-generated content does — the reason Conditions does it too. */
+.spelllevel__marker { display: inline-block; flex: none; color: var(--ink-faint); transition: transform .12s; }
+.spelllevel__disclosure[open] > .spelllevel__summary .spelllevel__marker { transform: rotate(90deg); }
+.spelllevel__title { font-weight: 600; font-size: var(--text-sm); }
+/* `margin-left: auto` rather than `flex: 1` on the title: the count goes to the far end without
+   the title claiming the gap, so a section reads as "Level 3 ··· 2 of 5" and the two numbers
+   line up down the card whatever the headings are called. */
+.spelllevel__count {
+  margin-left: auto; flex: 0 1 auto; min-width: 0;
+  font-size: var(--text-xs); color: var(--ink-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Indented under its heading, so the sections read as groups rather than as one flat list with
+   headings scattered through it. Bordered on the leading edge only — a box per level would nest
+   a card in a card, which is the mistake `.row`'s slab already made inside tiles. */
+.spelllevel__rows {
+  margin: 0 0 var(--space-2) var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--line);
+}
+.spelllevel__add { margin-left: var(--space-1); }
+/* The card total, beside the title in the head. `margin-left: auto` would fight the head's own
+   space-between, so it simply sits where the flex puts it: after the title, before Edit. */
+.spells__count { font-size: var(--text-xs); color: var(--ink-soft); }
+
+/* The prepared tick. `.row__prepared` is the 44px target — the checkbox inside it is smaller,
+   exactly as `.chip` puts its target on the wrapping <label> rather than the input. */
+.row__prepared {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: var(--tap); min-height: var(--tap); cursor: pointer;
+}
+/* The level select sits first in the detail block and stays narrow — it is a closed set of ten
+   short strings, so letting it flex like the free-text fields beside it would spend a third of
+   the line on whitespace. */
+.row__levelpick { flex: 0 0 auto; display: inline-flex; }
+.row__levelselect { min-height: var(--tap); }
+/* A detail field holding a sentence takes the line, rather than a share of one. Six controls on
+   a wrapping flex line is exactly the width arithmetic #139 warns about: at `1 1 6rem` the two
+   longest were measured cropping (228px of text in 141px, 339px in 291px), and widening the
+   basis only moves which pair loses. Declaring which fields are long is the part that doesn't
+   drift when the row gains a seventh control. */
+.row--spell .row__detail > input { flex: 1 1 8rem; }
+.row--spell .row__detail > .row__wide { flex: 1 1 100%; }
+/* The base `textarea{min-height:5rem}` is sized for a Notes block; Components is usually one
+   short line and only occasionally two, so it starts at a single tap target and grows from
+   there on `field-sizing: content`. The Notes textarea below it keeps the taller floor. */
+.row--spell .row__detail > .row__components { min-height: var(--tap); }
+
 .rows__empty {
   padding: var(--space-3); text-align: center;
   color: var(--ink-faint); font-size: var(--text-sm); font-style: italic;
@@ -1399,7 +1466,8 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    hidden part anyway, so the affordance would be a lie there. */
 .row--expandable > .row__primary::after,
 .row--feature > .row__primary::after,
-.row--feat > .row__primary::after {
+.row--feat > .row__primary::after,
+.row--spell > .row__primary::after {
   content: "▸";
   flex: none; align-self: center;
   margin-left: var(--space-0);
@@ -1410,16 +1478,25 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .is-editing .row > .row__primary::after { content: none; }
 
 /* #67: the same reveal for Features/Feats, whose hidden part is a BLOCK of fields (source /
-   level / text) rather than one note — so it flexes rather than displaying as a block. */
-.row--feature > .row__detail, .row--feat > .row__detail { display: none; }
+   level / text) rather than one note — so it flexes rather than displaying as a block.
+   #141's spell row is the same shape again (level / casting time / range / duration /
+   components / notes) and joins every rule here rather than restating them. */
+.row--feature > .row__detail, .row--feat > .row__detail,
+.row--spell > .row__detail { display: none; }
 .row.is-expanded > .row__detail,
-.is-editing .row--feature > .row__detail, .is-editing .row--feat > .row__detail { display: flex; }
+.is-editing .row--feature > .row__detail, .is-editing .row--feat > .row__detail,
+.is-editing .row--spell > .row__detail { display: flex; }
 .row__detail { flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .row__detail > input { flex: 1 1 6rem; min-width: 0; }
 .row__detail > .row__level { flex: 0 1 4rem; }
 /* Neutralise the base `.row > textarea{flex-basis:100%}` reasoning one level down: here the
-   textarea is a grandchild, and it should take the whole second line of the detail block. */
-.row__detail > textarea { flex: 1 1 100%; min-height: 0; }
+   textarea is a grandchild, and it should take the whole second line of the detail block.
+
+   `min-height` is the tap floor rather than 0 (#141): at `rows="2"` this measured 42px, two
+   short of the minimum, and it is a control you tap into like any other. It was never caught
+   before because probe.html seeds no features or feats, so no detail textarea had ever been
+   measured — seeding the spell list is what put one in front of the audit. */
+.row__detail > textarea { flex: 1 1 100%; min-height: var(--tap); }
 
 /* Centred and content-width, not left-packed across the tile. The three controls total ~220px
    in a 310px tile, so left-packing left a third of the row empty on the right — the "fuck ton
@@ -1721,7 +1798,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      mode still prints the finished sheet. An empty tile then prints as its heading over blank
      space, which is a better thing to hand a player than an instruction they cannot follow. */
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, [data-action="add-row"], .rows__empty,
-  .list__head .btn, .slots__head .btn,
+  .list__head .btn,
   /* .obj-ctl / .obj-rename dropped here (#72): the in-tile overlay is gone, and the object
      controls now live inside .arrange-bar, which this line already hides. */
   .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename,
@@ -1761,8 +1838,23 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      Unconditional, so a card left in Edit mode still prints the finished sheet. */
   .row--attack .row__hit { display: inline-block !important; }
   .row--attack .row__bonus, .row--attack > .row__hitcalc { display: none !important; }
-  /* #67: paper has no tap, so every collapsed detail block prints expanded. */
-  .row--feature > .row__detail, .row--feat > .row__detail { display: flex !important; }
+  /* #67: paper has no tap, so every collapsed detail block prints expanded. #141's spell rows
+     join it, and their SECTIONS need the same treatment one level up: a <details> the player
+     left shut would otherwise print as a heading with the spells missing underneath, which is
+     the one failure mode a printed sheet cannot recover from. Forcing the box open is not
+     enough on its own — `details:not([open]) > *` stays unrendered — so the content is
+     revealed explicitly. The marker goes with the caret below: nothing on paper folds. */
+  .row--feature > .row__detail, .row--feat > .row__detail,
+  .row--spell > .row__detail { display: flex !important; }
+  /* #141: the SECTIONS are forced open by a beforeprint handler in main.js, not from here. A
+     closed <details> is not `display:none` — it is content containment (the trap CLAUDE.md
+     already documents for measuring it), so overriding `display` on its children does not
+     reliably reveal them. The one thing a printed sheet cannot survive is a level heading with
+     the spells missing underneath, so this does not rest on a UA detail. Nothing folds on
+     paper, so the marker and the add button go. */
+  .spelllevel__marker, .spelllevel__add { display: none !important; }
+  .spelllevel__summary { min-height: 0; }
+  .spelllevel { break-inside: avoid; }
   /* ...and for the same reason the #76 expand caret is noise on paper: there is nothing to
      tap, and the content it would reveal is already printed above. */
   .row > .row__primary::after { content: none !important; }

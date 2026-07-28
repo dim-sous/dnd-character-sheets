@@ -48,6 +48,18 @@ export const CONDITIONS = [
 
 export const SPELL_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
+/**
+ * The spell LIST covers one more level than the spell SLOTS do: cantrips are level 0 and have
+ * no slots, so `slots` is keyed by SPELL_LEVELS while the list groups by this (#141). Derived
+ * from SPELL_LEVELS rather than written out again, so the range still lives in one place.
+ */
+export const SPELL_LIST_LEVELS = [0, ...SPELL_LEVELS];
+
+/** What a spell level is called in a heading. Level 0 is the only one that isn't "Nth level". */
+export function spellLevelLabel(level) {
+  return Number(level) === 0 ? 'Cantrips' : `Level ${level}`;
+}
+
 export const MAX_EXHAUSTION = 6;
 
 /**
@@ -149,7 +161,25 @@ export const ROW_TEMPLATES = {
   attacks: () => ({
     name: '', ability: '', proficient: true, miscBonus: 0, bonus: '', damage: '', notes: '',
   }),
-  spells: () => ({ name: '', level: 0, prepared: false }),
+  /*
+   * #141. `name`/`level`/`prepared` are the shape the inert list shipped with and #9 hid; the
+   * five that follow are the at-a-glance fields you look up mid-turn, and they live in the
+   * row's tap-revealed detail rather than on its one visible line (#139: `.row__primary` has a
+   * history of items summing to exactly the container width and wrapping).
+   *
+   * All free text, including `castingTime` and `components` — the app does not know what an
+   * action is or that V/S/M is a closed set, and a player writing "1 action (ritual)" or
+   * "V, S, M (a pinch of soot)" must get back exactly what they typed. `level` stays a NUMBER
+   * because the list groups by it; everything else is a string.
+   *
+   * normalizeRow builds its output solely from template keys, so every spell saved before this
+   * backfills to '' with no migration code and no SCHEMA_VERSION bump — the same free ride
+   * #67 took when it added source/level to features.
+   */
+  spells: () => ({
+    name: '', level: 0, prepared: false,
+    castingTime: '', range: '', duration: '', components: '', notes: '',
+  }),
   // #67: source (Species / Background / Class / Other) and level stay FREE TEXT — the sheet
   // records where a feature came from, it doesn't model class progression. Old rows carry only
   // name+text; normalizeRow is template-driven, so they backfill to '' with no migration code.

@@ -9,6 +9,7 @@
  */
 import {
   blankCharacter, MAX_EXHAUSTION, SCHEMA_VERSION, ROW_TEMPLATES,
+  SPELL_LEVELS, SPELL_LIST_LEVELS, spellLevelLabel,
 } from './js/constants.js';
 import * as rules from './js/rules.js';
 import { normalizeCharacter, parseStored, mergeCharacters, characterFilename } from './js/storage.js';
@@ -29,7 +30,7 @@ import {
   moveObject, toggleObjectHidden, setObjectSpan, setObjectHeight, renameObject,
 } from './js/layout.js';
 import {
-  CARD_REGISTRY, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
+  CARD_REGISTRY, CARD_ORDER, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
   GRID_COLUMNS, SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_MAX,
 } from './js/layout-registry.js';
 
@@ -1069,7 +1070,9 @@ describe('moveCardToTab');
   // Send attacks (Combat) → Spells; it leaves the source and lands at the destination end.
   const moved = moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'spells');
   is('card removed from source tab', cardsOf(moved, 'combat'), ['combat']);
-  is('card appended to destination end', cardsOf(moved, 'spells'), ['spellcasting', 'attacks']);
+  // The Spells tab holds three cards since #141 (Spellcasting → Spell Slots → Spells), so "the
+  // destination end" is now genuinely an end rather than the second of two positions.
+  is('card appended to destination end', cardsOf(moved, 'spells'), ['spellcasting', 'spellslots', 'spells', 'attacks']);
   is('other tabs untouched', cardsOf(moved, 'gear'), ['inventory', 'features']);
 
   // Invariant: still exactly one of every card after a cross-tab move.
@@ -1475,6 +1478,106 @@ describe('renameObject (#54)');
     renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X');
     is('renameObject never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
   }
+}
+
+describe('spell list (#141)');
+{
+  // The list has existed in the model since before #9 hid its UI; what #141 adds is the five
+  // detail fields and the grouping. `level` stays a NUMBER (the grouping keys off it) while
+  // everything new is free text — the app does not know that V/S/M is a closed set.
+  is('blank character starts with no spells', blankCharacter().spellcasting.spells, []);
+  is('row template', ROW_TEMPLATES.spells(), {
+    name: '', level: 0, prepared: false,
+    castingTime: '', range: '', duration: '', components: '', notes: '',
+  });
+
+  // The free ride: every spell saved before #141 has only name/level/prepared, and normalizeRow
+  // builds from template keys, so the five new fields backfill to '' with no SCHEMA_VERSION
+  // bump. This is the assertion that says the migration is a non-event.
+  const old = normalizeCharacter({ spellcasting: { spells: [{ name: 'Shield', level: 1, prepared: true }] } });
+  is('a pre-#141 spell keeps what it had', [old.spellcasting.spells[0].name, old.spellcasting.spells[0].level, old.spellcasting.spells[0].prepared],
+    ['Shield', 1, true]);
+  is('and backfills the new fields', [old.spellcasting.spells[0].castingTime, old.spellcasting.spells[0].components, old.spellcasting.spells[0].notes],
+    ['', '', '']);
+  is('spells absent → []', normalizeCharacter({ name: 'Old' }).spellcasting.spells, []);
+  is('spells non-array → []', normalizeCharacter({ spellcasting: { spells: {} } }).spellcasting.spells, []);
+  is('garbage row → template', normalizeCharacter({ spellcasting: { spells: ['nope'] } }).spellcasting.spells[0],
+    ROW_TEMPLATES.spells());
+  is('unknown row keys are dropped',
+    Object.keys(normalizeCharacter({ spellcasting: { spells: [{ name: 'X', school: 'evocation' }] } }).spellcasting.spells[0]),
+    ['name', 'level', 'prepared', 'castingTime', 'range', 'duration', 'components', 'notes']);
+
+  // --- grouping ------------------------------------------------------------------------
+  // The array stays FLAT and is grouped at render time, so what spellsAtLevel returns is the
+  // spell plus its index in that flat array. The index is the whole point: it is what a row's
+  // binding path and its Remove button need, and it is NOT the position within the section.
+  const spell = (name, level, prepared = false) => ({ ...ROW_TEMPLATES.spells(), name, level, prepared });
+  const book = blankCharacter();
+  book.spellcasting.spells = [
+    spell('Fire Bolt', 0), spell('Shield', 1, true), spell('Mage Hand', 0),
+    spell('Misty Step', 2, true), spell('Magic Missile', 1),
+  ];
+
+  is('groups by level', rules.spellsAtLevel(book, 0).map((r) => r.spell.name), ['Fire Bolt', 'Mage Hand']);
+  is('keeps storage order within a level', rules.spellsAtLevel(book, 1).map((r) => r.spell.name), ['Shield', 'Magic Missile']);
+  // Mage Hand is second in its SECTION and third in the ARRAY. Getting this wrong binds a row
+  // to its neighbour and makes Remove delete the wrong spell — which is why it is asserted
+  // rather than assumed.
+  is('reports the flat-array index, not the position in the section',
+    rules.spellsAtLevel(book, 0).map((r) => r.index), [0, 2]);
+  is('an empty level is an empty list', rules.spellsAtLevel(book, 7), []);
+  is('a level accepts a numeric string', rules.spellsAtLevel(book, '2').map((r) => r.spell.name), ['Misty Step']);
+
+  // A spell whose level is unusable files as a cantrip rather than disappearing. Hand-edited
+  // and imported files reach this — a spell the player cannot see is worse than one filed wrong.
+  const odd = blankCharacter();
+  odd.spellcasting.spells = [spell('Ghost', undefined), spell('Junk', 'abc'), spell('Null', null)];
+  is('an unusable level files as a cantrip',
+    rules.spellsAtLevel(odd, 0).map((r) => r.spell.name), ['Ghost', 'Junk', 'Null']);
+
+  // --- prepared count ------------------------------------------------------------------
+  is('counts prepared at a level', rules.preparedCount(book, 1), 1);
+  is('counts prepared across the whole list', rules.preparedCount(book), 2);
+  is('a level with none prepared counts 0', rules.preparedCount(book, 0), 0);
+  is('an empty level counts 0', rules.preparedCount(book, 9), 0);
+  is('a blank character counts 0', rules.preparedCount(blankCharacter()), 0);
+  // Explicitly: level 0 must not be read as "no level given". `preparedCount(char, 0)` asks
+  // about cantrips; only an omitted argument means the whole list.
+  {
+    const cantrips = blankCharacter();
+    cantrips.spellcasting.spells = [spell('Fire Bolt', 0, true), spell('Shield', 1, true)];
+    is('level 0 is a level, not a missing argument', rules.preparedCount(cantrips, 0), 1);
+    is('and omitting it still counts everything', rules.preparedCount(cantrips), 2);
+  }
+
+  // Neither helper reads or writes anything but the character handed to it.
+  {
+    const before = JSON.stringify(book);
+    rules.spellsAtLevel(book, 1);
+    rules.preparedCount(book, 1);
+    is('the helpers never mutate the character', JSON.stringify(book), before);
+  }
+
+  // The list covers one more level than the slots do: cantrips have no slot row.
+  is('the list levels are the slot levels plus cantrips', SPELL_LIST_LEVELS, [0, ...SPELL_LEVELS]);
+  is('cantrips are named, not numbered', spellLevelLabel(0), 'Cantrips');
+  is('every other level is numbered', spellLevelLabel(3), 'Level 3');
+  is('a numeric string labels the same', spellLevelLabel('0'), 'Cantrips');
+
+  // Both cards are registered, or arrange mode cannot move, resize or hide them.
+  is('the Spells card is in the registry', CARD_REGISTRY.spells.home, 'spells');
+  is('it declares a js render cost', CARD_REGISTRY.spells.cost, 'js');
+  is('the Spell Slots card is registered too', CARD_REGISTRY.spellslots.home, 'spells');
+  is('it declares a js render cost as well', CARD_REGISTRY.spellslots.cost, 'js');
+  // The Spells tab reads by how often you touch a card: ability/DC/attack, then slots, then the
+  // list. Asserted as an ORDER rather than as three indices so the intent survives a reshuffle.
+  is('the tab reads setup → slots → list',
+    CARD_ORDER.filter((id) => CARD_REGISTRY[id].home === 'spells'),
+    ['spellcasting', 'spellslots', 'spells']);
+  is('every registry card has a place in the order',
+    Object.keys(CARD_REGISTRY).every((id) => CARD_ORDER.includes(id)), true);
+  is('the default layout carries both new cards',
+    ['spellslots', 'spells'].every((id) => cardsOf(DEFAULT_LAYOUT, 'spells').includes(id)), true);
 }
 
 export { results };

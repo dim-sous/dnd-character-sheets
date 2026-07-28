@@ -153,6 +153,46 @@ export function spellAttackBonus(char) {
   return characterPB(char) + modFor(char, char.spellcasting.ability) + exhaustionPenalty(char);
 }
 
+/* ------------------------------------------------------------------ spell list (#141) */
+
+/**
+ * The spells stored at one level, as `{ spell, index }` pairs.
+ *
+ * The index is the position in the FLAT `spellcasting.spells` array, and it is the whole reason
+ * this returns pairs rather than spells. The list is stored flat and grouped only at render
+ * time, so a row's binding path and its Remove button both need where it really lives — group
+ * by level and you have the display order, but `spells.2.name` is a different 2 in every
+ * section. Storing it pre-grouped would have meant a migration plus a re-key on every level
+ * edit, to save an arithmetic the renderer does once.
+ *
+ * A row whose level is missing, blank or unparseable counts as a cantrip rather than vanishing
+ * from the sheet: hand-edited and imported files reach this (storage merges over the template
+ * but does not police types), and a spell the player can't see is worse than one filed wrong.
+ */
+export function spellsAtLevel(char, level) {
+  const target = Number(level);
+  const all = (char.spellcasting && char.spellcasting.spells) || [];
+  const pairs = [];
+  for (let index = 0; index < all.length; index += 1) {
+    const raw = Number(all[index].level);
+    const at = Number.isFinite(raw) ? raw : 0;
+    if (at === target) pairs.push({ spell: all[index], index });
+  }
+  return pairs;
+}
+
+/**
+ * How many spells are ticked prepared — at one level, or across the whole list when `level` is
+ * omitted. Counting a checkbox the player ticked is arithmetic, not a rule: nothing here knows
+ * how many spells a class may prepare, and nothing stops them from ticking more.
+ */
+export function preparedCount(char, level) {
+  const rows = level == null
+    ? ((char.spellcasting && char.spellcasting.spells) || []).map((spell) => ({ spell }))
+    : spellsAtLevel(char, level);
+  return rows.filter((row) => row.spell.prepared).length;
+}
+
 /* ------------------------------------------------------------ attack to-hit (#84) */
 
 /**

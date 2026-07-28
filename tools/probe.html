@@ -105,6 +105,35 @@ try {
     { name: 'Rage', remaining: 2, total: 3 },
     { name: 'Channel Divinity: Turn Undead', remaining: 14, total: 20 },
   ];
+  /*
+   * #141: spells, for exactly the reason the resource rows above are seeded. An UNSEEDED spell
+   * list renders one empty-state line per visible level and nothing else, so the row — a 44px
+   * Prepared target, a name that grows, a ✕, and six detail controls under it — is never
+   * measured, and the card reports PASS at every width and theme without the thing it exists to
+   * show having been looked at once.
+   *
+   * Seeded across three levels on purpose: the grouping is the feature, and one level would
+   * measure a flat list wearing a heading. Two of them share a level so the sections have
+   * different heights, and the levels are non-contiguous (0, 1, 3) so a section is never
+   * measured at an index that happens to equal its level.
+   *
+   * The long name is the fixture that matters, same as the attack and resource rows: the name
+   * is the only field on the primary line that grows, so it is the one that can push a 390px
+   * row sideways past the Prepared box and the ✕ — and real spells have long names
+   * ("Otiluke's Irresistible Dance" is 28 characters). The long free-text detail values do the
+   * same job one level down, where six controls share a wrapping flex line.
+   */
+  c.spellcasting.spells = [
+    { name: 'Fire Bolt', level: 0, prepared: false, castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
+    {
+      name: 'Otiluke’s Irresistible Dance', level: 3, prepared: true,
+      castingTime: '1 action', range: '30 feet', duration: 'Concentration, up to 1 minute',
+      components: 'V, M (a pinch of powdered silver worth 10 gp)',
+      notes: 'Target dances comically; disadvantage on Dex saves and attack rolls.',
+    },
+    { name: 'Shield', level: 1, prepared: true, castingTime: '1 reaction', range: 'Self', duration: '1 round', components: 'V, S', notes: '' },
+    { name: 'Magic Missile', level: 1, prepared: false, castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
+  ];
   c.proficiencies = {
     armor: 'Light, medium, heavy, shields', weapons: 'Simple, martial',
     tools: 'Smith’s tools, dice set', languages: 'Common, Dwarvish, Undercommon',
@@ -571,12 +600,35 @@ try {
   report.scenes.push(auditScene('abilities / edit'));
   await edit('abilities');
 
-  // The spell-slot total field exists ONLY while the Spellcasting card is in edit mode —
-  // play mode renders a remaining/total count instead (render.js renderSlots).
+  // The spell-slot total field exists ONLY while the Spell Slots card is in edit mode — play
+  // mode renders a remaining/total count instead (render.js renderSlots). Keyed to 'spellslots'
+  // since the split: the slots left the Spellcasting card, and editing the wrong one here would
+  // measure a scene with no total inputs in it while still reporting PASS.
   await tab('spells');
-  await edit('spellcasting');
-  report.scenes.push(auditScene('spells / setup'));
-  await edit('spellcasting');
+  report.scenes.push(auditScene('spells / view'));
+  await edit('spellslots');
+  report.scenes.push(auditScene('spells / slot setup'));
+  await edit('spellslots');
+
+  /*
+   * #141: the spell list has three states worth measuring and the two above reach only one.
+   *
+   * Play mode shows the stocked levels open, which the 'spells / view' scene covers. Edit shows
+   * all TEN sections with their fields unlocked and their disclosures shut — a different set of
+   * controls (the level <select> and the per-section "+ Add" exist only here). And a row's
+   * detail block is `display:none` until the row is expanded, so its six controls are invisible
+   * to every measurement until something opens one.
+   *
+   * The sections are opened directly rather than by clicking each summary: a click is the
+   * gesture probe-spells.html tests, and here the point is only to get the controls on screen
+   * so they can be sized and contrast-checked.
+   */
+  await edit('spells');
+  for (const details of d.querySelectorAll('.spelllevel__disclosure')) details.open = true;
+  for (const row of d.querySelectorAll('.row--spell')) row.classList.add('is-expanded');
+  await settle(200);
+  report.scenes.push(auditScene('spells / list edit, rows expanded'));
+  await edit('spells');
 
   await tab('gear');
   report.scenes.push(auditScene('gear / view'));

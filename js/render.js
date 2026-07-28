@@ -14,7 +14,8 @@
  */
 
 import {
-  ABILITIES, SKILLS, CONDITIONS, SPELL_LEVELS, MAX_EXHAUSTION,
+  ABILITIES, SKILLS, CONDITIONS, SPELL_LEVELS, SPELL_LIST_LEVELS, spellLevelLabel,
+  MAX_EXHAUSTION,
 } from './constants.js';
 import * as rules from './rules.js';
 import { getByPath, getListPath } from './state.js';
@@ -117,27 +118,34 @@ function applyEditState() {
 }
 
 /**
- * Flip one card between view and edit mode. The Spellcasting card rebuilds its slot rows
- * first (setup mode adds the empty levels + the total inputs) so the lock pass then sees
- * the fresh inputs; the other cards reveal purely via CSS, so a class toggle plus a derived
- * pass is enough.
+ * Flip one card between view and edit mode. Two cards rebuild their body first — the Spell
+ * Slots card (setup mode adds the empty levels + the total inputs) and the Spells card (it
+ * adds the empty levels too) — so the lock pass below then sees the fresh inputs. The other
+ * cards reveal purely via CSS, so a class toggle plus a derived pass is enough.
  */
 export function toggleCardEdit(char, cardId) {
   if (editCards.has(cardId)) editCards.delete(cardId);
   else editCards.add(cardId);
-  if (cardId === 'spellcasting') renderSlots(char);
+  if (cardId === 'spellslots') renderSlots(char);
+  // #141: the same rebuild-first dance the slots do. Setup mode changes which SECTIONS exist
+  // (all ten levels, versus only the stocked ones), so the sections have to be rebuilt before
+  // applyEditState locks or unlocks the fields inside them — otherwise Edit reveals sections
+  // full of still-readonly inputs, and Done leaves the unlocked ones behind.
+  if (cardId === 'spells') renderSpells(char);
   applyEditState();
   renderDerived(char);
 }
 
 /**
  * Drop every open per-card content edit at once (used when entering layout-arrange mode, so
- * the two edit modes never overlap). Reverts the Spellcasting card out of slot-setup too.
+ * the two edit modes never overlap). Reverts the Spell Slots card out of slot-setup and the
+ * Spells card out of its all-levels view — both render a DIFFERENT set of rows in edit mode,
+ * so clearing the flag is not enough on its own; the bodies have to be rebuilt to match.
  */
 export function clearCardEdits(char) {
   if (editCards.size === 0) return;
   editCards.clear();
-  if (char) renderSlots(char);
+  if (char) { renderSlots(char); renderSpells(char); }
   applyEditState();
   if (char) renderDerived(char);
 }
@@ -282,10 +290,12 @@ function renderSlots(char) {
   const host = $('#slots');
   host.replaceChildren();
 
-  // Setup mode = the Spellcasting card is in edit mode (editCards): it shows all nine
+  // Setup mode = the Spell Slots card is in edit mode (editCards): it shows all nine
   // levels with their editable totals. Play mode hides levels with no slots (#9) — a
   // level-5 wizard shouldn't scroll past six dead rows — and shows a remaining/total count.
-  const setup = editCards.has('spellcasting');
+  // Keyed to 'spellslots' since the split: the totals are edited on the card that shows them,
+  // rather than behind the Edit button of the card they used to be nested in.
+  const setup = editCards.has('spellslots');
   const levels = setup
     ? SPELL_LEVELS
     : SPELL_LEVELS.filter((level) => char.spellcasting.slots[level].total > 0);
@@ -333,13 +343,114 @@ export function renderSlotPips(char) {
   for (const row of $$('#slots .slot')) paintSlotPipRow(row, char);
 }
 
+/* --------------------------------------------------------------- spell list (#141) */
+
+/**
+ * The spell list: one <details> per spell level, rows inside, grouped at render time from the
+ * flat `spellcasting.spells` array.
+ *
+ * Not renderRows, and not in ROW_TEMPLATE_IDS, because that function renders one array into one
+ * host in storage order. Here the rows are dealt into ten hosts by a field, and the binding
+ * path still has to name where the row really lives — so the loop below walks LEVELS and asks
+ * rules.spellsAtLevel for `{ spell, index }` pairs rather than walking the array once.
+ *
+ * Setup mode (the card is in Edit) shows every level so a spell can be added to any of them;
+ * play mode shows only the levels the character has spells at. That is the same split the slot
+ * rows above have used since #9, and for the same reason: a level-3 caster should not scroll
+ * past six dead sections to reach the two they cast from.
+ */
+function renderSpells(char) {
+  const host = $('#spells');
+  host.replaceChildren();
+
+  const setup = editCards.has('spells');
+  const levels = setup
+    ? SPELL_LIST_LEVELS
+    : SPELL_LIST_LEVELS.filter((level) => rules.spellsAtLevel(char, level).length > 0);
+
+  for (const level of levels) {
+    const pairs = rules.spellsAtLevel(char, level);
+    const node = tpl('tpl-spell-level').cloneNode(true);
+    const label = spellLevelLabel(level);
+
+    node.dataset.level = String(level);
+    $('.spelllevel__heading', node).textContent = label;
+    $('.spelllevel__title', node).textContent = label;
+    $('.spelllevel__count', node).dataset.derived = `spellsPrepared.${level}`;
+    $('.spelllevel__add', node).dataset.rowLevel = String(level);
+
+    /*
+     * Open by default in play mode, so the card reads as a spell list rather than as ten shut
+     * drawers — a player opening the tab wants to SEE their spells. Setup mode starts every
+     * section closed instead: it shows all ten levels, most of them empty, and ten open empty
+     * sections is a page of nothing to scroll past to reach the one being filled in.
+     *
+     * This is not persisted, and deliberately: the open/shut state is ephemeral UI, the same
+     * call the Conditions disclosure and the tap-expanded rows make. Storing it would put a
+     * display preference into character data, where export/import would carry it between
+     * devices.
+     */
+    $('.spelllevel__disclosure', node).open = !setup;
+
+    const rowHost = $('.spelllevel__rows', node);
+    for (const { spell, index } of pairs) {
+      rowHost.append(spellRow(index));
+    }
+    if (pairs.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'rows__empty';
+      empty.textContent = 'No spells at this level yet.';
+      rowHost.append(empty);
+    }
+
+    host.append(node);
+  }
+
+  // Every level empty AND not in Edit means the filter above produced nothing, so the card
+  // would be a bare heading. Point at the button that fixes it, exactly as the slots do.
+  if (levels.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'rows__empty';
+    empty.textContent = 'No spells yet — tap Edit to add them.';
+    host.append(empty);
+  }
+}
+
+/**
+ * One spell row, bound to its position in the FLAT array. `index` is that position, not the
+ * position within its level section — see rules.spellsAtLevel for why the two differ.
+ */
+function spellRow(index) {
+  const node = tpl('tpl-spell').cloneNode(true);
+  const basePath = getListPath('spells');
+
+  for (const field of $$('[data-bind-suffix]', node)) {
+    field.dataset.bind = `${basePath}.${index}.${field.dataset.bindSuffix}`;
+    delete field.dataset.bindSuffix;
+  }
+
+  // The level select's options come from the constant rather than the markup, so the range
+  // is defined once. Authoring ten <option>s in the template would have been a second list to
+  // keep in step with SPELL_LIST_LEVELS the first time the app grew a level.
+  const select = $('.row__levelselect', node);
+  for (const level of SPELL_LIST_LEVELS) {
+    const option = document.createElement('option');
+    option.value = String(level);
+    option.textContent = spellLevelLabel(level);
+    select.append(option);
+  }
+
+  $('.row__remove', node).dataset.index = String(index);
+  return node;
+}
+
 /* ------------------------------------------------------- repeatable rows */
 
 const ROW_TEMPLATE_IDS = {
   attacks: 'tpl-attack',
-  // spells is deliberately absent: the inert spell list was hidden in #9. The FIELD
-  // stays in the model (constants/storage) so existing data keeps round-tripping
-  // through save/export/import, and the UI can come back for free.
+  // spells is deliberately absent — it is not a flat list. #9 hid the inert one; #141 brought
+  // it back grouped by level, which renderSpells above owns because renderRows renders one
+  // array into one host and this deals one array into ten.
   features: 'tpl-feature',
   feats: 'tpl-feat',
   inventory: 'tpl-inventory',
@@ -526,6 +637,7 @@ export function renderSheet(char) {
   renderConditions();
   renderStatusPips();
   renderSlots(char);
+  renderSpells(char);
   for (const listName of Object.keys(ROW_TEMPLATE_IDS)) renderRows(char, listName);
 
   // Write every bound field exactly once. From here on, these flow DOM -> state only.
@@ -585,6 +697,23 @@ function derivedValue(char, key) {
     case 'spellAtk': {
       const atk = rules.spellAttackBonus(char);
       return atk === null ? '—' : rules.formatMod(atk);
+    }
+    /*
+     * #141: prepared spells, per level ("spellsPrepared.3") or across the card (no arg).
+     *
+     * Derived rather than written by renderSpells, because ticking Prepared is a DERIVED change
+     * and a structural rebuild would shut the very section the player is ticking in. Reads
+     * "2 of 5" against a level and "6 prepared" as the card total: a bare number under a level
+     * heading is ambiguous (prepared? known?) where the total sits next to the card title and
+     * has room to say which it is.
+     *
+     * The "of N" is a count of what is written down, never of what the class may prepare —
+     * nothing here knows that number, and nothing stops the player exceeding it.
+     */
+    case 'spellsPrepared': {
+      if (arg === '') return `${rules.preparedCount(char)} prepared`;
+      const known = rules.spellsAtLevel(char, arg).length;
+      return known === 0 ? '' : `${rules.preparedCount(char, arg)} of ${known}`;
     }
     // #84: an attack row's to-hit — the only derived value keyed by ARRAY POSITION rather
     // than a domain key. Safe because every length change emits 'structural' (state.js
@@ -668,6 +797,20 @@ export function renderDerived(char) {
   const caster = rules.isSpellcaster(char);
   $('#spell-body').hidden = !caster;
   $('#card-spellcasting').classList.toggle('card--muted', !caster);
+  // The slots left Spellcasting for their own card, so the gate that used to come free from
+  // being inside #spell-body is now explicit — same treatment as the spell list below.
+  $('#card-spellslots').hidden = !caster;
+  /*
+   * #141: the spell list follows the slots. A non-caster has no use for either, and the whole
+   * card goes rather than being muted like Spellcasting above — Spellcasting stays visible
+   * because it HOLDS the ability select that makes you a caster (#20), and this card holds
+   * nothing you would need first.
+   *
+   * `hidden` on the card, never `display`, so the global [hidden] kill-switch is what removes
+   * it. It is also why this is safe next to arrange mode: layout-view sets its own `hidden` on
+   * OBJECTS, and this card has none — a card is hidden through the layout config instead.
+   */
+  $('#card-spells').hidden = !caster;
 
   $('#topbar-name').textContent = char.name || 'Unnamed';
   $('#topbar-sub').textContent =

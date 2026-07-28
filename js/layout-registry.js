@@ -36,7 +36,9 @@ export const TAB_REGISTRY = [
  *   combat       → #hitDice #resources #death-successes #death-failures #exhaustion #conditions
  *   attacks      → #attacks
  *   abilities    → #abilities
- *   spellcasting → #slots #spell-body #card-spellcasting
+ *   spellcasting → #spell-body #card-spellcasting
+ *   spellslots   → #slots #card-spellslots
+ *   spells       → #spells #card-spells
  *   inventory    → #inventory
  *   features     → #features
  */
@@ -45,6 +47,15 @@ export const CARD_REGISTRY = {
   attacks: { label: 'Attacks', home: 'combat', cost: 'js', sel: '[data-editcard="attacks"]' },
   abilities: { label: 'Abilities & Skills', home: 'abilities', cost: 'js', sel: '[data-editcard="abilities"]' },
   spellcasting: { label: 'Spellcasting', home: 'spells', cost: 'js', sel: '[data-editcard="spellcasting"]' },
+  // Split out of Spellcasting: the ability and its two derived numbers are set once, the slots
+  // drain every fight, and separating them is what lets a player size or hide one without the
+  // other. cost:'js' — renderSlots dereferences #slots with no null check.
+  spellslots: { label: 'Spell Slots', home: 'spells', cost: 'js', sel: '[data-editcard="spellslots"]' },
+  // #141. Its own card rather than a section of Spellcasting, which is the whole point of the
+  // issue title: the slots and the spells are tracked at different moments and a player who
+  // wants one on screen does not necessarily want the other. cost:'js' — renderSpells
+  // dereferences #spells with no null check, so it may be hidden but never detached.
+  spells: { label: 'Spells', home: 'spells', cost: 'js', sel: '[data-editcard="spells"]' },
   inventory: { label: 'Inventory', home: 'gear', cost: 'js', sel: '[data-editcard="inventory"]' },
   features: { label: 'Features & Feats', home: 'gear', cost: 'js', sel: '[data-editcard="features"]' },
   identity: { label: 'Identity', home: 'character', cost: 'markup', sel: '[data-editcard="identity"]' },
@@ -54,7 +65,10 @@ export const CARD_REGISTRY = {
 
 /** Card ids in a stable default order (matches today: combat→attacks, inventory→features, …). */
 export const CARD_ORDER = [
-  'combat', 'attacks', 'abilities', 'spellcasting', 'inventory', 'features',
+  // The Spells tab reads in order of how often you touch it: the ability and its two derived
+  // numbers (set once), then the slots (spent every fight), then the list (revised at a long
+  // rest). Arrange mode can reorder all three per device; this is only where they start.
+  'combat', 'attacks', 'abilities', 'spellcasting', 'spellslots', 'spells', 'inventory', 'features',
   'identity', 'proficiencies', 'notes',
 ];
 
