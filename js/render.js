@@ -359,6 +359,22 @@ export function renderSlotPips(char) {
  * rows above have used since #9, and for the same reason: a level-3 caster should not scroll
  * past six dead sections to reach the two they cast from.
  */
+/**
+ * Open or shut one spell level (#155). The single place that state is written.
+ *
+ * `aria-expanded` on the button and `.is-collapsed` on the section have to move together — the
+ * class is what hides the unprepared rows, the attribute is what a screen reader is told, and a
+ * caller that set only one would leave the control lying about the list under it.
+ *
+ * Exported because main.js's toggle action needs it: the section is rebuilt by every structural
+ * render, so the action cannot hold a reference to anything and there is no per-element handler
+ * to hang this off.
+ */
+export function setLevelOpen(section, open) {
+  section.classList.toggle('is-collapsed', !open);
+  $('.spelllevel__summary', section)?.setAttribute('aria-expanded', String(open));
+}
+
 function renderSpells(char) {
   const host = $('#spells');
 
@@ -376,7 +392,7 @@ function renderSpells(char) {
    */
   const wasOpen = new Map();
   for (const section of $$('.spelllevel', host)) {
-    wasOpen.set(Number(section.dataset.level), $('.spelllevel__disclosure', section).open);
+    wasOpen.set(Number(section.dataset.level), !section.classList.contains('is-collapsed'));
   }
 
   host.replaceChildren();
@@ -392,7 +408,8 @@ function renderSpells(char) {
     const label = spellLevelLabel(level);
 
     node.dataset.level = String(level);
-    $('.spelllevel__heading', node).textContent = label;
+    // One title now, not two: #155's heading wraps the button, so the visually-hidden duplicate
+    // the <summary> needed is gone.
     $('.spelllevel__title', node).textContent = label;
     $('.spelllevel__count', node).dataset.derived = `spellsPrepared.${level}`;
     const addBtn = $('.spelllevel__add', node);
@@ -418,8 +435,15 @@ function renderSpells(char) {
      *
      * That default applies only to a section the player has not touched this session — one that
      * was already on screen keeps whatever they left it at (#146).
+     *
+     * #155: collapsed no longer means empty. A shut section still shows the spells that are
+     * prepared and hides the rest, so folding a level away is "show me what I have ready" rather
+     * than "hide this" — which is the state a druid or a cleric actually wants to look at
+     * mid-session. One writer for both halves of that (the class and aria-expanded), for the
+     * reason setRowExpanded exists in main.js: two places setting the same state drift, and the
+     * one that drifts is the one nobody can see.
      */
-    $('.spelllevel__disclosure', node).open = wasOpen.get(level) ?? !setup;
+    setLevelOpen(node, wasOpen.get(level) ?? !setup);
 
     const rowHost = $('.spelllevel__rows', node);
     for (const { spell, index } of pairs) {
@@ -807,6 +831,22 @@ export function renderDerived(char) {
   for (const row of $$('.row--attack, .row--inventory')) {
     const notes = $('.row__notes', row);
     row.classList.toggle('row--expandable', Boolean(notes && notes.value.trim()));
+  }
+
+  /*
+   * Which spells survive a collapsed level (#155). Here, in the DERIVED pass, and that placement
+   * is the whole design: ticking Prepared is a derived change, so a class maintained by
+   * renderSheet would only be right until the next tick — and moving the tick to a structural
+   * render is exactly the #146 bug, where the section being worked in shuts itself.
+   *
+   * Read off the checkbox rather than the character, like the note check above: renderDerived has
+   * already written every bound input back from state by the time this runs, except the one with
+   * the caret — and the one with the caret is the one the player just changed, so its DOM state
+   * is the newest truth there is.
+   */
+  for (const row of $$('.row--spell')) {
+    const tick = $('[data-bind$=".prepared"]', row);
+    row.classList.toggle('is-prepared', Boolean(tick && tick.checked));
   }
 
   for (const row of $$('#slots .slot')) {

@@ -121,13 +121,12 @@ try {
   cardEdit('spells').click();
   await wait(400);
   /*
-   * Edit shows all ten sections and starts an untouched one CLOSED (#146), and a closed
-   * <details> is content containment — its descendants are correctly un-hit-testable. So the
-   * section has to be opened before the button in it can be measured at all; asking
-   * checkVisibility() straight after the Edit flip measures the disclosure, not the button.
+   * Edit shows all ten sections and starts an untouched one COLLAPSED (#146/#155), and a
+   * collapsed level hides its unprepared rows and its Search button outright. So the section has
+   * to be opened before the button in it can be measured at all.
    */
-  section(3).querySelector('details').open = true;
-  await wait(200);
+  section(3).querySelector('.spelllevel__summary').click();
+  await wait(250);
   ok('Edit reveals it', searchBtn(3).checkVisibility() === true);
   is('...labelled Search', searchBtn(3).textContent.trim(), 'Search');
   is('...with an accessible name that stands alone',
@@ -200,7 +199,7 @@ try {
    * six times worse per visit, which is why the two shipped together.
    */
   ok('...and the section behind it did not shut on the pick (#146)',
-    section(3).querySelector('details').open === true);
+    !section(3).classList.contains('is-collapsed'));
   is('the added result now says so', fireball.querySelector('.result__add').textContent, 'Added');
   ok('...and cannot be added twice by mistake', fireball.querySelector('.result__add').disabled === true);
   ok('a pick is announced', /Fireball added to Level 3/.test(d.getElementById('spell-picker-status').textContent),
@@ -309,7 +308,7 @@ try {
   ok('...and focus goes back to the section it was opened from',
     d.activeElement === searchBtn(3),
     `activeElement: ${d.activeElement?.className || d.activeElement?.tagName}; `
-    + `button present: ${Boolean(searchBtn(3))}; section open: ${section(3)?.querySelector('details')?.open}`);
+    + `button present: ${Boolean(searchBtn(3))}; section open: ${!section(3)?.classList.contains('is-collapsed')}`);
 
   is('everything picked is on the sheet', rowsIn(3).length, 2);   // Fireball + the custom spell
   is('...and the cantrip landed in its own section', rowsIn(0).length, 2);  // Fire Bolt + Light

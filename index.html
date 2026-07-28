@@ -765,35 +765,46 @@
   </div>
 </template>
 
-<!-- #141: one collapsible section per spell level. The real <h3> sits OUTSIDE the <summary>,
-     visually hidden, for the same reason the Conditions tile's does — browsers strip heading
-     semantics from <summary> descendants, which drops every level out of screen-reader heading
-     navigation. The visible title inside the summary is a styled span.
+<!-- One section per spell level (#141), collapsible (#155).
 
-     The count is a data-derived <output>, not text renderSpells writes: ticking Prepared is a
-     DERIVED change, and rebuilding the sections structurally on every tick would collapse the
-     one the player is working in. renderDerived repaints the number in place instead. -->
+     NOT a <details> any more, and the reason is the whole of #155: collapsing a level now means
+     "show me what I have prepared" rather than "hide this". A shut <details> is content
+     containment — it hides ALL of its content and no CSS reveals part of it — so the prepared
+     rows could never survive the collapse. This is the canonical disclosure instead: a heading
+     wrapping a button that owns aria-expanded, and an ordinary list whose unprepared rows are
+     hidden by a class while the section is shut.
+
+     That also fixes what the <summary> cost. The real <h3> used to sit OUTSIDE the summary,
+     visually hidden, because browsers strip heading semantics from <summary> descendants — which
+     dropped every level out of screen-reader heading navigation and left the visible title as a
+     styled span duplicating it. `<h3><button></h3>` is the shape that wanted to exist: one
+     title, a real heading, and a control that says whether it is open.
+
+     The count stays OUTSIDE the button. It is a data-derived <output> repainted on every tick,
+     and inside the button it would be part of the control's accessible name — so every Prepared
+     tick would silently rename a focusable control. -->
 <template id="tpl-spell-level">
   <section class="spelllevel">
-    <h3 class="spelllevel__heading visually-hidden"></h3>
-    <details class="spelllevel__disclosure">
-      <summary class="spelllevel__summary">
-        <span class="spelllevel__marker" aria-hidden="true">▸</span>
-        <span class="spelllevel__title"></span>
-        <output class="spelllevel__count"></output>
-      </summary>
-      <ul class="rows rows--tight spelllevel__rows"></ul>
-      <!-- #149: "+ Add" became "Search". It carries its level with it, which now pre-filters
-           the picker to this section rather than presetting a blank row's level — a spell's
-           level belongs to the spell, so picking a cantrip from the 3rd-level section still
-           files it under Cantrips. The blank row this used to make is still one tap away,
-           inside the picker, where a name typed into the search becomes its name.
+    <div class="spelllevel__head">
+      <h3 class="spelllevel__heading">
+        <button type="button" class="spelllevel__summary" data-action="toggle-spelllevel" aria-expanded="true">
+          <span class="spelllevel__marker" aria-hidden="true">▸</span>
+          <span class="spelllevel__title"></span>
+        </button>
+      </h3>
+      <output class="spelllevel__count"></output>
+    </div>
+    <ul class="rows rows--tight spelllevel__rows"></ul>
+    <!-- #149: "+ Add" became "Search". It carries its level with it, which now pre-filters
+         the picker to this section rather than presetting a blank row's level — a spell's
+         level belongs to the spell, so picking a cantrip from the 3rd-level section still
+         files it under Cantrips. The blank row this used to make is still one tap away,
+         inside the picker, where a name typed into the search becomes its name.
 
-           Edit-gated exactly as the old button was: `[data-action]` is in the same
-           show-in-edit-mode rule, so adding stays a setup action and play mode stays a list
-           you read and tick. -->
-      <button type="button" class="btn btn--small spelllevel__add" data-action="spell-search" data-list="spells">Search</button>
-    </details>
+         Edit-gated exactly as the old button was: `[data-action]` is in the same
+         show-in-edit-mode rule, so adding stays a setup action and play mode stays a list
+         you read and tick. -->
+    <button type="button" class="btn btn--small spelllevel__add" data-action="spell-search" data-list="spells">Search</button>
   </section>
 </template>
 

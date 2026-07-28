@@ -1261,15 +1261,22 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    is the only content. Here the summary is a row heading with a count on the far right, so it
    packs left and lets the count sit at the end, the way `.list__head` already does. */
 .spelllevel + .spelllevel { margin-top: var(--space-2); }
+/* #155: the heading row. The button owns the title and the marker; the count sits OUTSIDE it, so
+   ticking Prepared repaints a number rather than silently renaming a focusable control. */
+.spelllevel__head { display: flex; align-items: center; gap: var(--space-2); }
+.spelllevel__heading { margin: 0; flex: 1 1 auto; min-width: 0; font: inherit; }
 .spelllevel__summary {
-  display: flex; align-items: center; gap: var(--space-2);
-  min-height: var(--tap); cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: var(--space-2); width: 100%;
+  min-height: var(--tap); cursor: pointer;
+  /* It is a <button> now (#155), so the button chrome has to come off explicitly or it inherits
+     `.btn`-shaped borders from the base rule. Left-packed, full width: the whole heading line is
+     the target, which is a 44px-tall strip rather than the width of the word "Cantrips". */
+  padding: 0; background: none; border: 0; color: inherit; text-align: left;
 }
-.spelllevel__summary::-webkit-details-marker { display: none; }
-/* A real element, aria-hidden in the markup, so the glyph can't leak into the summary's
+/* A real element, aria-hidden in the markup, so the glyph can't leak into the button's
    accessible name the way CSS-generated content does — the reason Conditions does it too. */
 .spelllevel__marker { display: inline-block; flex: none; color: var(--ink-faint); transition: transform .12s; }
-.spelllevel__disclosure[open] > .spelllevel__summary .spelllevel__marker { transform: rotate(90deg); }
+.spelllevel__summary[aria-expanded="true"] .spelllevel__marker { transform: rotate(90deg); }
 .spelllevel__title { font-weight: 600; font-size: var(--text-sm); }
 /* `margin-left: auto` rather than `flex: 1` on the title: the count goes to the far end without
    the title claiming the gap, so a section reads as "Level 3 ··· 2 of 5" and the two numbers
@@ -1288,6 +1295,23 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   border-left: 2px solid var(--line);
 }
 .spelllevel__add { margin-left: var(--space-1); }
+
+/* COLLAPSED MEANS "SHOW ME WHAT I HAVE PREPARED" (#155), not "hide this".
+   A shut level keeps its prepared spells on screen and drops the rest — the state a druid or a
+   cleric wants during play, where the full list is a long-rest concern. `display: none` rather
+   than a visual collapse on purpose: a hidden row must leave the tab order and the accessibility
+   tree, or every unprepared spell's name field, level select and ✕ stay reachable behind a
+   control that says "collapsed". That came free with <details> and has to be asked for here.
+
+   The Search button goes with them: adding to a level you have folded away is not a thing anyone
+   means to do, and it would sit under the prepared rows looking like part of the list. */
+.spelllevel.is-collapsed .row--spell:not(.is-prepared) { display: none; }
+.spelllevel.is-collapsed .spelllevel__add,
+.spelllevel.is-collapsed .rows__empty { display: none; }
+/* With every row hidden, the rail would be a stray 2px stub under the heading. */
+.spelllevel.is-collapsed .spelllevel__rows:not(:has(.row--spell.is-prepared)) {
+  margin: 0; padding: 0; border-left: 0;
+}
 /* The card total, beside the title in the head. `margin-left: auto` would fight the head's own
    space-between, so it simply sits where the flex puts it: after the title, before Edit. */
 .spells__count { font-size: var(--text-xs); color: var(--ink-soft); }
@@ -2035,12 +2059,23 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      revealed explicitly. The marker goes with the caret below: nothing on paper folds. */
   .row--feature > .row__detail, .row--feat > .row__detail,
   .row--spell > .row__detail { display: flex !important; }
-  /* #141: the SECTIONS are forced open by a beforeprint handler in main.js, not from here. A
-     closed <details> is not `display:none` — it is content containment (the trap CLAUDE.md
-     already documents for measuring it), so overriding `display` on its children does not
-     reliably reveal them. The one thing a printed sheet cannot survive is a level heading with
-     the spells missing underneath, so this does not rest on a UA detail. Nothing folds on
-     paper, so the marker and the add button go. */
+  /* #155: the SECTIONS are revealed from here now, in one rule, and the beforeprint handler that
+     used to do it in JS is gone. It existed because a closed <details> is content containment —
+     `details:not([open]) > *` stays unrendered whatever `display` you give it, the same trap
+     CLAUDE.md documents for measuring these sections — so the reveal had to be scripted and then
+     undone afterwards. A collapsed level is now an ordinary section with `display: none` rows,
+     which CSS can simply turn back on. The one thing a printed sheet cannot survive is a level
+     heading with the spells missing underneath.
+
+     `!important` is load-bearing: it is beating another `display: none`, not a UA default. */
+  .spelllevel.is-collapsed .row--spell { display: flex !important; }
+  .spelllevel.is-collapsed .spelllevel__rows {
+    margin: 0 0 var(--space-2) var(--space-1) !important;
+    padding-left: var(--space-2) !important;
+  }
+  /* Nothing folds on paper, so the marker and the add button go — and #155's toggle is a real
+     <button> now, so it joins them rather than being CSS-generated content that vanishes with
+     the caret rule below. */
   .spelllevel__marker, .spelllevel__add { display: none !important; }
   .spelllevel__summary { min-height: 0; }
   .spelllevel { break-inside: avoid; }

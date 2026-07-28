@@ -689,7 +689,10 @@ try {
    * so they can be sized and contrast-checked.
    */
   await edit('spells');
-  for (const details of d.querySelectorAll('.spelllevel__disclosure')) details.open = true;
+  // #155: a level is a section with a class, not a <details>. Opened directly rather than by
+  // clicking each heading — the gesture is probe-spells.html's job; here the point is only to
+  // get the controls on screen so they can be sized and contrast-checked.
+  for (const level of d.querySelectorAll('.spelllevel')) level.classList.remove('is-collapsed');
   for (const row of d.querySelectorAll('.row--spell')) row.classList.add('is-expanded');
   await settle(200);
   report.scenes.push(auditScene('spells / list edit, rows expanded'));
