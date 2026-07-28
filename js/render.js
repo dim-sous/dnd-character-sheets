@@ -361,6 +361,24 @@ export function renderSlotPips(char) {
  */
 function renderSpells(char) {
   const host = $('#spells');
+
+  /*
+   * Which sections are open has to survive the rebuild (#146). This render is STRUCTURAL — it
+   * runs on "+ Add", on the level select re-filing a spell, and on the Edit flip — and it used
+   * to re-derive `open` from the mode every time, so the section the player was working in shut
+   * itself the instant they added to it, with the new row inside. Adding a spell meant opening
+   * the same drawer twice.
+   *
+   * Read off the DOM rather than kept in a module variable: it is display state that belongs to
+   * the nodes being replaced, so there is nothing to clear when the character changes, and it
+   * stays out of the store for the reason the original comment gives — export/import must not
+   * carry one device's open drawers to another.
+   */
+  const wasOpen = new Map();
+  for (const section of $$('.spelllevel', host)) {
+    wasOpen.set(Number(section.dataset.level), $('.spelllevel__disclosure', section).open);
+  }
+
   host.replaceChildren();
 
   const setup = editCards.has('spells');
@@ -389,8 +407,11 @@ function renderSpells(char) {
      * call the Conditions disclosure and the tap-expanded rows make. Storing it would put a
      * display preference into character data, where export/import would carry it between
      * devices.
+     *
+     * That default applies only to a section the player has not touched this session — one that
+     * was already on screen keeps whatever they left it at (#146).
      */
-    $('.spelllevel__disclosure', node).open = !setup;
+    $('.spelllevel__disclosure', node).open = wasOpen.get(level) ?? !setup;
 
     const rowHost = $('.spelllevel__rows', node);
     for (const { spell, index } of pairs) {
