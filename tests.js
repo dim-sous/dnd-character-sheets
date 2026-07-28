@@ -1555,7 +1555,38 @@ describe('spell list (#141)');
     const cantrips = blankCharacter();
     cantrips.spellcasting.spells = [spell('Fire Bolt', 0, true), spell('Shield', 1, true)];
     is('level 0 is a level, not a missing argument', rules.preparedCount(cantrips, 0), 1);
-    is('and omitting it still counts everything', rules.preparedCount(cantrips), 2);
+    /*
+     * #158 changed this line, deliberately. It used to assert 2 — a stored tick on a CANTRIP
+     * counted toward "N prepared". A cantrip is always available and is never prepared, so the
+     * whole-list total now skips level 0 and this is 1: Shield.
+     *
+     * Asking about level 0 explicitly still returns 1 (the line above): that is arithmetic over
+     * what is actually stored, and this function should not pretend the data says something else.
+     * What the app does with that number is the renderer's business — the Cantrips heading shows
+     * a plain count and the row shows no tick.
+     */
+    is('...but the whole-list total skips cantrips, which cannot be prepared (#158)',
+      rules.preparedCount(cantrips), 1);
+  }
+
+  /* --- #158: cantrips are always available, never prepared ------------------------------- */
+  is('a cantrip cannot be prepared', rules.canPrepare(0), false);
+  is('every real spell level can', [1, 2, 3, 4, 5, 6, 7, 8, 9].every(rules.canPrepare), true);
+  is('a numeric string is still a level', rules.canPrepare('3'), true);
+  // A row whose level is missing or unparseable is filed as a cantrip by spellsAtLevel, so it has
+  // to answer the same way here or the two would disagree about the same row.
+  is('a missing level answers like the cantrip it is filed as', rules.canPrepare(undefined), false);
+  is('...and so does an unparseable one', rules.canPrepare('abc'), false);
+  {
+    const stale = blankCharacter();
+    // The path that keeps making these AFTER #158: re-file a prepared spell down to Cantrips
+    // with the row's level select and the tick travels with it, now with no control to clear it.
+    stale.spellcasting.spells = [spell('Light', 0, true), spell('Bless', 1, true), spell('Aid', 2)];
+    is('a stale tick on a cantrip cannot inflate the card total', rules.preparedCount(stale), 1);
+    is('...and the cantrip is still on the sheet, not dropped',
+      rules.spellsAtLevel(stale, 0).map((row) => row.spell.name), ['Light']);
+    is('...with its stored value untouched, so re-filing it restores the tick',
+      rules.spellsAtLevel(stale, 0)[0].spell.prepared, true);
   }
 
   // Neither helper reads or writes anything but the character handed to it.
