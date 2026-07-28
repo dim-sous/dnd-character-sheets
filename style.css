@@ -203,7 +203,12 @@ input[type="checkbox"] {
   width: 22px; height: 22px;
   flex: none; margin: 0;
   vertical-align: middle;
-  border: 2px solid var(--line);
+  /* `--ink-faint`, not `--line` (#159). A control's boundary needs 3:1 under WCAG 1.4.11, and
+     `--line` on `--card` measures 1.38:1 in dark — so even with the `:read-only` bug above fixed,
+     the box this rule declares would have been a smudge. Measured with this token: 5.78:1 dark,
+     5.88:1 light. `--line` stays right for a divider between two things; it is not enough for the
+     edge of something you are meant to find and tap. */
+  border: 2px solid var(--ink-faint);
   border-radius: 6px;
   background: var(--card);
   cursor: pointer;
@@ -1626,16 +1631,15 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 .row--spell > .row__primary { flex-wrap: nowrap; }
 .row--spell .row__primary > input { flex: 1 1 0; min-width: 0; max-width: none; }
 
-/* An UNTICKED spell was showing an empty gap where its control is. The base checkbox draws its
-   box as `--line` on `--card`, which measures 1.38:1 in dark (#3d352c on #241f1a) — WCAG 1.4.11
-   asks 3:1 for the boundary of a control, and the probe's contrast audit only reads TEXT, so
-   nothing here was ever going to catch it. `--ink-faint` is the quietest token that clears it:
-   5.7:1 in dark, 5.9:1 in light. The de-slabbing above is what made it obvious — with the row's
-   own box gone, the column of ticks is the only thing giving the list a left edge.
+/* #154's per-tick border override lived here and is gone (#159): the base checkbox rule now
+   carries `--ink-faint`, so every box in the app is visible rather than this one alone.
 
-   Scoped to this tick on purpose: the same 1.38:1 applies to every checkbox in the app, which is
-   its own finding and its own change. */
-.row__prepared input[type="checkbox"] { border-color: var(--ink-faint); }
+   Worth recording, because the comment that stood here was WRONG and someone will read this file
+   before they read the issue: it blamed `--line` on `--card` at 1.38:1, which is what the base
+   rule DECLARES. The computed value was 1.00:1 — fully transparent — because `input:read-only`
+   matches checkboxes and was overriding it. The override worked either way, by out-specifying
+   both, which is exactly why the wrong diagnosis survived: the fix succeeded for a reason its
+   author had not measured. */
 .row--hitdie > .row__narrow { flex: 0 1 3.6rem; }
 /* The size is the qualifier, not the value: quieter than the counts it follows, and read-only
    in play (it is not `data-live`), so it flattens to plain text there like Max HP does. */
@@ -1748,7 +1752,18 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    type into a read-only field, and its value is still announced. */
 input:read-only:focus-visible, textarea:read-only:focus-visible { outline: none; }
 
-input:read-only, textarea:read-only, select:disabled {
+/* `input:not([type="checkbox"], [type="radio"])` is the whole of #159, and it is not tidiness.
+   In CSS a checkbox is ALWAYS `:read-only` — the pseudo-class means "not a read-write text
+   control", not "locked" — so this rule, written for flattening locked TEXT fields in play mode,
+   was painting `border-color: transparent; background: none` onto every checkbox in the app. It
+   is (0,1,1), the base `input[type="checkbox"]` block is (0,1,1), and this one is 1550 lines
+   further down, so it won the tie everywhere.
+
+   Measured on the running app before this line changed: every unchecked box in both themes at
+   1.00:1 — a transparent boundary, not a faint one. The PROF and EXP columns of Abilities & Skills
+   in Edit mode were headers over nothing. Ticked boxes survived only by accident, because
+   `input[type="checkbox"]:checked` is (0,2,1) and outranks this. */
+input:not([type="checkbox"], [type="radio"]):read-only, textarea:read-only, select:disabled {
   border-color: transparent;
   background: none;
   cursor: default;
