@@ -393,7 +393,14 @@
               <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="spellcasting" aria-pressed="false">Edit</button>
             </div>
             <div class="inline-fields">
-              <p class="field"><label for="f-spell-ability">Spellcasting ability</label>
+              <!-- "Ability", not "Spellcasting ability": the card title supplies the other word
+                   now that the slots have moved out and this card is only about the caster's
+                   numbers. The <label> itself stays — it is the select's only accessible name,
+                   and a card title is not programmatically associated with anything, so
+                   dropping it would leave a screen-reader user hearing the selected value and
+                   nothing else. The two tiles below keep their "Spell" for the opposite reason:
+                   a tile labelled "Attack" sits one tab away from the Attacks card. -->
+              <p class="field"><label for="f-spell-ability">Ability</label>
                 <select id="f-spell-ability" data-bind="spellcasting.ability" data-structural="true">
                   <option value="">— none (not a caster) —</option>
                   <option value="int">Intelligence</option>
@@ -420,12 +427,30 @@
                   </div>
                 </div>
               </div>
-
-              <div class="slots__head">
-                <h3 class="subhead">Spell Slots</h3>
-              </div>
-              <div class="slots" id="slots"></div>
             </div>
+          </section>
+
+          <!-- Spell slots, split out of the Spellcasting card above. The three cards on this
+               tab are now divided by how often you touch them: the ability and its two derived
+               numbers never change after setup, the slots drain constantly mid-fight, and the
+               spell list changes at a long rest. That is the same axis renderSheet/renderDerived
+               and data-live/Edit-gated already split on, and it is what lets a warlock with two
+               slots shrink this card while a wizard gives the list below the room.
+
+               Deliberately NOT merged with the spell list: a spell's level and the slot you
+               spend on it are independent (upcasting), cantrips have no slots at all, and the
+               two halves hide empty levels by different tests — so pairing them per level would
+               draw a line the game does not have, in the exact place a player is choosing what
+               to spend.
+
+               The slot TOTALS are setup-only and now sit behind this card's own Edit, where
+               they belong; they used to be gated by the Spellcasting card's. -->
+          <section class="card" id="card-spellslots" data-editcard="spellslots">
+            <div class="list__head">
+              <h2 class="card__title">Spell Slots</h2>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="spellslots" aria-pressed="false">Edit</button>
+            </div>
+            <div class="slots" id="slots"></div>
           </section>
 
           <!-- #141: the spells themselves, as their own card so arrange mode can move, resize

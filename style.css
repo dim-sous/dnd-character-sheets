@@ -633,7 +633,10 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 }
 .subhead:first-child { margin-top: 0; }
 
-.list__head, .slots__head {
+/* `.slots__head` dropped alongside these: the slots got their own card, so their heading is a
+   `.card__title` in a `.list__head` like every other card's, and the sub-head that used to sit
+   inside Spellcasting no longer exists. */
+.list__head {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--space-2); margin-bottom: var(--space-2);
 }
@@ -1795,7 +1798,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      mode still prints the finished sheet. An empty tile then prints as its heading over blank
      space, which is a better thing to hand a player than an instruction they cannot follow. */
   .sidebar, .scrim, .topbar, .tabbar, .row__remove, [data-action="add-row"], .rows__empty,
-  .list__head .btn, .slots__head .btn,
+  .list__head .btn,
   /* .obj-ctl / .obj-rename dropped here (#72): the in-tile overlay is gone, and the object
      controls now live inside .arrange-bar, which this line already hides. */
   .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename,

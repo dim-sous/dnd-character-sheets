@@ -118,15 +118,15 @@ function applyEditState() {
 }
 
 /**
- * Flip one card between view and edit mode. The Spellcasting card rebuilds its slot rows
- * first (setup mode adds the empty levels + the total inputs) so the lock pass then sees
- * the fresh inputs; the other cards reveal purely via CSS, so a class toggle plus a derived
- * pass is enough.
+ * Flip one card between view and edit mode. Two cards rebuild their body first — the Spell
+ * Slots card (setup mode adds the empty levels + the total inputs) and the Spells card (it
+ * adds the empty levels too) — so the lock pass below then sees the fresh inputs. The other
+ * cards reveal purely via CSS, so a class toggle plus a derived pass is enough.
  */
 export function toggleCardEdit(char, cardId) {
   if (editCards.has(cardId)) editCards.delete(cardId);
   else editCards.add(cardId);
-  if (cardId === 'spellcasting') renderSlots(char);
+  if (cardId === 'spellslots') renderSlots(char);
   // #141: the same rebuild-first dance the slots do. Setup mode changes which SECTIONS exist
   // (all ten levels, versus only the stocked ones), so the sections have to be rebuilt before
   // applyEditState locks or unlocks the fields inside them — otherwise Edit reveals sections
@@ -138,12 +138,14 @@ export function toggleCardEdit(char, cardId) {
 
 /**
  * Drop every open per-card content edit at once (used when entering layout-arrange mode, so
- * the two edit modes never overlap). Reverts the Spellcasting card out of slot-setup too.
+ * the two edit modes never overlap). Reverts the Spell Slots card out of slot-setup and the
+ * Spells card out of its all-levels view — both render a DIFFERENT set of rows in edit mode,
+ * so clearing the flag is not enough on its own; the bodies have to be rebuilt to match.
  */
 export function clearCardEdits(char) {
   if (editCards.size === 0) return;
   editCards.clear();
-  if (char) renderSlots(char);
+  if (char) { renderSlots(char); renderSpells(char); }
   applyEditState();
   if (char) renderDerived(char);
 }
@@ -288,10 +290,12 @@ function renderSlots(char) {
   const host = $('#slots');
   host.replaceChildren();
 
-  // Setup mode = the Spellcasting card is in edit mode (editCards): it shows all nine
+  // Setup mode = the Spell Slots card is in edit mode (editCards): it shows all nine
   // levels with their editable totals. Play mode hides levels with no slots (#9) — a
   // level-5 wizard shouldn't scroll past six dead rows — and shows a remaining/total count.
-  const setup = editCards.has('spellcasting');
+  // Keyed to 'spellslots' since the split: the totals are edited on the card that shows them,
+  // rather than behind the Edit button of the card they used to be nested in.
+  const setup = editCards.has('spellslots');
   const levels = setup
     ? SPELL_LEVELS
     : SPELL_LEVELS.filter((level) => char.spellcasting.slots[level].total > 0);
@@ -793,6 +797,9 @@ export function renderDerived(char) {
   const caster = rules.isSpellcaster(char);
   $('#spell-body').hidden = !caster;
   $('#card-spellcasting').classList.toggle('card--muted', !caster);
+  // The slots left Spellcasting for their own card, so the gate that used to come free from
+  // being inside #spell-body is now explicit — same treatment as the spell list below.
+  $('#card-spellslots').hidden = !caster;
   /*
    * #141: the spell list follows the slots. A non-caster has no use for either, and the whole
    * card goes rather than being muted like Spellcasting above — Spellcasting stays visible

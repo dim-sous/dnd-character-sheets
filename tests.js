@@ -1070,9 +1070,9 @@ describe('moveCardToTab');
   // Send attacks (Combat) → Spells; it leaves the source and lands at the destination end.
   const moved = moveCardToTab(DEFAULT_LAYOUT, 'attacks', 'spells');
   is('card removed from source tab', cardsOf(moved, 'combat'), ['combat']);
-  // The Spells tab holds two cards since #141 (Spellcasting, then Spells), so "the destination
-  // end" is now genuinely an end rather than the second of two positions.
-  is('card appended to destination end', cardsOf(moved, 'spells'), ['spellcasting', 'spells', 'attacks']);
+  // The Spells tab holds three cards since #141 (Spellcasting → Spell Slots → Spells), so "the
+  // destination end" is now genuinely an end rather than the second of two positions.
+  is('card appended to destination end', cardsOf(moved, 'spells'), ['spellcasting', 'spellslots', 'spells', 'attacks']);
   is('other tabs untouched', cardsOf(moved, 'gear'), ['inventory', 'features']);
 
   // Invariant: still exactly one of every card after a cross-tab move.
@@ -1564,15 +1564,20 @@ describe('spell list (#141)');
   is('every other level is numbered', spellLevelLabel(3), 'Level 3');
   is('a numeric string labels the same', spellLevelLabel('0'), 'Cantrips');
 
-  // The card is registered, or arrange mode cannot move, resize or hide it.
+  // Both cards are registered, or arrange mode cannot move, resize or hide them.
   is('the Spells card is in the registry', CARD_REGISTRY.spells.home, 'spells');
   is('it declares a js render cost', CARD_REGISTRY.spells.cost, 'js');
-  is('it sits after Spellcasting in the default order',
-    CARD_ORDER.indexOf('spells') === CARD_ORDER.indexOf('spellcasting') + 1, true);
+  is('the Spell Slots card is registered too', CARD_REGISTRY.spellslots.home, 'spells');
+  is('it declares a js render cost as well', CARD_REGISTRY.spellslots.cost, 'js');
+  // The Spells tab reads by how often you touch a card: ability/DC/attack, then slots, then the
+  // list. Asserted as an ORDER rather than as three indices so the intent survives a reshuffle.
+  is('the tab reads setup → slots → list',
+    CARD_ORDER.filter((id) => CARD_REGISTRY[id].home === 'spells'),
+    ['spellcasting', 'spellslots', 'spells']);
   is('every registry card has a place in the order',
     Object.keys(CARD_REGISTRY).every((id) => CARD_ORDER.includes(id)), true);
-  is('the default layout carries the Spells card',
-    cardsOf(DEFAULT_LAYOUT, 'spells').includes('spells'), true);
+  is('the default layout carries both new cards',
+    ['spellslots', 'spells'].every((id) => cardsOf(DEFAULT_LAYOUT, 'spells').includes(id)), true);
 }
 
 export { results };

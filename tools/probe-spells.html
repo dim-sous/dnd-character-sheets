@@ -100,6 +100,41 @@ try {
   ok('it is a separate card from Spellcasting',
     card() !== d.getElementById('card-spellcasting'));
 
+  /*
+   * The three-way split of the Spells tab: Spellcasting (ability + DC + attack), Spell Slots,
+   * Spells. Divided by how often each is touched, which is what makes them independently
+   * sizeable and hideable in arrange mode.
+   *
+   * The check that earns its place is the slot TOTALS: they are setup-only, and the Edit button
+   * that reveals them moved from the Spellcasting card to the Slots card. Nothing else would
+   * notice if that association were left pointing at the old card — the totals would simply
+   * never appear, on a card whose Edit button looked like it worked.
+   */
+  const slotsCard = () => d.getElementById('card-spellslots');
+  const cardEdit = (id) => d.querySelector(`[data-editcard="${id}"] .card__edit`);
+  is('the tab holds three cards, setup → slots → list',
+    [...d.querySelectorAll('#panel-spells > .card')].map((c) => c.dataset.editcard).join(','),
+    'spellcasting,spellslots,spells');
+  ok('the slots card has its own Edit button', Boolean(cardEdit('spellslots')));
+  ok('the slot totals are absent in play mode', !d.getElementById('f-slot-total-1'));
+
+  cardEdit('spellcasting').click();
+  await wait(350);
+  ok('editing Spellcasting no longer reveals the slot totals', !d.getElementById('f-slot-total-1'));
+  cardEdit('spellcasting').click();
+  await wait(350);
+  cardEdit('spellslots').click();
+  await wait(350);
+  ok('editing Spell Slots does reveal them', Boolean(d.getElementById('f-slot-total-1')));
+  cardEdit('spellslots').click();
+  await wait(350);
+
+  // The headings the cards now supply themselves.
+  ok('the in-card "Spell Slots" sub-head is gone', !d.querySelector('.slots__head'));
+  is('the ability label drops the doubled word',
+    d.querySelector('label[for="f-spell-ability"]').textContent.trim(), 'Ability');
+  ok('...but the select still has an accessible name',
+    d.querySelector('label[for="f-spell-ability"]').control === d.getElementById('f-spell-ability'));
 
   // --- play mode shows only the stocked levels (#9's split) ----------------------------
   is('play mode shows only levels with spells', levelsShown().join(','), '0,1,2');
@@ -236,10 +271,16 @@ try {
   ok('a non-caster hides the whole card', card().hidden === true);
   ok('...via the hidden attribute, so [hidden] removes it',
     card().checkVisibility() === false);
+  // The slots card left #spell-body when it was split out, so its caster gate is now its own
+  // line in renderDerived rather than something it inherited by being nested.
+  ok('...and the slots card goes with it', slotsCard().hidden === true);
+  ok('while Spellcasting itself stays, since it holds the ability select (#20)',
+    d.getElementById('card-spellcasting').checkVisibility() === true);
   ability.value = 'int';
   ability.dispatchEvent(new W.Event('change', { bubbles: true }));
   await wait(500);
   ok('choosing an ability brings it back', card().hidden === false);
+  ok('...and the slots card too', slotsCard().hidden === false);
   is('and the spells survived the round trip', stored().length, before + 1);
 
   // --- no sideways scroll at 390px, which a list of fields is the likeliest thing to cause

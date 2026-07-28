@@ -600,13 +600,15 @@ try {
   report.scenes.push(auditScene('abilities / edit'));
   await edit('abilities');
 
-  // The spell-slot total field exists ONLY while the Spellcasting card is in edit mode —
-  // play mode renders a remaining/total count instead (render.js renderSlots).
+  // The spell-slot total field exists ONLY while the Spell Slots card is in edit mode — play
+  // mode renders a remaining/total count instead (render.js renderSlots). Keyed to 'spellslots'
+  // since the split: the slots left the Spellcasting card, and editing the wrong one here would
+  // measure a scene with no total inputs in it while still reporting PASS.
   await tab('spells');
   report.scenes.push(auditScene('spells / view'));
-  await edit('spellcasting');
-  report.scenes.push(auditScene('spells / setup'));
-  await edit('spellcasting');
+  await edit('spellslots');
+  report.scenes.push(auditScene('spells / slot setup'));
+  await edit('spellslots');
 
   /*
    * #141: the spell list has three states worth measuring and the two above reach only one.
