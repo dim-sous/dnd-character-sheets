@@ -261,6 +261,76 @@ try {
   ok('and hit points are untouched', d.getElementById('f-hp-current').value === hpBefore,
     `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);
 
+  /*
+   * The same hole one layer BELOW the ACTIONS map, found on the Conditions tile.
+   *
+   * Some controls need no [data-action] at all, because the browser already knows what to do with
+   * them. Conditions is a <details> wrapping the condition chips, so tapping the tile to move it
+   * folded it open and shut instead — and once open, a tap that landed on a chip gave the
+   * character a condition. Blinded, acquired while rearranging furniture, with no undo for
+   * character data (#107). Same inheritance story as #115: the card is pointer-inert while
+   * arranging, [data-object] opts back in so a tap can select a tile, and the whole subtree comes
+   * with it.
+   *
+   * Four checks, because there are three ways in and each needs its own guard — the pointer (the
+   * tile's descendants are pointer-inert, so any tap in the tile resolves to the TILE, which is
+   * also what stops a bound field taking focus in a mode that will not accept typing), the
+   * keyboard (hit-testing never sees it; the input/change dispatch drops anything sourced inside
+   * a tile), and the placing sub-mode (the tiles are meant to go quiet, which used to mean only
+   * "not selectable" — and therefore "fully live again" for the length of a move).
+   */
+  const condTile = () => d.querySelector('#panel-combat [data-object="conditions"]');
+  const details = () => condTile().querySelector('details');
+  const conditionsOf = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters[0].conditions;
+  const chip = () => [...d.querySelectorAll('#conditions input[data-toggle="conditions"]')][0];
+
+  const openBefore = details().open;
+  condTile().querySelector('summary').click();
+  await wait(300);
+  ok('tapping the Conditions tile does not open its disclosure', details().open === openBefore,
+    `open ${openBefore} -> ${details().open}`);
+  ok('it selects the tile instead', condTile().classList.contains('is-selected'));
+
+  details().open = true;   // the chips are only tappable once it is open; force it, then tap one
+  await wait(200);
+  const condBefore = JSON.stringify(conditionsOf());
+  chip().click();
+  await wait(700);         // longer than the 400ms storage debounce
+  ok('tapping a condition chip while arranging does not toggle it',
+    JSON.stringify(conditionsOf()) === condBefore,
+    `${condBefore} -> ${JSON.stringify(conditionsOf())}`);
+
+  // Keyboard: Space on a focused chip flips `checked` and fires `change` with no pointer event
+  // anywhere, so the CSS half of the fix cannot see it. This is the dispatch guard alone.
+  chip().checked = true;
+  chip().dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+  await wait(700);
+  ok('a keyboard-fired change from inside a tile is ignored too',
+    JSON.stringify(conditionsOf()) === condBefore, JSON.stringify(conditionsOf()));
+  chip().checked = false;
+  details().open = openBefore;
+
+  // elementFromPoint, not .focus() — a scripted focus() is not hit-testing, so pointer-events has
+  // no say in it and an assertion about it measures nothing (CLAUDE.md's standing warning).
+  const hpField = d.getElementById('f-hp-current');
+  const fr = hpField.getBoundingClientRect();
+  const hitEl = d.elementFromPoint(fr.left + fr.width / 2, fr.top + fr.height / 2);
+  ok('a tap over a bound field resolves to its tile, not the field',
+    hitEl === hpField.closest('[data-object]'),
+    `hit <${hitEl && hitEl.tagName.toLowerCase()}${hitEl && hitEl.id ? `#${hitEl.id}` : ''}>`);
+
+  // ...and the suppression has to survive the placing sub-mode, where nothing is selectable.
+  restTile.click();
+  await wait(250);
+  bar().querySelector('[data-action="place-object-start"]').click();
+  await wait(350);
+  restBtn.click();
+  await wait(300);
+  ok('a [data-action] inside a tile stays suppressed while placing', confirms === 0,
+    `${confirms} confirm(s)`);
+  d.querySelector('[data-action="place-object-cancel"]').click();
+  await wait(300);
+
   // The same tap must still work normally once arranging is over, or the fix has just broken the
   // feature it was protecting.
   d.querySelector('.arrange-bar [data-action="arrange-toggle"]').click();

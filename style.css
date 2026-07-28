@@ -749,6 +749,15 @@ body.is-arranging [data-object] {
   pointer-events: auto;
   cursor: pointer;
 }
+/* ...and every descendant opts straight back OUT, so the tile is the tap target rather than
+   merely the outermost one. `pointer-events` is inherited, so the line above handed the whole
+   subtree back to the pointer along with the tile — which is how a <summary> kept opening its
+   <details> and a chip's <label> kept ticking its checkbox while the player was moving furniture.
+   Making the children transparent resolves every tap in the tile to the tile itself, so those
+   default actions have nothing to act on and a bound field can no longer take focus and show a
+   caret in a mode that will not accept typing. The JS guards stay the authority (they also cover
+   the keyboard, which hit-testing never sees); this is what makes the tile feel like one button. */
+body.is-arranging [data-object] * { pointer-events: none; }
 body.is-arranging [data-object]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The selected tile reads as picked without hiding anything: an accent ring plus a faint wash. */
 body.is-arranging [data-object].is-selected {
