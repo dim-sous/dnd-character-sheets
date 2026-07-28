@@ -37,6 +37,7 @@ export const TAB_REGISTRY = [
  *   attacks      → #attacks
  *   abilities    → #abilities
  *   spellcasting → #slots #spell-body #card-spellcasting
+ *   spells       → #spells
  *   inventory    → #inventory
  *   features     → #features
  */
@@ -45,6 +46,11 @@ export const CARD_REGISTRY = {
   attacks: { label: 'Attacks', home: 'combat', cost: 'js', sel: '[data-editcard="attacks"]' },
   abilities: { label: 'Abilities & Skills', home: 'abilities', cost: 'js', sel: '[data-editcard="abilities"]' },
   spellcasting: { label: 'Spellcasting', home: 'spells', cost: 'js', sel: '[data-editcard="spellcasting"]' },
+  // #141. Its own card rather than a section of Spellcasting, which is the whole point of the
+  // issue title: the slots and the spells are tracked at different moments and a player who
+  // wants one on screen does not necessarily want the other. cost:'js' — renderSpells
+  // dereferences #spells with no null check, so it may be hidden but never detached.
+  spells: { label: 'Spells', home: 'spells', cost: 'js', sel: '[data-editcard="spells"]' },
   inventory: { label: 'Inventory', home: 'gear', cost: 'js', sel: '[data-editcard="inventory"]' },
   features: { label: 'Features & Feats', home: 'gear', cost: 'js', sel: '[data-editcard="features"]' },
   identity: { label: 'Identity', home: 'character', cost: 'markup', sel: '[data-editcard="identity"]' },
@@ -54,7 +60,9 @@ export const CARD_REGISTRY = {
 
 /** Card ids in a stable default order (matches today: combat→attacks, inventory→features, …). */
 export const CARD_ORDER = [
-  'combat', 'attacks', 'abilities', 'spellcasting', 'inventory', 'features',
+  // Spells follows Spellcasting: the ability/DC/attack and the slots are the header that gives
+  // the list its numbers, and a reader coming down the tab meets them in that order.
+  'combat', 'attacks', 'abilities', 'spellcasting', 'spells', 'inventory', 'features',
   'identity', 'proficiencies', 'notes',
 ];
 

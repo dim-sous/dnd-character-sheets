@@ -382,7 +382,13 @@ const ACTIONS = {
     // casualty of changing your mind.
     el?.focus?.();
   },
-  'add-row': (el) => state.addRow(el.dataset.list),
+  // #141: a spell level section's "+ Add" carries its level, so adding there creates a spell
+  // already at that level. addRow merges the preset over the row TEMPLATE and only for keys the
+  // template already has, so an attribute here can fill a field but never invent one.
+  'add-row': (el) => state.addRow(
+    el.dataset.list,
+    el.dataset.rowLevel == null ? undefined : { level: Number(el.dataset.rowLevel) },
+  ),
   'remove-row': (el) => state.removeRow(el.dataset.list, Number(el.dataset.index)),
 
   'download-corrupt': () => exportRaw(state.getCorruptRaw()),
@@ -465,7 +471,10 @@ document.addEventListener('click', (event) => {
   // notes. Ephemeral UI state (a class on the row, like card edit mode): no character mutation,
   // resets on the next structural render. Edit mode (fields tappable to type) and taps on the note
   // itself are excluded; a note-less entry has nothing to reveal.
-  const entryRow = event.target.closest('.row--attack, .row--inventory, .row--feature, .row--feat');
+  // .row--spell joins the list unchanged (#141): a spell row is a Feature row in shape — one
+  // visible line over a detail block — so tap-to-reveal comes for free and there is no new
+  // gesture to learn or to test.
+  const entryRow = event.target.closest('.row--attack, .row--inventory, .row--feature, .row--feat, .row--spell');
   if (entryRow && !entryRow.closest('.is-editing')
       && !event.target.closest('.row__notes') && !event.target.closest('.row__detail')) {
     // #67 rows carry a .row__detail block (source / level / text) that ALWAYS has fields worth
@@ -935,6 +944,29 @@ if (startup.corrupt) {
 } else if (!startup.writable) {
   showBanner('This browser is not saving changes (private mode or full storage). Export a backup to keep your work.');
 }
+
+/*
+ * Every spell level prints, whether or not its disclosure was left open (#141).
+ *
+ * This is JS rather than a print rule because a closed <details> is not `display:none` — it is
+ * content containment, the same trap CLAUDE.md documents for measuring one — so overriding
+ * `display` on its children does not reliably reveal them, and "reliably" is the whole
+ * requirement here: a level heading printed with its spells missing is the one output a player
+ * cannot detect from the paper in their hand.
+ *
+ * The screen state is restored afterwards, so printing does not silently unfold the card the
+ * player was reading. `afterprint` fires on cancel as well as on print. Which sections were
+ * open is captured at beforeprint rather than tracked, so nothing has to stay in step.
+ */
+let printReopen = [];
+window.addEventListener('beforeprint', () => {
+  printReopen = [...document.querySelectorAll('.spelllevel__disclosure:not([open])')];
+  for (const details of printReopen) details.open = true;
+});
+window.addEventListener('afterprint', () => {
+  for (const details of printReopen) details.open = false;
+  printReopen = [];
+});
 
 // Phones kill tabs without warning; pagehide is the reliable last call. Flush the layout on
 // its own key alongside the character store (both have independent debounced writes).

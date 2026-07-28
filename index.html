@@ -428,6 +428,25 @@
             </div>
           </section>
 
+          <!-- #141: the spells themselves, as their own card so arrange mode can move, resize
+               and hide them independently of the slots (layout-registry gained a `spells`
+               entry to match). The card is a host renderSpells owns entirely — one <details>
+               per spell level, built from SPELL_LIST_LEVELS, because the sections that exist
+               depend on what the character knows and on whether the card is in Edit mode.
+
+               No "+ Add" in the head: a spell belongs to a level, so the add buttons live one
+               per section and carry the level with them (data-row-level). That is also why the
+               card shows every level in Edit mode and only the stocked ones in play — the same
+               setup/play split the slots above have used since #9. -->
+          <section class="card" id="card-spells" data-editcard="spells">
+            <div class="list__head">
+              <h2 class="card__title">Spells</h2>
+              <output class="spells__count" data-derived="spellsPrepared">—</output>
+              <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="spells" aria-pressed="false">Edit</button>
+            </div>
+            <div id="spells"></div>
+          </section>
+
         </section>
 
         <!-- ======================================================= Gear -->
@@ -651,6 +670,77 @@
       <input type="number" inputmode="numeric" class="slot__total-input" data-type="number">
     </label>
   </div>
+</template>
+
+<!-- #141: one collapsible section per spell level. The real <h3> sits OUTSIDE the <summary>,
+     visually hidden, for the same reason the Conditions tile's does — browsers strip heading
+     semantics from <summary> descendants, which drops every level out of screen-reader heading
+     navigation. The visible title inside the summary is a styled span.
+
+     The count is a data-derived <output>, not text renderSpells writes: ticking Prepared is a
+     DERIVED change, and rebuilding the sections structurally on every tick would collapse the
+     one the player is working in. renderDerived repaints the number in place instead. -->
+<template id="tpl-spell-level">
+  <section class="spelllevel">
+    <h3 class="spelllevel__heading visually-hidden"></h3>
+    <details class="spelllevel__disclosure">
+      <summary class="spelllevel__summary">
+        <span class="spelllevel__marker" aria-hidden="true">▸</span>
+        <span class="spelllevel__title"></span>
+        <output class="spelllevel__count"></output>
+      </summary>
+      <ul class="rows rows--tight spelllevel__rows"></ul>
+      <!-- Carries its level with it, so adding here creates a spell already at this level
+           rather than a cantrip that has to be re-filed (state.addRow's `preset`). -->
+      <button type="button" class="btn btn--small spelllevel__add" data-action="add-row" data-list="spells">+ Add</button>
+    </details>
+  </section>
+</template>
+
+<!-- #141. Two lines, like a feature row: what you scan for on top, what you look up underneath.
+     Prepared is `data-live` — ticking what you have prepared is the thing this card exists for
+     after a long rest, and gating it behind Edit would put a press between the player and the
+     one action they came here to do. It is also cheap to undo, which is the test #65 set for
+     Max HP and the hit-dice count: a mis-tap that rewrites a denominator is Edit-gated, a
+     mis-tap that unticks a visible checkbox is not.
+
+     The level SELECT lives in the detail so a mis-filed spell can be moved without deleting it.
+     It is data-structural, so changing it rebuilds the sections and the row lands in its new
+     one; its options are written by renderSpells from SPELL_LIST_LEVELS rather than authored
+     here, keeping the range in the one place constants.js already defines it. -->
+<template id="tpl-spell">
+  <li class="row row--spell">
+    <div class="row__primary">
+      <label class="row__prepared">
+        <input type="checkbox" data-bind-suffix="prepared" data-type="checkbox" data-live>
+        <span class="visually-hidden">Prepared</span>
+      </label>
+      <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
+      <button type="button" class="row__remove" data-action="remove-row" data-list="spells" aria-label="Remove spell">✕</button>
+    </div>
+    <div class="row__detail">
+      <label class="row__levelpick">
+        <span class="visually-hidden">Spell level</span>
+        <select class="row__levelselect" data-bind-suffix="level" data-type="number" data-structural="true"></select>
+      </label>
+      <!-- Casting time and Range hold words ("1 action", "120 ft") and pair on one line.
+           Duration holds a phrase — "Concentration, up to 1 minute" — so `.row__wide` gives it
+           a line of its own. All three were measured, not guessed: at a shared `1 1 6rem` basis
+           probe.html reported Duration cropping 228px of text into 141px.
+
+           Components is a TEXTAREA, and that is not cosmetic. It is the one field here whose
+           real values outrun a line — "V, M (a pinch of powdered silver worth 10 gp)" needs
+           339px and a full-width row at 390px offers 291 — and a cropped text input in PLAY
+           mode is readOnly, so the player cannot even scroll to read the rest of what they
+           typed. A textarea carries `field-sizing: content`, so it grows to its value instead
+           of hiding the end of it. -->
+      <input type="text" data-bind-suffix="castingTime" placeholder="Casting time" aria-label="Casting time">
+      <input type="text" data-bind-suffix="range" placeholder="Range" aria-label="Range">
+      <input type="text" class="row__wide" data-bind-suffix="duration" placeholder="Duration" aria-label="Duration">
+      <textarea rows="1" class="row__components" data-bind-suffix="components" placeholder="Components" aria-label="Components"></textarea>
+      <textarea rows="2" data-bind-suffix="notes" placeholder="What it does" aria-label="Spell notes"></textarea>
+    </div>
+  </li>
 </template>
 
 <template id="tpl-attack">

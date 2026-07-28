@@ -246,10 +246,27 @@ export function toggleInArray(path, value, on) {
   emit('derived');
 }
 
-export function addRow(listName) {
+/**
+ * `preset` pre-fills fields on the new row (#141). The spell list groups by level into one
+ * <details> per level, so "+ Add" inside the Level 3 section has to create a level-3 spell —
+ * appending a blank one that lands under Cantrips and has to be re-levelled would make the
+ * grouping a thing to fight rather than a thing to use.
+ *
+ * Merged OVER the template and only for keys the template already has, so a preset can fill a
+ * field but never invent one. That matters because the preset arrives from a DOM attribute:
+ * normalizeRow rebuilds every stored row from template keys on load, so a key smuggled in here
+ * would survive in memory, save to localStorage, and then silently disappear on the next open.
+ */
+export function addRow(listName, preset) {
   const char = getActive();
   if (!char) return;
-  getByPath(char, LIST_PATHS[listName]).push(ROW_TEMPLATES[listName]());
+  const row = ROW_TEMPLATES[listName]();
+  if (preset) {
+    for (const key of Object.keys(row)) {
+      if (key in preset) row[key] = preset[key];
+    }
+  }
+  getByPath(char, LIST_PATHS[listName]).push(row);
   emit('structural');
 }
 
