@@ -69,6 +69,10 @@ try {
     spell('Mage Hand', 0),                  // index 2 — cantrip #2, NOT array index 1
     spell('Misty Step', 2, true),           // index 3
     spell('Magic Missile', 1),              // index 4
+    // #154: the long-name fixture. Every geometry check below is about what happens when a real
+    // spell name meets a 44px tick, a ✕ and a caret on a 390px line — with only "Shield" in here
+    // the row is 69px of name in 220px of space and the probe reports PASS through all of it.
+    spell('Otiluke\u2019s Irresistible Dance', 2),  // index 5
   ];
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
@@ -302,6 +306,103 @@ try {
   await wait(250);
   ok('tapping the row reveals its detail', row.classList.contains('is-expanded'));
   ok('...and the detail is really visible', row.querySelector('.row__detail').checkVisibility() === true);
+
+  /*
+   * --- #154: the row is a line, not a card ----------------------------------------------
+   *
+   * Two claims, both invisible to every other check here. The de-slabbing is the one CLAUDE.md
+   * warns about specifically: a rule whose whole job is to REMOVE a default breaks no tap target,
+   * crops no value and fails no contrast pairing, so an unbalanced comment above it deletes the
+   * rule and every probe still passes while the card visibly reverts. Assert the computed result.
+   */
+  const cs = (el) => W.getComputedStyle(el);
+  const bare = (el) => {
+    const st = cs(el);
+    return {
+      bg: st.backgroundColor,
+      pad: st.paddingTop,
+      border: st.borderTopWidth,
+      ok: /^(transparent$|rgba\(0, 0, 0, 0\)$)/.test(st.backgroundColor)
+        && parseFloat(st.paddingTop) === 0 && parseFloat(st.borderTopWidth) === 0,
+    };
+  };
+  const spellBare = bare(rowsIn(1)[0]);
+  ok('a spell row is de-slabbed, like the Hit Point Dice row (#154)', spellBare.ok,
+    `bg ${spellBare.bg}, padding ${spellBare.pad}, border ${spellBare.border}`);
+
+  /*
+   * And it is ONE line — with a real long name, in BOTH modes. A wrapped row is 96px instead of
+   * 44 and leaves two lone controls under a title; in an eighteen-row card that is the ragged
+   * column #154 was filed about. The name gives way instead, which is asserted as "it ellipsizes"
+   * rather than "it fits": at 390px in Edit it genuinely cannot fit, and pretending otherwise is
+   * how the fixture ends up being chosen to make the test pass.
+   */
+  const longRow = () => rowsIn(2).find((r) => nameField(r).value.includes('Irresistible'));
+  const lineHeight = (row) => row.querySelector('.row__primary').getBoundingClientRect().height;
+  const fits = (row) => nameField(row).scrollWidth <= nameField(row).clientWidth + 1;
+  ok('a long spell name keeps its row on one line in play mode',
+    lineHeight(longRow()) <= 60, `${Math.round(lineHeight(longRow()))}px tall`);
+  /*
+   * PLAY mode is the promise: a 28-character spell name is fully readable, because the ✕ is not
+   * on the line here and the name gets the width it would have spent on it. This is the half of
+   * the trade that has to hold — a player spends essentially all their time in this mode.
+   *
+   * (The first draft of this check asserted `scrollWidth >= clientWidth`, which is true of every
+   * field that fits exactly and therefore asserted nothing at all: it reported "needs 205 in 205"
+   * and passed. Same trap as the toggle checked an even number of times in #146.)
+   */
+  ok('...and it is fully readable there, not truncated', fits(longRow()),
+    `needs ${nameField(longRow()).scrollWidth} in ${nameField(longRow()).clientWidth}`);
+  ok('...and the ✕ and the caret are not on a second line',
+    Math.abs(longRow().querySelector('.row__expand').getBoundingClientRect().top
+      - nameField(longRow()).getBoundingClientRect().top) < 12);
+
+  editBtn().click();
+  await wait(400);
+  section(2).querySelector('details').open = true;
+  await wait(200);
+  ok('one line in Edit too, where the ✕ joins the line',
+    lineHeight(longRow()) <= 60, `${Math.round(lineHeight(longRow()))}px tall`);
+  /*
+   * ...and this is the half that gives: in Edit the same name genuinely cannot fit beside a tick,
+   * a ✕ and a caret at 390px, so it ellipsizes rather than the row growing to 96px. Asserted as a
+   * FACT rather than hidden, because it is the cost of #154 and someone should have to look at it
+   * before changing this line. probe.html reports the same truncation as a note on its verdict.
+   */
+  ok('...and in Edit the name is the thing that gives way, not the row', !fits(longRow()),
+    `needs ${nameField(longRow()).scrollWidth} in ${nameField(longRow()).clientWidth}`);
+  editBtn().click();
+  await wait(400);
+
+  /*
+   * The unticked box has to be VISIBLE. It was not: the base checkbox draws `--line` on `--card`,
+   * measured 1.38:1 in dark, and a player looking at an unprepared spell saw an empty gap where
+   * the control is. WCAG 1.4.11 asks 3:1 for the boundary of a control, and the probe.html
+   * contrast audit reads TEXT only, so nothing else here would ever have noticed.
+   *
+   * Colours are read off a 1x1 canvas rather than regexed out of the computed string — this
+   * stylesheet uses color-mix, which computes to color(srgb …) and defeats an rgba() pattern.
+   */
+  const cv = document.createElement('canvas');
+  cv.width = 1; cv.height = 1;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  const rgba = (value) => {
+    cx.clearRect(0, 0, 1, 1);
+    cx.fillStyle = '#000';
+    cx.fillStyle = value;
+    cx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = cx.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
+  };
+  const chan = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const lum = (c) => 0.2126 * chan(c.r) + 0.7152 * chan(c.g) + 0.0722 * chan(c.b);
+  const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+  const unticked = rowsIn(1).map((r) => r.querySelector('[data-bind$=".prepared"]')).find((b) => !b.checked);
+  const boxEdge = rgba(cs(unticked).borderTopColor);
+  const behind = rgba(cs(card()).backgroundColor);
+  const edgeContrast = ratio(boxEdge, behind);
+  ok('an unticked Prepared box is visible against the card (WCAG 1.4.11, 3:1)',
+    edgeContrast >= 3, `${edgeContrast.toFixed(2)}:1`);
 
   // --- print: every shut section opens, then goes back ----------------------------------
   editBtn().click();                                  // Edit closes them all
