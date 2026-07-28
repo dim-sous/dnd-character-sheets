@@ -90,6 +90,29 @@ try {
   ];
   c.inventory = [{ name: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
   /*
+   * #145: features and feats, seeded for the reason every list above is seeded — an empty one
+   * renders its empty-state line and nothing else, so the row is never measured and the card
+   * reports PASS at every width and theme without the thing it exists to show having been looked
+   * at once. These two lists had gone unseeded since #67 shipped them.
+   *
+   * Short row and long row again. A subclass feature name really does run this long, and it is
+   * the fixture that decides whether a primary line carrying the ✕ and #147's reveal button
+   * still fits at 390px. The detail values are long for the same reason one level down: source,
+   * level and a description share a wrapping flex line, and the description is a textarea whose
+   * height the audit only sees once something opens the block.
+   */
+  c.features = [
+    { name: 'Second Wind', source: 'Fighter', level: '1', text: 'Regain 1d10+5 HP as a Bonus Action.' },
+    {
+      name: 'Improved Divine Smite (Oath of Devotion)', source: 'Paladin', level: '11',
+      text: 'Every melee weapon hit deals an extra 1d8 radiant damage, and a Channel Divinity option comes with it.',
+    },
+  ];
+  c.feats = [
+    { name: 'Alert', source: 'Origin', text: '+PB to initiative.' },
+    { name: 'Great Weapon Master', source: 'General', text: 'A heavy weapon crit or kill grants a bonus attack with the same weapon.' },
+  ];
+  /*
    * #140: the same short-row/long-row pairing, and for the same reason. An UNSEEDED Resources
    * tile renders only its empty-state line, so the row's three fields and its ✕ are never
    * measured — the tile passes at every width and theme while the thing it exists to show has
@@ -632,6 +655,26 @@ try {
 
   await tab('gear');
   report.scenes.push(auditScene('gear / view'));
+
+  /*
+   * #145/#147: Features & Feats, which lives on this tab, has three states and the scene above
+   * reaches one. Edit adds the ✕ and the two "+ Add" buttons; a row's detail block (source /
+   * level / description textarea) is `display:none` until something opens it, so its controls are
+   * invisible to every measurement until then — and as of #147 that is true in Edit mode too,
+   * which is the change: Edit used to force every block open, so this scene would have measured
+   * them by accident and stopped doing so silently.
+   *
+   * Opened by setting the class rather than clicking the button, for the same reason the spell
+   * sections are: the gesture is what probe-detail-rows.html tests, and the job here is only to
+   * get the controls on screen so they can be sized and contrast-checked.
+   */
+  await edit('features');
+  for (const row of d.querySelectorAll('#features .row--feature, #feats .row--feat')) {
+    row.classList.add('is-expanded');
+  }
+  await settle(200);
+  report.scenes.push(auditScene('gear / features edit, rows expanded'));
+  await edit('features');
   await tab('character');
   report.scenes.push(auditScene('character / view'));
 

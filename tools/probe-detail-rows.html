@@ -1,0 +1,253 @@
+<!doctype html>
+<!--
+  #147 — the reveal control on the rows whose hidden half is a BLOCK of fields
+  (.row--feature, .row--feat, .row--spell).
+
+  What changed, and why none of it is visible to the DOM-free suite: Edit mode used to force
+  every detail block open (`.is-editing .row--feature > .row__detail{display:flex}`), so unlocking
+  a card of eight features unfolded twenty-four fields at once and the row you wanted was a screen
+  and a half down. Rows now start shut in BOTH modes and open one at a time — which needs
+  something to tap, because in Edit the name input grows to fill the line and the ::after caret
+  that used to serve as the affordance is not a control: it cannot be tabbed to, cannot say
+  whether it is open, and cannot be given a 44px target without covering the ✕ beside it.
+
+  So this probe holds the things only a browser can answer:
+
+    - a row is shut in Edit mode (the whole point) and the button opens exactly one of them;
+    - the button and ✕ are both really hittable — elementFromPoint, not a size check, because
+      two 44px boxes on one line is exactly the geometry #115 got wrong;
+    - aria-expanded tracks BOTH ways in (the button and the play-mode tap-anywhere gesture),
+      which is the thing that silently drifts once there are two;
+    - a tap on the name field in Edit types rather than toggling;
+    - the primary line does not wrap when a real (long) name meets the two buttons — a wrapped
+      line is 50px of extra row height per row and no other check would call it a failure.
+
+  Run it like the other probes; it prints ALL PASS or the failures. It reseeds localStorage,
+  including the layout keys, so it never inherits another run's arrangement.
+-->
+<meta charset="utf-8">
+<title>detail-row reveal probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+const is = (name, actual, expected) => {
+  const pass = Object.is(actual, expected);
+  results.push(`${pass ? 'PASS' : 'FAIL'}  ${name}   got ${JSON.stringify(actual)}${pass ? '' : ` — expected ${JSON.stringify(expected)}`}`);
+};
+
+try {
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+
+  /*
+   * A short row and a deliberately long one, the fixture rule the rest of this repo's probes
+   * already follow: every field here is free-form, so "what a player actually types" is the load.
+   * "Improved Divine Smite (Oath of Devotion)" is not an unfair name — subclass features print
+   * that long — and it is the row that decides whether the primary line still fits two 44px
+   * buttons at 390px.
+   */
+  const c = blankCharacter();
+  c.name = 'Thorin Blackhand'; c.class = 'Paladin'; c.level = 11;
+  c.spellcasting.ability = 'cha';
+  c.features = [
+    { name: 'Lay on Hands', source: 'Paladin', level: '1', text: 'Pool of 55 hit points.' },
+    {
+      name: 'Improved Divine Smite (Oath of Devotion)', source: 'Paladin', level: '11',
+      text: 'Every melee weapon hit deals an extra 1d8 radiant damage, and a Channel Divinity option comes with it.',
+    },
+  ];
+  c.feats = [
+    { name: 'Alert', source: 'Origin', text: '+PB to initiative.' },
+    { name: 'Great Weapon Master', source: 'General', text: 'Heavy weapon crits and kills grant a bonus attack.' },
+  ];
+  c.spellcasting.spells = [
+    { name: 'Shield of Faith', level: 1, prepared: true, castingTime: '1 bonus action', range: '60 feet', duration: 'Concentration, up to 10 minutes', components: 'V, S, M (a small parchment with holy text)', notes: '+2 AC.' },
+  ];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+  }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const frame = document.getElementById('frame');
+  await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+  await wait(1200);
+  const d = frame.contentDocument;
+
+  const rows = (sel) => [...d.querySelectorAll(sel)];
+  const featureRows = () => rows('#features .row--feature');
+  const expandOf = (row) => row.querySelector('.row__expand');
+  const detailOf = (row) => row.querySelector('.row__detail');
+  const nameOf = (row) => row.querySelector('[data-bind$=".name"]');
+  const cardEdit = (id) => d.querySelector(`[data-editcard="${id}"] .card__edit`);
+  const box = (el) => el.getBoundingClientRect();
+  /*
+   * Hittability, not size (#115): an absolutely-positioned pseudo-element whose owner is
+   * `position: static` resolves against some ancestor and can cover a control that measures
+   * perfectly. elementFromPoint accounts for stacking, pointer-events and clipping at once.
+   */
+  const hits = (el) => {
+    const r = box(el);
+    const at = d.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return at === el || el.contains(at);
+  };
+
+  d.getElementById('tab-gear').click();
+  await wait(300);
+
+  // --- the control exists on all three row types, and only those ------------------------
+  ok('a feature row carries a reveal button', Boolean(expandOf(featureRows()[0])));
+  ok('a feat row does too', Boolean(expandOf(rows('#feats .row--feat')[0])));
+  ok('an attack row does NOT — its hidden half is one optional note, and the ::after caret plus '
+    + 'tap-anywhere still covers it', rows('.row--attack').every((r) => !expandOf(r)));
+
+  // --- play mode: shut, and the button opens it -----------------------------------------
+  const feature = featureRows()[0];
+  ok('the detail block starts hidden in play mode', detailOf(feature).checkVisibility() === false);
+  is('...and the button says so', expandOf(feature).getAttribute('aria-expanded'), 'false');
+
+  const b = box(expandOf(feature));
+  ok('the button clears 44px', Math.min(b.width, b.height) >= 44, `${Math.round(b.width)}x${Math.round(b.height)}`);
+  ok('...and is really hittable at its centre', hits(expandOf(feature)));
+
+  expandOf(feature).click();
+  await wait(200);
+  ok('tapping it opens the row', feature.classList.contains('is-expanded'));
+  ok('...and the detail is really visible', detailOf(feature).checkVisibility() === true);
+  is('...and the button now says expanded', expandOf(feature).getAttribute('aria-expanded'), 'true');
+  ok('...while its neighbour stays shut', !featureRows()[1].classList.contains('is-expanded'));
+  expandOf(feature).click();
+  await wait(200);
+  ok('tapping it again shuts the row', !feature.classList.contains('is-expanded'));
+  is('...and the button goes back', expandOf(feature).getAttribute('aria-expanded'), 'false');
+
+  // The play-mode gesture is unchanged — and it has to keep aria-expanded honest, which is the
+  // thing that drifts the moment there are two ways in. One helper sets both (main.js).
+  nameOf(feature).click();
+  await wait(200);
+  ok('tapping the row still opens it in play mode', feature.classList.contains('is-expanded'));
+  is('...and the BUTTON knows, though the tap never touched it',
+    expandOf(feature).getAttribute('aria-expanded'), 'true');
+  nameOf(feature).click();
+  await wait(200);
+  ok('and shuts it again', !feature.classList.contains('is-expanded'));
+
+  // Keyboard: a pseudo-element could never be reached at all. This is the whole reason the
+  // affordance became a real button rather than a bigger caret.
+  expandOf(feature).focus();
+  ok('the button takes focus', d.activeElement === expandOf(feature));
+  expandOf(feature).blur();
+
+  // --- EDIT MODE: the point of #147 ------------------------------------------------------
+  cardEdit('features').click();
+  await wait(400);
+  ok('every row is still shut when the card unlocks (#147)',
+    featureRows().every((r) => !r.classList.contains('is-expanded'))
+      && featureRows().every((r) => detailOf(r).checkVisibility() === false),
+    `${featureRows().filter((r) => detailOf(r).checkVisibility()).length} of ${featureRows().length} open`);
+  ok('the feats beside them are shut too',
+    rows('#feats .row--feat').every((r) => detailOf(r).checkVisibility() === false));
+  ok('the reveal button survives into Edit (the ::after caret does not — it is content:none there)',
+    expandOf(featureRows()[0]).checkVisibility() === true);
+
+  const long = featureRows()[1];
+  expandOf(long).click();
+  await wait(200);
+  ok('the button opens a row in Edit mode', detailOf(long).checkVisibility() === true);
+  ok('...and opens only that one', detailOf(featureRows()[0]).checkVisibility() === false);
+  ok('...and its fields are editable, not the read-only view rendering',
+    detailOf(long).querySelector('textarea').readOnly === false);
+
+  /*
+   * In Edit a tap on the name field must TYPE, not fold the row. That is why the tap-anywhere
+   * gesture stays play-mode-only and the button is the way in here: the name input grows to fill
+   * the line, so "tap the row" and "tap the field" are the same tap.
+   */
+  const openBefore = detailOf(featureRows()[0]).checkVisibility();
+  nameOf(featureRows()[0]).focus();
+  nameOf(featureRows()[0]).click();
+  await wait(200);
+  is('tapping the name field in Edit does not toggle the row',
+    detailOf(featureRows()[0]).checkVisibility(), openBefore);
+  ok('...it focuses it to type', d.activeElement === nameOf(featureRows()[0]));
+
+  /*
+   * --- geometry: two 44px buttons and a real name on a 390px line ------------------------
+   *
+   * The trade #147 had to make. A 44px button plus its gap is 52px, and in Edit the ✕ is another
+   * 52 — measured at 390px, the long name here needed 305px and the old fixed-width arithmetic
+   * gave it 201, so a player could not read the name of their own feature. The name now flexes
+   * from `min-content`, so a row that cannot fit both spends a SECOND LINE on the buttons rather
+   * than a third of every name in the card.
+   *
+   * Which makes the assertion "the value is readable", not "the row is one line" — and both
+   * halves matter: a short row must NOT wrap (or every card grows 52px per row for nothing), and
+   * a long name must not be cropped (or the buttons have quietly eaten it).
+   */
+  const cropped = (el) => el.scrollWidth > el.clientWidth + 1;
+  const shortLine = box(featureRows()[0].querySelector('.row__primary')).height;
+  ok('a short name keeps its row on one line in Edit', shortLine <= 60, `${Math.round(shortLine)}px tall`);
+  ok('a long name is not cropped by the buttons beside it in Edit (#145)', !cropped(nameOf(long)),
+    `needs ${nameOf(long).scrollWidth} in ${nameOf(long).clientWidth}`);
+  ok('✕ is hittable with the caret beside it', hits(long.querySelector('.row__remove')));
+  ok('...and the caret is hittable with ✕ beside it', hits(expandOf(long)));
+  ok('they do not overlap',
+    box(long.querySelector('.row__remove')).right <= box(expandOf(long)).left + 0.5,
+    `✕ right ${Math.round(box(long.querySelector('.row__remove')).right)}, caret left ${Math.round(box(expandOf(long)).left)}`);
+  cardEdit('features').click();
+  await wait(300);
+  ok('...and it is not cropped in play mode either', !cropped(nameOf(featureRows()[1])),
+    `needs ${nameOf(featureRows()[1]).scrollWidth} in ${nameOf(featureRows()[1]).clientWidth}`);
+
+  // --- the spell row is the same shape and gets the same control ------------------------
+  d.getElementById('tab-spells').click();
+  await wait(300);
+  const spell = d.querySelector('.row--spell');
+  ok('a spell row carries the reveal button too', Boolean(expandOf(spell)));
+  ok('...and its Prepared tick still owns its own tap (#146)',
+    (() => { spell.querySelector('[data-bind$=".prepared"]').click(); return !spell.classList.contains('is-expanded'); })());
+  await wait(400);
+  expandOf(spell).click();
+  await wait(200);
+  ok('the button opens a spell row', detailOf(spell).checkVisibility() === true);
+  const spellLine = box(spell.querySelector('.row__primary')).height;
+  ok('a spell primary line (tick + name + caret) does not wrap in play mode',
+    spellLine <= 60, `${Math.round(spellLine)}px tall`);
+
+  cardEdit('spells').click();
+  await wait(400);
+  const spellNow = d.querySelector('.row--spell');
+  ok('spell rows start shut in Edit as well',
+    detailOf(spellNow).checkVisibility() === false);
+  const spellEditLine = box(spellNow.querySelector('.row__primary')).height;
+  ok('...and the Edit line (tick + name + ✕ + caret) does not wrap either',
+    spellEditLine <= 60, `${Math.round(spellEditLine)}px tall`);
+  cardEdit('spells').click();
+  await wait(300);
+
+  ok('the document does not scroll sideways at 390px',
+    d.documentElement.scrollWidth <= 390, `scrollWidth ${d.documentElement.scrollWidth}`);
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
+}
+</script>
