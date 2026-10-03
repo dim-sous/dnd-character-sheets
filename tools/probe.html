@@ -823,6 +823,26 @@ try {
   await settle(250);
   report.scenes.push(auditScene('arrange / tabs & defaults open'));
 
+  /*
+   * #162: the layout backup dialog. Like the picker, none of it is on the sheet, so no other
+   * scene reaches a control in it — and a SHUT dialog measures 0x0, so without a scene that opens
+   * it the four buttons, the status line and the JSON textarea are never looked at once. That is
+   * the unseeded-list mistake in a different shape.
+   *
+   * sceneRoot() scopes every walk to `dialog[open]`, so this is audited on its own and the sheet
+   * behind it is correctly skipped. It has to be closed again before the arrange-toggle below, or
+   * the remaining scenes measure the dialog instead of the bar.
+   *
+   * The textarea is seeded with the REAL export rather than left empty: an empty box is 8 rows of
+   * nothing, and what needs measuring is a monospace blob with long lines — which is what decides
+   * whether the dialog overflows sideways at 390px.
+   */
+  d.querySelector('.arrange-more [data-action="layout-transfer-open"]')?.click();
+  await settle(400);
+  report.scenes.push(auditScene('arrange / layout backup open'));
+  d.querySelector('#layout-transfer')?.close();
+  await settle(200);
+
   d.querySelector('.arrange-bar [data-action="arrange-toggle"]')?.click();
   await settle();
 

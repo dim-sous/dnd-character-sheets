@@ -1993,6 +1993,45 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 .picker__foot { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: space-between; }
 .picker__attrib { margin: 0; font-size: var(--text-2xs); color: var(--ink-faint); }
 
+/* ---- layout backup (#162) -------------------------------------------------------
+   Wider than the 26rem `.dialog` cap because the content is JSON: at 26rem a layout wraps into
+   an unreadable ribbon, and the box is the fallback transport when the clipboard API is blocked,
+   so it has to be legible enough to select deliberately.
+
+   Same grid reasoning as `.picker`: `minmax(0, 1fr)` on the textarea row is what lets the box be
+   SMALLER than its content and scroll internally. Without it `field-sizing: content` (set on
+   every textarea in style.css) grows the textarea to fit a 400-line blob, which grows the dialog
+   past the viewport and takes the buttons off screen with it. `field-sizing: fixed` here is the
+   other half of that: the row sizes the box, the content does not. */
+.dialog--layout {
+  width: min(96vw, 40rem);
+  max-width: min(96vw, 40rem);
+  padding: 0;
+  overflow: hidden;
+}
+.layoutio {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  max-height: min(92vh, 44rem);
+  padding: var(--space-4);
+  gap: var(--space-2);
+}
+/* `wrap="off"` in the markup plus `overflow: auto` keeps one JSON line on one line — a wrapped
+   blob reads as a wall and a horizontal scroll is the honest affordance. monospace because this
+   is the one place in the app showing the player machine-readable text. */
+.layoutio__json {
+  width: 100%;
+  min-height: 8rem;
+  field-sizing: fixed;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: max(16px, var(--text-xs));   /* the iOS-zoom floor still applies */
+  line-height: 1.45;
+  white-space: pre;
+  resize: vertical;
+}
+.layoutio__status { font-size: var(--text-sm); color: var(--ink-soft); min-height: 1.4em; }
+
 /* A result: name + summary on the left, Add on the right, description underneath when opened.
    Grid rather than flex so the description spans both columns without a wrapper. */
 .result {
@@ -2044,6 +2083,11 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   /* .obj-ctl / .obj-rename dropped here (#72): the in-tile overlay is gone, and the object
      controls now live inside .arrange-bar, which this line already hides. */
   .sidebar__foot, .banner, .arrange-bar, .card__move, .card__rename,
+  /* An OPEN <dialog> is in the top layer and was not on this list, so printing with one up put a
+     modal over the sheet. Pre-existing for the spell picker; it matters more now that the layout
+     backup dialog is reachable from the character list rather than only from a card's Edit mode
+     (#162). A shut dialog is already not rendered, so this only ever hides a real overlay. */
+  dialog,
   .dropslot { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }

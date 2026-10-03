@@ -56,6 +56,17 @@
         <button type="button" class="btn" id="btn-import">Import</button>
       </div>
       <p class="hint">Characters are stored on this device only. Export all is your backup.</p>
+      <hr class="rule">
+      <!-- #162. The PRIMARY entry point lives here rather than only in the arrange bar, because
+           #btn-arrange is hidden whenever there are no characters (renderSheet: "the layout gear
+           only makes sense with a sheet up") — and zero characters is exactly the fresh-install
+           or cleared-storage moment this exists for. Needs no mode, and sits with the other
+           backup controls. Mirrored in the arrange bar's Tabs & defaults disclosure, sharing this
+           one data-action and one dialog. -->
+      <div class="btn-row">
+        <button type="button" class="btn" data-action="layout-transfer-open">Layout backup</button>
+      </div>
+      <p class="hint">Your tab and tile arrangement is separate, and is not in a character export.</p>
       <input type="file" id="file-import" accept=".json,application/json" hidden>
     </div>
   </aside>
@@ -117,6 +128,10 @@
                  saved default and fell back to the shipped layout only when that key was
                  ABSENT, and nothing ever cleared it. This clears it. -->
             <button type="button" class="btn btn--small" data-action="arrange-reset-factory">Reset to original</button>
+            <!-- #162: the same dialog as the character list's "Layout backup". Here because this
+                 is where a player is when they have just finished arranging and want to keep it.
+                 Inside the closed <details>, so neither arrange-bar height budget moves. -->
+            <button type="button" class="btn btn--small" data-action="layout-transfer-open">Back up layout</button>
           </div>
         </div>
       </details>
@@ -691,6 +706,56 @@
       <button type="submit" class="btn btn--danger" value="replace">Replace all</button>
     </menu>
   </form>
+</dialog>
+
+<!-- Layout transfer (#162). A layout had no backup path at all: it lives under its own
+     localStorage key, it is NOT in a character export, and the README called export "the only
+     backup" while meaning characters only — so a reinstall or a cleared site took an arrangement
+     that is a dozen deliberate decisions deep, and there was no way to move one to a second
+     device or hand a table a shared starting point.
+
+     One dialog for both directions, because they are the same text: the textarea is the export
+     (copy it out of here) AND the import (paste one in). That is deliberate on a phone, where a
+     downloaded file is awkward to get at and a pasted message is not — and it is the fallback
+     when the clipboard API is blocked, which is why the box must stay selectable.
+
+     NOT readonly: `textarea:read-only` drops border-color and background (style.css), so a
+     readonly box would paint a 1.00:1 edge against the card — the #159 failure class, which
+     probe.html's controlEdgeFailures does not walk textareas to catch.
+
+     No data-bind/data-toggle anywhere in here: INPUT_ROUTES' "live field" route claims anything
+     carrying one and would hand state.updateActive a bogus path. Same reason the picker's search
+     box carries neither. -->
+<dialog class="dialog dialog--layout" id="layout-transfer" aria-labelledby="layout-transfer-title">
+  <div class="layoutio">
+    <div class="picker__head">
+      <h2 class="dialog__title" id="layout-transfer-title">Layout backup</h2>
+      <button type="button" class="icon-btn" data-action="layout-transfer-close" aria-label="Close layout backup">✕</button>
+    </div>
+
+    <p class="dialog__body hint">
+      This is your tab, card and tile arrangement — not your characters. Copy it somewhere safe,
+      or paste one in and press <strong>Replace layout</strong>. Characters are untouched either way.
+    </p>
+
+    <label class="visually-hidden" for="layout-json">Layout JSON</label>
+    <textarea id="layout-json" class="layoutio__json" rows="8" spellcheck="false"
+              autocapitalize="off" autocorrect="off" autocomplete="off" wrap="off"></textarea>
+
+    <!-- Visible AND announced, modelled on #spell-picker-status. It cannot be #banner or
+         #play-status: both sit inside <main>, which is in the modal's inert shadow while this is
+         open, so a parse error written there is invisible and undismissable. It cannot be
+         #arrange-status either — that one is .visually-hidden, and a sighted player pasting bad
+         JSON would get no feedback at all. -->
+    <span class="layoutio__status" id="layout-transfer-status" role="status" aria-live="polite"></span>
+
+    <menu class="dialog__actions">
+      <button type="button" class="btn btn--small" data-action="layout-copy">Copy</button>
+      <button type="button" class="btn btn--small" data-action="layout-download">Download</button>
+      <button type="button" class="btn btn--small btn--danger" data-action="layout-import">Replace layout</button>
+      <button type="button" class="btn btn--small btn--primary" data-action="layout-transfer-close">Done</button>
+    </menu>
+  </div>
 </dialog>
 
 <!-- ------------------------------------------------------------ templates -->

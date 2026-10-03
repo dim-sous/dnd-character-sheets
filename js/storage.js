@@ -258,13 +258,31 @@ export function save(characters) {
   }
 }
 
-function today() {
+/**
+ * Today as `YYYY-MM-DD`. Exported for #162: the layout exporter needs the same date string, and
+ * every function that bakes it into a filename or an envelope takes it as an argument so the
+ * tests do not depend on what day it is.
+ */
+export function today() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function downloadFile(text, filename) {
+/**
+ * Hand the browser a JSON file to save.
+ *
+ * Exported for #162 so the layout exporter reuses it instead of growing a second copy — the
+ * `setTimeout` below is the whole reason not to write this twice, and a duplicate that revokes
+ * immediately cancels the download in some browsers. This is the one place the layout feature
+ * touches storage.js, and it is additive: nothing here learns what a layout is, and the character
+ * persistence path is unchanged. (CLAUDE.md calls a layout change that FORCES a storage.js change
+ * a smell; reusing an existing DOM helper that knows nothing about characters is not that.)
+ *
+ * Note this module is "DOM-free" only at module scope — the suite imports storage.js and never
+ * calls this, so Node never evaluates the Blob/anchor path.
+ */
+export function downloadFile(text, filename) {
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
