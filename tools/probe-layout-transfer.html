@@ -1,0 +1,323 @@
+<!doctype html>
+<!--
+  Regression check for #162: the layout backup dialog — export text, paste-to-import, and the
+  refusals that stop a paste from quietly factory-resetting the player's arrangement.
+
+  Why a separate page rather than an addition to probe-arrange-fn.html / probe-arrange-place.html:
+  both of those hang every assertion off the UNTOUCHED default order (probe-arrange-place captures
+  `order0` and then proves undo and the factory reset against it), and this one has to REPLACE the
+  whole layout mid-run. Sharing a run would leave those mutations under the other probes'
+  assertions, which is the same reason those two are already split from each other.
+
+  What is here and not in tests.js: the pure suite covers the envelope and every refusal
+  (`describe('layout export / import (#162)')`), but it cannot see that the textarea is wired to
+  the LIVE layout, that a refusal leaves the live layout alone, that an import with a different
+  tab set still leaves exactly one panel visible, that Escape inside the dialog does not drop the
+  player out of arrange mode, or that the dialog is reachable at all with zero characters — which
+  is the fresh-install moment the feature exists for.
+
+  Run it like probe.html; prints ALL PASS or the failing checks. Reseeds both layout keys.
+-->
+<meta charset="utf-8">
+<title>layout transfer probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+// eq, not Object.is: comparing two arrays with Object.is prints identical text on both sides of
+// a failure, which is the trap probe-spell-picker.html records.
+const eq = (name, a, b) => ok(name, JSON.stringify(a) === JSON.stringify(b), `${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
+
+const LAYOUT_KEY = 'dnd-character-sheets:layout';            // colons, not hyphens (layout-view.js)
+const LAYOUT_DEFAULT_KEY = 'dnd-character-sheets:layout-default';
+
+try {
+  // Kill the worker first or every assertion below measures the last build.
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const { CARD_ORDER } = await import('../js/layout-registry.js');
+  const { LAYOUT_FILE_KIND } = await import('../js/layout.js');
+
+  const seed = () => {
+    const c = blankCharacter();
+    c.name = 'Probe'; c.class = 'Wizard'; c.level = 5; c.hp.max = 32; c.hp.current = 32;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+    }));
+    // Both keys, every run. probe-arrange-place.html deliberately saves a WRECKED layout as the
+    // default, so inheriting it would make resetLayout restore garbage and read as an import bug.
+    localStorage.removeItem(LAYOUT_KEY);
+    localStorage.removeItem(LAYOUT_DEFAULT_KEY);
+  };
+
+  const frame = document.getElementById('frame');
+  const load = async () => {
+    await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+    await wait(1200);
+  };
+
+  seed();
+  await load();
+  let d = frame.contentDocument;
+  let w = frame.contentWindow;
+  w.confirm = () => true;   // the import is gated on confirm(), like arrange-reset-factory
+
+  const $ = (sel) => d.querySelector(sel);
+  const dialog = () => $('#layout-transfer');
+  const box = () => $('#layout-json');
+  const status = () => $('#layout-transfer-status').textContent;
+  const tabButtonIds = () => [...d.querySelectorAll('.tabbar .tab')].map((b) => b.id);
+  const visiblePanels = () => [...d.querySelectorAll('.tabpanel')].filter((p) => !p.hidden).map((p) => p.id);
+  const selectedTabs = () => [...d.querySelectorAll('.tabbar .tab')].filter((b) => b.getAttribute('aria-selected') === 'true').map((b) => b.id);
+  // A real keystroke. A script-assigned .value sets no dirty flag — harmless for this particular
+  // handler, which reads .value directly, but typing also proves the box is not readonly, and a
+  // readonly textarea is the #159 invisible-edge class (textarea:read-only drops its border).
+  const typeInto = (el, text) => {
+    el.focus();
+    el.setSelectionRange(0, el.value.length);
+    d.execCommand('insertText', false, text);
+  };
+
+  /* ---------------------------------------------------- 1. the export side */
+
+  // No :layout key exists yet — nothing has been arranged. The export must still carry the live
+  // arrangement, because loadLayout never writes and a storage read would hand back nothing on
+  // exactly the devices where that failure is least visible.
+  ok('no layout key before arranging', localStorage.getItem(LAYOUT_KEY) === null);
+
+  ok('the dialog starts shut', !dialog().open);
+  ok('a shut dialog measures nothing (probe.html skips it)',
+    dialog().getBoundingClientRect().height === 0);
+
+  // Through the drawer, which is the only path a real user has at phone width: a CLOSED
+  // off-canvas sidebar is `inert` on purpose (syncInert: "Tab can't land on controls that are
+  // slid out of sight"), so clicking its buttons directly measures something unreachable — and
+  // focus can never be returned into it either.
+  $('#btn-menu').click();
+  await wait(400);
+  ok('the drawer opens', d.body.classList.contains('drawer-open'));
+  ok('the open drawer is not inert', d.querySelector('#sidebar').inert === false);
+
+  $('.sidebar [data-action="layout-transfer-open"]').click();
+  await wait(300);
+  ok('the character list opens the dialog', dialog().open);
+  // openDrawer sets main.inert; a modal <dialog> is in the top layer, so that must not reach it.
+  ok('the dialog is usable over the open drawer', dialog().contains(d.activeElement),
+    d.activeElement ? d.activeElement.id || d.activeElement.tagName : 'null');
+  ok('the dialog is modal (it is the top layer)', d.querySelector('dialog[open]') === dialog());
+
+  const exported = box().value;
+  let parsed = null;
+  try { parsed = JSON.parse(exported); } catch { /* reported below */ }
+  ok('the textarea holds parseable JSON', parsed !== null, `${exported.length} chars`);
+  ok('the export carries the kind discriminator', parsed && parsed.kind === LAYOUT_FILE_KIND);
+  ok('the export nests the payload', Boolean(parsed && parsed.layout && Array.isArray(parsed.layout.tabs)));
+  eq('the export reflects the LIVE tab set',
+    parsed.layout.tabs.map((t) => `tab-${t.id}`), tabButtonIds());
+  ok('the export names every card exactly once',
+    parsed.layout.tabs.flatMap((t) => t.cards).length === CARD_ORDER.length,
+    `${parsed.layout.tabs.flatMap((t) => t.cards).length} of ${CARD_ORDER.length}`);
+
+  // The box is the fallback transport when the clipboard API is blocked, so it must be editable.
+  ok('the JSON box is NOT readonly', box().readOnly === false);
+  ok('the JSON box carries no data-bind/data-toggle (INPUT_ROUTES must not claim it)',
+    !box().hasAttribute('data-bind') && !box().hasAttribute('data-toggle'));
+  {
+    // A rule whose whole job is to be visible: assert the computed result, not the stylesheet.
+    const cs = w.getComputedStyle(box());
+    ok('the JSON box paints an edge', cs.borderTopWidth !== '0px' && cs.borderTopStyle !== 'none',
+      `${cs.borderTopWidth} ${cs.borderTopStyle}`);
+    ok('the JSON box clears the iOS-zoom font floor', parseFloat(cs.fontSize) >= 16, cs.fontSize);
+  }
+
+  // Copy must never claim to have copied when it did not. In an iframe with no clipboard-write
+  // permission the API throws, so the honest branch is the one under test.
+  $('[data-action="layout-copy"]').click();
+  await wait(300);
+  ok('Copy reports honestly either way',
+    /Copied to the clipboard\.|Copy was blocked here\./.test(status()), `"${status()}"`);
+
+  // An empty box must not report a save or a copy. Both act on the BOX, not on the live layout,
+  // so "there is nothing to copy" is the honest answer rather than silently re-exporting.
+  typeInto(box(), '');
+  $('[data-action="layout-download"]').click();
+  await wait(200);
+  ok('Download refuses an empty box', /nothing in the box to save/.test(status()), `"${status()}"`);
+  $('[data-action="layout-copy"]').click();
+  await wait(200);
+  ok('Copy refuses an empty box', /nothing in the box to copy/.test(status()), `"${status()}"`);
+  typeInto(box(), exported);          // put the real export back for the refusal checks below
+
+  // A rule whose whole job is to suppress something, asserted as PARSED — an unbalanced comment
+  // above it makes CSS error recovery swallow the whole block and every other probe still passes.
+  {
+    const printRules = [...d.styleSheets]
+      .flatMap((sheet) => { try { return [...sheet.cssRules]; } catch { return []; } })
+      .filter((r) => r.media && r.media.mediaText.includes('print'))
+      .flatMap((r) => [...r.cssRules]);
+    const hide = printRules.find((r) => r.selectorText && /\bdialog\b/.test(r.selectorText));
+    ok('print hides an open dialog (rule is parsed)', Boolean(hide),
+      hide ? hide.selectorText.slice(0, 60) : 'no matching @media print rule');
+    ok('...with !important, or the top layer wins',
+      Boolean(hide) && hide.style.getPropertyPriority('display') === 'important');
+  }
+
+  /* --------------------------------------------- 2. refusals leave the layout alone */
+
+  const before = tabButtonIds();
+  const refuse = async (label, text, pattern) => {
+    typeInto(box(), text);
+    $('[data-action="layout-import"]').click();
+    await wait(300);
+    ok(`${label}: reports the reason`, pattern.test(status()), `"${status()}"`);
+    eq(`${label}: the live layout is untouched`, tabButtonIds(), before);
+    ok(`${label}: the dialog stays open to try again`, dialog().open);
+  };
+
+  // The catastrophic case. normalizeLayout turns a character backup into DEFAULT_LAYOUT, so an
+  // importer that trusted it would report success while factory-resetting the arrangement.
+  await refuse('a character backup', JSON.stringify({
+    schemaVersion: SCHEMA_VERSION, characters: [blankCharacter()],
+  }), /character backup/);
+  await refuse('mangled JSON', '{ "kind": "dnd-character-sheets/layout", "layout": {', /valid JSON/);
+  await refuse('a layout with no tabs', JSON.stringify({
+    kind: LAYOUT_FILE_KIND, layout: { layoutSchemaVersion: 2, tabs: [] },
+  }), /no tabs/);
+  await refuse('a newer format', JSON.stringify({
+    kind: LAYOUT_FILE_KIND, layout: { layoutSchemaVersion: 99, tabs: [{ id: 'combat', cards: [] }] },
+  }), /newer version/);
+
+  /* ------------------------------------- 3. a good import reaches the screen */
+
+  // A deliberately different tab set: two tabs, renamed, with every card on the first. This is
+  // the case that exercises applyLayout's panel create/remove AND the reactivateTab guard — an
+  // imported layout that drops the active tab leaves activeTabKey dangling, and activateTab has
+  // no guard, so every panel ends up hidden. That is blank at 390px and a silent pass at 1440px,
+  // where .tabpanel[hidden]{display:contents!important} reveals them all.
+  typeInto(box(), JSON.stringify({
+    kind: LAYOUT_FILE_KIND,
+    layout: {
+      layoutSchemaVersion: 2,
+      tabs: [
+        { id: 'front', label: 'Front', cards: CARD_ORDER.map((componentId) => ({ componentId })) },
+        { id: 'back', label: 'Back', cards: [] },
+      ],
+    },
+  }));
+  $('[data-action="layout-import"]').click();
+  await wait(600);
+
+  eq('the imported tab set reaches the tab bar', tabButtonIds(), ['tab-front', 'tab-back']);
+  ok('the imported tab labels reach the buttons',
+    [...d.querySelectorAll('.tabbar .tab')].map((b) => b.textContent.trim()).join(',') === 'Front,Back');
+  ok('the old panels are gone', visiblePanels().every((id) => id === 'panel-front' || id === 'panel-back'));
+  eq('exactly one panel is visible', visiblePanels(), ['panel-front']);
+  eq('...and exactly one tab reads selected', selectedTabs(), ['tab-front']);
+  ok('the import is reported with counts', /Layout imported: 2 tabs, 11 cards\./.test(status()), `"${status()}"`);
+  ok('every card node survived the move (no cost:\'js\' host detached)',
+    d.querySelectorAll('#panel-front [data-editcard]').length === CARD_ORDER.length,
+    `${d.querySelectorAll('#panel-front [data-editcard]').length} of ${CARD_ORDER.length}`);
+  ok('the sheet did not blank out', d.querySelectorAll('#panel-front .card').length > 0);
+
+  // An import that drops cards must SAY so — normalizeLayout's losses are silent and a dropped
+  // card imports as an empty tab, which reads as a bug.
+  typeInto(box(), JSON.stringify({
+    kind: LAYOUT_FILE_KIND,
+    layout: { layoutSchemaVersion: 2, tabs: [{ id: 'solo', label: 'Solo', cards: [{ componentId: 'bastion' }] }] },
+  }));
+  $('[data-action="layout-import"]').click();
+  await wait(600);
+  ok('a dropped card is named out loud', /does not recognise was left out \(bastion\)/.test(status()), `"${status()}"`);
+  ok('the cards the file omitted are named too', /added at their usual place/.test(status()));
+
+  /* ------------------------------------------------ 4. undo, from arrange mode */
+
+  d.querySelector('[data-action="layout-transfer-close"]').click();
+  await wait(300);
+  ok('Done closes the dialog', !dialog().open);
+  ok('focus returns to the opener',
+    d.activeElement === $('.sidebar [data-action="layout-transfer-open"]'),
+    d.activeElement ? `${d.activeElement.tagName}.${d.activeElement.className}` : 'null');
+
+  // Close the drawer, then arrange. One import must be ONE undo step.
+  $('#btn-menu-close').click();
+  await wait(400);
+  ok('the drawer closes again', !d.body.classList.contains('drawer-open'));
+  $('#btn-arrange').click();
+  await wait(400);
+  ok('arrange mode is on', d.body.classList.contains('is-arranging'));
+  const beforeUndo = tabButtonIds();
+  d.querySelector('[data-action="layout-undo"]').click();
+  await wait(500);
+  eq('one import is one undo step', tabButtonIds(), ['tab-front', 'tab-back']);
+  ok('undo actually changed something', JSON.stringify(tabButtonIds()) !== JSON.stringify(beforeUndo));
+  eq('undo leaves exactly one panel visible', visiblePanels().length, 1);
+
+  /* --------------------------- 5. Escape in the dialog must not exit arrange mode */
+
+  d.querySelector('.arrange-more')?.setAttribute('open', '');
+  await wait(200);
+  const arrangeOpener = d.querySelector('.arrange-more [data-action="layout-transfer-open"]');
+  ok('the arrange bar mirrors the control', Boolean(arrangeOpener));
+  arrangeOpener.click();
+  await wait(300);
+  ok('the arrange bar opens the same dialog', dialog().open);
+
+  // Focus a BUTTON, not the textarea: the document-level Escape handler's `inField` test only
+  // covers input/select/textarea, so a button is the case that used to drop the mode.
+  const copyBtn = d.querySelector('[data-action="layout-copy"]');
+  copyBtn.focus();
+  copyBtn.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await wait(300);
+  ok('Escape on a dialog button leaves arrange mode ON', d.body.classList.contains('is-arranging'));
+  dialog().close();
+  await wait(200);
+
+  /* ------------------------------- 6. reachable with zero characters */
+
+  // The restore moment the feature exists for: a fresh install or cleared site data. #btn-arrange
+  // is hidden with no character up ("the layout gear only makes sense with a sheet up"), so an
+  // arrange-bar-only entry point would be unreachable exactly here.
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: null, characters: [],
+  }));
+  localStorage.removeItem(LAYOUT_KEY);
+  localStorage.removeItem(LAYOUT_DEFAULT_KEY);
+  await load();
+  d = frame.contentDocument;
+  w = frame.contentWindow;
+  w.confirm = () => true;
+
+  ok('no characters: the arrange gear is hidden', d.querySelector('#btn-arrange').hidden);
+  d.querySelector('#btn-menu').click();
+  await wait(400);
+  const drawerBtn = d.querySelector('.sidebar [data-action="layout-transfer-open"]');
+  ok('no characters: the control is still in the character list', Boolean(drawerBtn));
+  drawerBtn.click();
+  await wait(300);
+  ok('no characters: the dialog still opens', d.querySelector('#layout-transfer').open);
+  ok('no characters: it still exports the default arrangement',
+    (() => { try { return JSON.parse(d.querySelector('#layout-json').value).layout.tabs.length === 5; } catch { return false; } })());
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
+}
+</script>

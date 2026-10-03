@@ -9,6 +9,7 @@
 import * as rules from './rules.js';
 import * as state from './state.js';
 import { STORAGE_KEY } from './constants.js';
+import { LAYOUT_FILE_KIND } from './layout.js';
 import { exportToFile, exportCharacterToFile, readImportFile, exportRaw } from './storage.js';
 import {
   shouldRemindBackup, shouldSuggestInstall, loadNudgeState,
@@ -30,6 +31,8 @@ import {
   renameCardTitle, renameObjectLabel, dropCard, dropObject,
   selectObject, getSelectedObject,
   startPlacing, cancelPlacing, placeObject, isPlacing, undoLayout,
+  openLayoutTransfer, closeLayoutTransfer, copyLayoutText, downloadLayoutFile,
+  importLayoutFromDialog,
 } from './layout-view.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -322,6 +325,20 @@ const ACTIONS = {
   },
   'arrange-set-default': () => saveDefault(),
 
+  // Layout backup (#162). Wired here rather than exported as a *_ACTIONS object from
+  // layout-view.js because every other layout action already lives in this map — and because
+  // re-activating the tab needs render.js, which layout-view cannot import without a cycle.
+  'layout-transfer-open': (el) => openLayoutTransfer(el),
+  'layout-transfer-close': () => closeLayoutTransfer(),
+  'layout-copy': () => copyLayoutText(),
+  'layout-download': () => downloadLayoutFile(),
+  // reactivateTab, NOT activateTab(getTabIds()[0]) like the resets above: an imported layout
+  // usually carries the same tabs, so bouncing the player to Combat is a gratuitous surprise —
+  // and reactivateTab is the only one of the two that guards an active tab the import deleted.
+  // activateTab with a dead key hides EVERY panel, which is a blank sheet at phone width and a
+  // silent pass at 1440px, where .tabpanel[hidden]{display:contents!important} reveals them all.
+  'layout-import': () => { if (importLayoutFromDialog()) reactivateTab(); },
+
   // Tab CRUD (#54 Phase 4b). Each tab-set change re-applies the active tab (which tolerates
   // the active one having been removed). Removing a non-empty tab confirms first.
   'tab-add': () => { tabAdd(); reactivateTab(); },
@@ -574,7 +591,10 @@ document.addEventListener('click', (event) => {
    The order comes from the layout config (getTabIds), and the list is rebuilt from the
    visible tabs each press, so a hidden Spells tab is skipped automatically. */
 document.addEventListener('keydown', (event) => {
-  const tab = event.target.closest('[role="tab"]');
+  // Guarded like the arrange handler below: a keydown dispatched on the DOCUMENT (which probes
+  // do) has an event.target with no .closest, and this threw a TypeError into the global error
+  // handler while every assertion still passed.
+  const tab = event.target.closest && event.target.closest('[role="tab"]');
   if (!tab) return;
 
   const tabs = getTabIds()
@@ -605,9 +625,15 @@ document.addEventListener('keydown', (event) => {
    identical path a finger takes, rather than a separate keyboard-only shortcut. */
 document.addEventListener('keydown', (event) => {
   const inField = event.target.closest && event.target.closest('input, select, textarea');
+  // A modal <dialog> is still in the tree, so its keydown bubbles here. Without this guard,
+  // Escape pressed on a BUTTON inside the layout-backup dialog opened from the arrange bar both
+  // closes the dialog (the browser) and exits arrange mode behind it (#162). Focus in the JSON
+  // textarea happened to be safe only by the `inField` accident above. The spell picker never
+  // exposed this because card Edit is unreachable while arranging.
+  const inDialog = event.target.closest && event.target.closest('dialog[open]');
   // Escape unwinds one step at a time: put the tile down first, leave the mode second. Exiting
   // outright would drop a half-finished move with no way to tell whether it took effect.
-  if (event.key === 'Escape' && isArranging() && !inField) {
+  if (event.key === 'Escape' && isArranging() && !inField && !inDialog) {
     if (isPlacing()) cancelPlacing(); else toggleArrange();
     return;
   }
@@ -795,6 +821,15 @@ fileInput.addEventListener('change', async () => {
   if (!file) return;
 
   try {
+    // #162: name the mix-up rather than letting the generic "not a character backup this app can
+    // read" cover it. The two files look alike in a Downloads folder, and the peek lives HERE
+    // rather than in storage.js because readImportFile must not learn what a layout is — a
+    // cross-check between two modules that should not know about each other belongs in the
+    // wiring layer. A read failure is left to readImportFile, which owns that message.
+    const peeked = await file.text().then((t) => { try { return JSON.parse(t); } catch { return null; } }, () => null);
+    if (peeked && peeked.kind === LAYOUT_FILE_KIND) {
+      throw new Error('That is a layout export, not a character backup. Import it with "Layout backup" in this menu.');
+    }
     const incoming = await readImportFile(file);
     const choice = await askImport(incoming.length, state.getCharacters().length);
     if (choice === 'replace') state.replaceAll(incoming);

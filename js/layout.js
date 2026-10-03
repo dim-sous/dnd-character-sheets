@@ -21,6 +21,19 @@ import {
 
 export const LAYOUT_SCHEMA_VERSION = 2;
 
+/**
+ * The `kind` discriminator written into an exported layout file (#162), and the ONLY thing that
+ * makes a blob a layout rather than something else that happens to parse.
+ *
+ * It exists because `normalizeLayout` cannot refuse anything: a character backup, `null`, `42`,
+ * `'garbage'` and `{}` all normalize to a layout deep-equal to DEFAULT_LAYOUT. That is right for
+ * the LOAD path — a layout is reconstructible, so a damaged one should quietly become the shipped
+ * arrangement — and catastrophic for an IMPORT path, where the same behaviour reads as "imported
+ * successfully" while replacing the player's work with the factory default. So the importer
+ * validates the envelope BEFORE normalizing, and normalizeLayout is never the discriminator.
+ */
+export const LAYOUT_FILE_KIND = 'dnd-character-sheets/layout';
+
 /** An integer within [min, max], or null if the input is not one. */
 function intInRange(value, min, max) {
   const n = Math.round(Number(value));
@@ -69,6 +82,32 @@ function num(value, fallback) {
 
 function str(value, fallback = '') {
   return typeof value === 'string' ? value : fallback;
+}
+
+/**
+ * A tab id that is safe to interpolate into a selector (#162).
+ *
+ * render.js resolves a tab with `document.querySelector('#tab-' + id)` and layout-view's
+ * tab-edit rows with `.tabrow[data-tab="<id>"]`. An id holding a SPACE turns `#tab-my tab` into
+ * a descendant selector that matches nothing: `activateTab` skips that tab while hiding every
+ * other panel, so the sheet goes blank — and only at phone width, because at >=900px and in
+ * print `.tabpanel[hidden]{display:contents!important}` reveals them all, so a single-width
+ * probe run reports PASS. An id holding a `"` makes the selector invalid and throws straight out
+ * of `activateTab`, which breaks the "a corrupt blob can never crash a render... Never throws"
+ * promise normalizeLayout makes below.
+ *
+ * This was latent while ids could only come from TAB_REGISTRY or `newId()`. An imported file is
+ * arbitrary text, which is what makes it reachable — so the guard belongs HERE and not in the
+ * importer: a hand-edited localStorage value arrives through the identical door.
+ *
+ * Substitution, not rejection, following mergeCharacters' re-id-rather-than-drop: the tab and its
+ * label survive a bad id. Deterministic and idempotent (a sanitized id sanitizes to itself), so
+ * normalizeLayout stays JSON-round-trip stable. An id that is ENTIRELY unsafe reduces to '' and
+ * is dropped by the caller's existing blank-id check; its cards are re-homed by the
+ * place-every-card pass, so nothing is lost.
+ */
+function safeTabId(raw) {
+  return raw.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 /**
@@ -177,6 +216,18 @@ function migrate(raw) {
   switch (num(raw.layoutSchemaVersion, 0)) {
     case 0:
     case 1: return upgradeV1toV2(raw);
+    // v2 is named explicitly rather than left to `default`, which is what it used to fall
+    // through to. While LAYOUT_SCHEMA_VERSION is 2 the two branches behave identically, so this
+    // changes nothing today — but `default` meaning "current" is only true until the next bump,
+    // and the moment the version becomes 3 without someone adding `case 2: upgradeV2toV3(raw)`,
+    // every v2 blob on every device falls into `default` and is read as v3 unmigrated. That is
+    // the same silent rewrite the v0/v1 comment above exists to prevent, and it matters more now
+    // that layouts travel as FILES: a file outlives the build that wrote it.
+    case 2: return raw;
+    // A version this build has never heard of. The load path still best-efforts it (a layout is
+    // reconstructible and refusing would strand the player on the default anyway); the IMPORT
+    // path refuses it outright in parseLayoutFile, because there the misread blob would overwrite
+    // an arrangement the player still has.
     default: return raw;
   }
 }
@@ -207,10 +258,15 @@ export function normalizeLayout(raw) {
   // registry label as a fallback.
   for (const rawTab of Array.isArray(input.tabs) ? input.tabs : []) {
     if (!rawTab || typeof rawTab !== 'object') continue;
-    const id = typeof rawTab.id === 'string' ? rawTab.id.trim() : '';
+    // Sanitized BEFORE the dedupe check, so two ids that differ only in unsafe characters
+    // collapse to one tab rather than two tabs fighting over one `#tab-<id>` node.
+    const id = safeTabId(typeof rawTab.id === 'string' ? rawTab.id.trim() : '');
     if (!id || byId.has(id)) continue;
     const regLabel = (TAB_REGISTRY.find((t) => t.id === id) || {}).label;
-    const label = str(rawTab.label, '').trim() ? rawTab.label : (regLabel || id);
+    // Stored TRIMMED. The test was always on the trimmed value while the stored one kept its
+    // padding, so a label of '   Spells   ' round-tripped with the whitespace intact — harmless
+    // from the arrange UI, which trims in renameTab, and reachable from an imported file.
+    const label = str(rawTab.label, '').trim() ? rawTab.label.trim() : (regLabel || id);
 
     const cards = [];
     for (const rawCard of Array.isArray(rawTab.cards) ? rawTab.cards : []) {
@@ -240,6 +296,160 @@ export function normalizeLayout(raw) {
   }
 
   return { layoutSchemaVersion: LAYOUT_SCHEMA_VERSION, tabs };
+}
+
+/* ------------------------------------------------- export / import (#162) */
+
+/*
+ * A layout is a per-device display preference with no backup path: it lives under its own
+ * localStorage key, it is NOT part of a character export, and the app's own README calls export
+ * "the only backup" while meaning characters only. So clearing site data, reinstalling the PWA or
+ * picking up a second device silently destroyed an arrangement that is a dozen deliberate
+ * decisions deep, and there was no way to carry one between devices or to make one the shared
+ * starting point for a table. These four functions are the file format for that.
+ *
+ * The read side is deliberately NOT a thin wrapper over normalizeLayout — see LAYOUT_FILE_KIND.
+ */
+
+/** The export envelope, as a plain object. `dateStr` is injected, mirroring characterFilename. */
+export function layoutExportEnvelope(layout, dateStr = '') {
+  return { kind: LAYOUT_FILE_KIND, exportedAt: dateStr, layout };
+}
+
+/**
+ * The envelope as text, in storage.js's `JSON.stringify(…, null, 2)` house style.
+ *
+ * The payload is NESTED under `layout` rather than spread across the envelope, and that is a
+ * safety property rather than tidiness: with a spread payload `normalizeLayout(parsed)` WORKS
+ * (unknown top-level keys are dropped), so an implementer who skipped the `kind` check would get
+ * a feature that passes every happy-path test and factory-resets the player's layout when fed a
+ * character file. Nested, `parsed.layout` is undefined for anything that is not one of these
+ * files, so that mistake cannot be made. It also keeps exactly ONE version field — the payload's
+ * own `layoutSchemaVersion`, which is what `migrate` reads — because a duplicate on the envelope
+ * is a second source of truth, and desyncing it re-arms the span rescale below.
+ */
+export function serializeLayout(layout, dateStr = '') {
+  return JSON.stringify(layoutExportEnvelope(layout, dateStr), null, 2);
+}
+
+/** `dnd-layout-<date>.json` — a different prefix from `dnd-characters-<date>.json`, because the
+ *  Downloads folder is where the two files actually get confused. */
+export function layoutFilename(dateStr) {
+  return `dnd-layout-${dateStr}.json`;
+}
+
+/** Every componentId a raw payload mentions, in order, however the card entry is shaped. */
+function mentionedCards(rawTabs) {
+  const out = [];
+  for (const tab of Array.isArray(rawTabs) ? rawTabs : []) {
+    if (!tab || typeof tab !== 'object') continue;
+    for (const card of Array.isArray(tab.cards) ? tab.cards : []) {
+      const id = typeof card === 'string' ? card
+        : (card && typeof card === 'object' ? card.componentId : null);
+      if (typeof id === 'string' && id && !out.includes(id)) out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * Read an exported layout file. Never throws; returns a discriminated result:
+ *
+ *   { ok: true,  layout, droppedCards: [...], addedCards: [...], tabCount, cardCount }
+ *   { ok: false, error: '<one sentence to show the player>' }
+ *
+ * The order of the checks is the point. Each one has to run before normalizeLayout, because
+ * normalizeLayout answers "what is the nearest valid layout to this?" and never "is this a
+ * layout?" — so by the time it has run, a character backup and a real import are
+ * indistinguishable.
+ *
+ * `droppedCards`/`addedCards` exist because normalizeLayout's losses are USER-VISIBLE and silent:
+ * a file carrying a card this build does not know imports as an EMPTY TAB, which reads as a bug
+ * rather than as a dropped card. The counts are returned rather than announced so the sentence
+ * the player sees is testable here, in the DOM-free suite.
+ */
+export function parseLayoutFile(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(typeof text === 'string' ? text : '');
+  } catch {
+    return { ok: false, error: 'That is not valid JSON. Paste the whole file, including the outer braces. Nothing has been changed.' };
+  }
+
+  // Checked FIRST, and positively, so the message names the mistake a real player will actually
+  // make. A roster backup is `{ schemaVersion, characters: [...] }` and readImportFile also
+  // accepts a bare array, so both shapes are caught.
+  if (Array.isArray(parsed) || Array.isArray(parsed?.characters)) {
+    return { ok: false, error: 'That is a character backup, not a layout. Import characters with the Import button in the character list. Nothing has been changed.' };
+  }
+
+  if (!parsed || typeof parsed !== 'object' || parsed.kind !== LAYOUT_FILE_KIND
+      || !parsed.layout || typeof parsed.layout !== 'object' || Array.isArray(parsed.layout)) {
+    return { ok: false, error: 'That is not a layout export this app can read. Nothing has been changed.' };
+  }
+
+  // Refused rather than best-effort loaded, which is the opposite of the character path — and the
+  // calculus really does invert. A character file may be the only copy of irreplaceable data, so
+  // refusing it strands the player; a layout is reconstructible, the file is still in the textarea
+  // or the Downloads folder, and importing it OVERWRITES the arrangement they currently have. A
+  // silent downgrade here would also drop every field this build does not know and then re-stamp
+  // the result as current, so the misread layout would be the only one left.
+  const fileVersion = Number(parsed.layout.layoutSchemaVersion);
+  if (Number.isFinite(fileVersion) && fileVersion > LAYOUT_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      error: `That layout was saved by a newer version of the app (format ${fileVersion}; this build reads ${LAYOUT_SCHEMA_VERSION}). Update the app and import it again. Nothing has been changed.`,
+    };
+  }
+
+  // The single most important guard in the feature: this is the ONE case where a successful import
+  // and a factory reset are indistinguishable to the player, because normalizeLayout hands back
+  // DEFAULT_LAYOUT for a payload with no usable tabs and the result looks like a working import.
+  const rawTabs = parsed.layout.tabs;
+  const usableTab = Array.isArray(rawTabs)
+    && rawTabs.some((t) => t && typeof t === 'object' && typeof t.id === 'string' && safeTabId(t.id.trim()));
+  if (!usableTab) {
+    return { ok: false, error: 'That layout file has no tabs in it. Nothing has been changed.' };
+  }
+
+  const layout = normalizeLayout(parsed.layout);
+  const mentioned = mentionedCards(rawTabs);
+  return {
+    ok: true,
+    layout,
+    droppedCards: mentioned.filter((id) => !CARD_REGISTRY[id]),
+    addedCards: CARD_ORDER.filter((id) => !mentioned.includes(id)),
+    tabCount: layout.tabs.length,
+    cardCount: layout.tabs.reduce((n, tab) => n + tab.cards.length, 0),
+  };
+}
+
+/** `n thing` / `n things`, so the sentences below read as English at every count. */
+function plural(n, word, plural_ = `${word}s`) {
+  return `${n} ${n === 1 ? word : plural_}`;
+}
+
+/**
+ * The sentence shown after a successful import, built from parseLayoutFile's counts.
+ *
+ * Here rather than in layout-view.js so the WORDING is testable in the DOM-free suite — the
+ * whole reason the parser returns counts instead of announcing them itself. It has to name the
+ * losses because normalizeLayout's are silent and user-visible: a file carrying a card this
+ * build does not know imports as an EMPTY TAB, which reads as a bug rather than a dropped card.
+ */
+export function layoutImportSummary(result) {
+  if (!result || !result.ok) return '';
+  const parts = [`Layout imported: ${plural(result.tabCount, 'tab')}, ${plural(result.cardCount, 'card')}.`];
+  const dropped = result.droppedCards || [];
+  const added = result.addedCards || [];
+  if (dropped.length) {
+    parts.push(`${plural(dropped.length, 'card')} this version does not recognise ${dropped.length === 1 ? 'was' : 'were'} left out (${dropped.join(', ')}).`);
+  }
+  if (added.length) {
+    const names = added.map((id) => (CARD_REGISTRY[id] || {}).label || id);
+    parts.push(`${plural(added.length, 'card')} the file did not mention ${added.length === 1 ? 'was' : 'were'} added at ${added.length === 1 ? 'its' : 'their'} usual place (${names.join(', ')}).`);
+  }
+  return parts.join(' ');
 }
 
 /* ------------------------------------------------------- object mutators */

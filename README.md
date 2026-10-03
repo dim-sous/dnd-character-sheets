@@ -81,6 +81,10 @@ That means:
 - Clearing your browser data deletes your characters.
 - Your phone and your laptop have separate, unrelated copies.
 - **Export is the only backup, and it's the only way to move a character between devices.**
+- Your **layout** — tabs, card order, tile sizes, custom names — is a separate per-device
+  preference under its own key, and a character export does **not** contain it. It has its
+  own backup, below (#162). Before that it had none, so clearing site data or reinstalling
+  destroyed an arrangement with no way to get it back.
 
 Git tracks the code, not the party. Exported `.json` files are user data and are
 gitignored (`/backups/`).
@@ -101,6 +105,36 @@ Sidebar → **Import**, pick a `.json`, then choose:
 Imported files are normalised against the canonical character shape, so a backup from an
 older version — or one you hand-edited — won't crash the app on a missing field.
 
+### Layout backup
+
+Sidebar → **Layout backup** (also in the arrange bar, under *Tabs & defaults*). The box holds
+your arrangement as JSON: **Copy** it into a note or a message, or **Download** it as
+`dnd-layout-<date>.json`. To restore it — or to put the same arrangement on a second device, or
+hand your table a shared starting point — paste it back in and press **Replace layout**.
+
+The textarea is the transport on purpose. A phone can copy text into a message far more easily
+than it can move a file around, and it is the fallback when the clipboard API is blocked.
+
+It is deliberately hard to confuse with a character backup, because the two files look alike in
+a Downloads folder:
+
+- A layout file carries `"kind": "dnd-character-sheets/layout"`. Anything without it is refused.
+- Feeding a **character** backup to the layout importer is refused by name, not with a generic
+  error. This matters more than it sounds: the layout reconciler answers *"what is the nearest
+  valid layout to this?"*, never *"is this a layout?"* — so a character file normalises to the
+  **shipped default**, and an importer that trusted it would report a clean success while
+  replacing your arrangement with the factory one.
+- Feeding a **layout** file to the character importer is likewise refused by name.
+- A layout saved by a *newer* version of the app is refused rather than half-read. Characters
+  are loaded best-effort because the file may be the only copy of irreplaceable data; a layout
+  is reconstructible, your file is still in the box, and a misread import would overwrite the
+  arrangement you still have.
+- An import says what it changed. If the file names a card this version doesn't know, that card
+  is dropped — which otherwise shows up as a mysteriously empty tab rather than as a message.
+
+Characters are never touched by any of it, in either direction. Inside arrange mode, **Undo**
+steps an import back; from the character list there is no undo, which is why it confirms first.
+
 ---
 
 ## How it fits together
@@ -119,8 +153,10 @@ each mutator has to remember.
 |---|---|
 | `js/constants.js` | The canonical character shape, the 2024 skill and condition lists |
 | `js/rules.js` | Every derived number, as pure functions. No DOM, no state, no side effects |
-| `js/storage.js` | localStorage, normalisation, export and import |
+| `js/storage.js` | localStorage, normalisation, character export and import |
 | `js/state.js` | The store: characters, active id, mutators, subscribe/notify |
+| `js/layout.js` | Where things sit, as pure data — reconciliation, plus the layout file format |
+| `js/layout-view.js` | The browser half of the above: the layout key, arrange mode, the backup dialog |
 | `js/render.js` | Character → DOM |
 | `js/main.js` | Wiring: delegated listeners, service worker registration, bootstrap |
 | `tools/make-icons.py` | One-off icon generator. Not needed to run the app |

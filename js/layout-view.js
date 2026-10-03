@@ -11,7 +11,11 @@ import {
   DEFAULT_LAYOUT, normalizeLayout, moveCard, moveCardToTab, renameCard,
   addTab, removeTab, renameTab, moveTab, moveObject, toggleObjectHidden,
   setObjectSpan, setObjectHeight, renameObject,
+  serializeLayout, parseLayoutFile, layoutFilename, layoutImportSummary,
 } from './layout.js';
+// #162. The only thing taken from storage.js is the Blob/anchor download, which knows nothing
+// about characters — reusing it beats a second copy that revokes the object URL too early.
+import { downloadFile, today } from './storage.js';
 import {
   CARD_REGISTRY, OBJECT_REGISTRY, SPAN_MIN, SPAN_MAX, HEIGHT_SET_MIN, HEIGHT_MAX,
 } from './layout-registry.js';
@@ -538,8 +542,34 @@ export function saveDefault() {
  * with a bad arrangement was permanent short of clearing site data — the app could not undo it,
  * and neither could the player.
  */
-export function resetLayout({ factory = false } = {}) {
+/**
+ * Replace the whole layout in one step: the tail every wholesale layout change shares.
+ *
+ * Extracted from resetLayout (#162) so the importer cannot drift from it — an import IS a reset
+ * to an arbitrary layout, and the steps are fiddly enough that a second copy would quietly lose
+ * one. Exactly ONE pushUndo, so one paste is one undo step.
+ *
+ * `cancelPlacing` is the step resetLayout did NOT have. undoLayout, reorderCard and
+ * sendCardToTab all call it first, for the reason written at reorderCard: applyLayout re-appends
+ * the object nodes and would leave the drop targets of a half-finished "Move to..." stranded in
+ * front of the tiles they were meant to sit between. A wholesale replacement has the same
+ * hazard, so it belongs here rather than in one caller.
+ *
+ * It deliberately does NOT re-activate a tab — render.js owns that, and every caller in the
+ * ACTIONS map does it, because the right choice differs (a reset lands you on tab one; an import
+ * should keep you where you are if that tab survived).
+ */
+function commitLayout(next, message) {
+  cancelPlacing({ silent: true });
   pushUndo();
+  currentLayout = normalizeLayout(next);
+  saveLayout();
+  applyLayout();
+  if (arranging) { renderArrangeControls(); renderObjectControls(); renderTabList(); }
+  announce(message);
+}
+
+export function resetLayout({ factory = false } = {}) {
   let raw = null;
   if (factory) {
     try {
@@ -555,11 +585,8 @@ export function resetLayout({ factory = false } = {}) {
       raw = null;
     }
   }
-  currentLayout = normalizeLayout(raw); // saved default if any, else a fresh factory default
-  saveLayout();
-  applyLayout();
-  if (arranging) { renderArrangeControls(); renderObjectControls(); renderTabList(); }
-  announce(factory
+  // raw: the saved default if any, else null -> a fresh factory default
+  commitLayout(raw, factory
     ? 'Layout reset to the original, and your saved default cleared.'
     : 'Layout reset to your default.');
 }
@@ -1279,4 +1306,146 @@ export function exitArrange() {
   removeArrangeControls();
   removeObjectControls();
   clearTabList();
+}
+
+/* ------------------------------------------- layout backup dialog (#162) */
+
+/*
+ * The DOM half of layout.js's file format, sitting here for the same reason spell-picker.js is
+ * the DOM half of spell-library.js: `currentLayout`, `pushUndo` and `saveLayout` are
+ * module-private, and `commitLayout` above is the only safe way in.
+ *
+ * The <dialog> itself is static markup in index.html — the repo has no precedent for a
+ * JS-built dialog, and both existing ones are authored there. showModal() gives focus
+ * trapping, Escape and the backdrop for free, so none of that is re-implemented.
+ *
+ * Reaching render.js from here would be a circular import (render.js imports getTabIds from
+ * this module), so re-activating a tab after an import is the caller's job — main.js's ACTIONS
+ * map, which is where every other layout action already does it.
+ */
+
+// Which of the two "Layout backup" buttons opened the dialog, as a SELECTOR rather than a node:
+// a structural re-render can detach the element while the dialog is open, and focusing a
+// detached node silently drops focus to <body>. Same reasoning as the picker's focusHome.
+let transferOpener = '';
+
+function transferDialog() {
+  return document.getElementById('layout-transfer');
+}
+
+/** The dialog's own visible + announced status line. */
+function transferStatus(message) {
+  const el = document.getElementById('layout-transfer-status');
+  if (el) el.textContent = message;
+}
+
+/** Put focus back on whichever button opened this, deferred so the close has settled. */
+function transferFocusHome() {
+  const selector = transferOpener;
+  if (!selector) return;
+  // setTimeout, not rAF: under the probes' virtual time an animation-frame loop is not
+  // guaranteed to be driven.
+  setTimeout(() => { document.querySelector(selector)?.focus(); }, 0);
+}
+
+/**
+ * Open the dialog with the LIVE arrangement in the box.
+ *
+ * Serialized from getLayout(), never from localStorage: the layout key does not exist until the
+ * first arrange action (loadLayout only reads), so a device that has never opened arrange mode
+ * would export an empty string — on exactly the devices where that failure is least visible.
+ */
+export function openLayoutTransfer(invoker) {
+  const dialog = transferDialog();
+  if (!dialog) return;
+  transferOpener = invoker?.closest('.sidebar')
+    ? '.sidebar [data-action="layout-transfer-open"]'
+    : '.arrange-more [data-action="layout-transfer-open"]';
+  const box = document.getElementById('layout-json');
+  if (box) box.value = serializeLayout(getLayout(), today());
+  transferStatus('');
+  dialog.showModal();
+  box?.focus();
+}
+
+export function closeLayoutTransfer() {
+  transferDialog()?.close();
+  transferFocusHome();
+}
+
+/**
+ * Copy the box to the clipboard, and never claim to have copied when it did not.
+ *
+ * The app's first clipboard call. `navigator.clipboard` needs a secure context and can be
+ * blocked outright, which is why the textarea stays selectable and is the documented fallback.
+ */
+export async function copyLayoutText() {
+  const box = document.getElementById('layout-json');
+  if (!box) return;
+  if (!box.value.trim()) {
+    transferStatus('There is nothing in the box to copy.');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(box.value);
+    transferStatus('Copied to the clipboard.');
+  } catch {
+    box.focus();
+    box.select();
+    transferStatus('Copy was blocked here. The text is selected — copy it with your keyboard.');
+  }
+}
+
+/**
+ * Download the box as a file.
+ *
+ * Deliberately NOT recordBackup(): a layout is not character data, so downloading one must not
+ * reset the 14-day backup reminder. main.js carries the same distinction for a one-character
+ * export ("one character is not a backup of the roster").
+ */
+export function downloadLayoutFile() {
+  const box = document.getElementById('layout-json');
+  const date = today();
+  // Saves what is IN THE BOX, like Copy — the box is the document, Copy and Download get it out,
+  // and Replace layout is the only direction that validates. Re-serializing the live layout here
+  // instead would silently ignore an edit the player can see in front of them.
+  const text = box && box.value.trim() ? box.value : '';
+  if (!text) {
+    transferStatus('There is nothing in the box to save.');
+    return;
+  }
+  downloadFile(text, layoutFilename(date));
+  transferStatus(`Saved as ${layoutFilename(date)}.`);
+}
+
+/**
+ * Validate whatever is in the box and, if the player confirms, make it the layout.
+ *
+ * Returns true only when the layout actually changed, so the caller knows whether to re-activate
+ * a tab. Everything that can go wrong reports into the dialog's own status line and changes
+ * nothing — parseLayoutFile refuses before normalizeLayout can turn a character backup into a
+ * silent factory reset.
+ */
+export function importLayoutFromDialog() {
+  const box = document.getElementById('layout-json');
+  if (!box) return false;
+  const result = parseLayoutFile(box.value);
+  if (!result.ok) {
+    transferStatus(result.error);
+    return false;
+  }
+  // Confirmed for the same reason arrange-reset-factory is: it replaces work wholesale. The undo
+  // entry commitLayout pushes is only reachable from the arrange bar, and the drawer entry point
+  // is reachable with no character open at all — so outside arrange mode this prompt is the only
+  // thing between a mistap and a replaced arrangement.
+  if (!window.confirm('Replace this device\'s layout with the one in the box? Your characters are not affected.')) {
+    transferStatus('Nothing was changed.');
+    return false;
+  }
+  const summary = layoutImportSummary(result);
+  commitLayout(result.layout, summary);
+  transferStatus(arranging
+    ? `${summary} Undo in the arrange bar puts your previous layout back.`
+    : `${summary} Keep the old text if you want to paste it back.`);
+  return true;
 }

@@ -28,6 +28,8 @@ import {
   normalizeLayout, DEFAULT_LAYOUT, LAYOUT_SCHEMA_VERSION, tabIds, cardsOf,
   moveCard, moveCardToTab, renameCard, addTab, removeTab, renameTab, moveTab,
   moveObject, toggleObjectHidden, setObjectSpan, setObjectHeight, renameObject,
+  LAYOUT_FILE_KIND, layoutExportEnvelope, serializeLayout, layoutFilename,
+  parseLayoutFile, layoutImportSummary,
 } from './js/layout.js';
 import {
   CARD_REGISTRY, CARD_ORDER, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
@@ -1486,6 +1488,170 @@ describe('renameObject (#54)');
     renameObject(DEFAULT_LAYOUT, 'combat', 'ac', 'X');
     is('renameObject never mutates the input', JSON.stringify(DEFAULT_LAYOUT), before);
   }
+}
+
+describe('layout export / import (#162)');
+{
+  // A layout had no backup path: its own localStorage key, absent from every character export,
+  // so a reinstall or a cleared site destroyed it and there was no way to move one between
+  // devices. These assertions are mostly about REFUSAL, because the dangerous direction is an
+  // import that succeeds when it should not: normalizeLayout answers "what is the nearest valid
+  // layout to this?" and never "is this a layout?", so null, 42, 'garbage' and a character
+  // backup all come back deep-equal to DEFAULT_LAYOUT (asserted in the normalizeLayout block
+  // above). Fed to an importer that trusts it, that reads as a successful import while replacing
+  // the player's arrangement with the shipped one.
+  const D = '2026-10-03';
+  const text = serializeLayout(DEFAULT_LAYOUT, D);
+  const envelope = layoutExportEnvelope(DEFAULT_LAYOUT, D);
+
+  is('envelope carries the kind discriminator', envelope.kind, LAYOUT_FILE_KIND);
+  is('envelope carries the injected date', envelope.exportedAt, D);
+  is('envelope nests the payload under `layout`', envelope.layout, DEFAULT_LAYOUT);
+  is('envelope has no character-backup keys',
+    [Object.hasOwn(envelope, 'characters'), Object.hasOwn(envelope, 'schemaVersion')], [false, false]);
+  is('the payload keeps the ONE version field', envelope.layout.layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
+  is('filename is distinct from a character backup', layoutFilename(D), `dnd-layout-${D}.json`);
+  is('serialized text is pretty-printed', text.includes('\n  "kind"'), true);
+
+  // --- the round trip, which is the whole point ------------------------------------------
+  const back = parseLayoutFile(text);
+  is('an exported layout re-imports', back.ok, true);
+  is('an exported layout re-imports to the SAME layout', back.layout, DEFAULT_LAYOUT);
+  is('a re-imported layout survives normalize unchanged', normalizeLayout(back.layout), back.layout);
+  is('round trip reports nothing dropped or added', [back.droppedCards, back.addedCards], [[], []]);
+  is('round trip counts the tabs', back.tabCount, DEFAULT_LAYOUT.tabs.length);
+  is('round trip counts every card', back.cardCount, CARD_ORDER.length);
+
+  {
+    const before = JSON.stringify(DEFAULT_LAYOUT);
+    serializeLayout(DEFAULT_LAYOUT, D);
+    layoutExportEnvelope(DEFAULT_LAYOUT, D);
+    parseLayoutFile(text);
+    is('export/parse never mutate the input', JSON.stringify(DEFAULT_LAYOUT), before);
+  }
+
+  // --- refusal, in the order the parser checks ---------------------------------------------
+  const fails = (label, input) => {
+    const r = parseLayoutFile(input);
+    is(`${label} -> refused`, r.ok === false, true);
+    is(`${label} -> no layout handed back`, r.layout, undefined);
+    is(`${label} -> says nothing changed`, /[Nn]othing has been changed/.test(r.error || ''), true);
+    return r;
+  };
+
+  fails('empty string', '');
+  fails('not JSON', '{ not valid json');
+  fails('a non-string', 42);
+  is('unparseable names the paste mistake',
+    /valid JSON/.test(parseLayoutFile('nope').error), true);
+
+  // The catastrophic case: a character backup must never read as a successful import. Both
+  // shapes readImportFile accepts are covered — the envelope and a bare array.
+  const charFile = JSON.stringify({ schemaVersion: 2, characters: [{ name: 'Aria' }] });
+  const charBackup = fails('a character backup', charFile);
+  is('a character backup is named as one', /character backup/.test(charBackup.error), true);
+  is('a bare array is named as a character backup',
+    /character backup/.test(parseLayoutFile('[]').error), true);
+  // Proof the guard is load-bearing rather than belt-and-braces: the same bytes, handed to
+  // normalizeLayout directly, come back as the shipped layout and look like a clean import.
+  is('...and normalizeLayout alone would have accepted it',
+    normalizeLayout(JSON.parse(charFile)), DEFAULT_LAYOUT);
+
+  fails('no kind', JSON.stringify({ layout: DEFAULT_LAYOUT }));
+  fails('wrong kind', JSON.stringify({ kind: 'something/else', layout: DEFAULT_LAYOUT }));
+  fails('kind but no payload', JSON.stringify({ kind: LAYOUT_FILE_KIND }));
+  fails('payload is an array', JSON.stringify({ kind: LAYOUT_FILE_KIND, layout: [] }));
+  // The spread shape the nesting exists to make impossible: without `layout`, there is nothing
+  // to normalize, so a dropped `kind` check cannot silently succeed.
+  fails('a spread payload', JSON.stringify({ kind: LAYOUT_FILE_KIND, ...DEFAULT_LAYOUT }));
+
+  // A newer format is REFUSED, not best-effort loaded — the opposite of the character path, and
+  // deliberately: a character file may be the only copy of irreplaceable data, while a layout is
+  // reconstructible and importing it overwrites an arrangement the player still has.
+  const future = fails('a newer format', JSON.stringify({
+    kind: LAYOUT_FILE_KIND,
+    layout: { layoutSchemaVersion: LAYOUT_SCHEMA_VERSION + 1, tabs: [{ id: 'combat', cards: [] }] },
+  }));
+  is('a newer format names both versions',
+    [future.error.includes(String(LAYOUT_SCHEMA_VERSION + 1)), future.error.includes(String(LAYOUT_SCHEMA_VERSION))],
+    [true, true]);
+
+  // The single most important guard: a payload with no usable tab normalizes to DEFAULT_LAYOUT,
+  // so a successful import and a factory reset would be indistinguishable to the player.
+  const noTabs = fails('no tabs', JSON.stringify({ kind: LAYOUT_FILE_KIND, layout: { tabs: [] } }));
+  is('no tabs is named as such', /no tabs/.test(noTabs.error), true);
+  fails('tabs is not an array', JSON.stringify({ kind: LAYOUT_FILE_KIND, layout: { tabs: 'nope' } }));
+  fails('every tab id blank', JSON.stringify({
+    kind: LAYOUT_FILE_KIND, layout: { tabs: [{ id: '   ' }, { id: '' }] },
+  }));
+  fails('every tab id unusable after sanitizing', JSON.stringify({
+    kind: LAYOUT_FILE_KIND, layout: { tabs: [{ id: '***' }] },
+  }));
+
+  // --- an OLDER format still migrates, on the payload's own version field ------------------
+  // The field has to travel with the payload and reach normalizeLayout on the same object: 2 is
+  // a legal v2 span AND a v1 key, so a v2 layout read as v1 triples every narrowest tile.
+  const v1 = parseLayoutFile(JSON.stringify({
+    kind: LAYOUT_FILE_KIND,
+    layout: {
+      layoutSchemaVersion: 1,
+      tabs: [{ id: 'combat', label: 'Combat', cards: [{ componentId: 'combat', objects: [{ componentId: 'ac', span: 2 }] }] }],
+    },
+  }));
+  const span = (layout, id) => layout.tabs
+    .flatMap((t) => t.cards).find((c) => c.componentId === 'combat').objects
+    .find((o) => o.componentId === id).span;
+  is('a v1 payload is accepted', v1.ok, true);
+  is('a v1 span of 2 rescales to twelfths', span(v1.layout, 'ac'), 6);
+  is('a v2 span of 2 is left alone', span(parseLayoutFile(JSON.stringify({
+    kind: LAYOUT_FILE_KIND,
+    layout: {
+      layoutSchemaVersion: 2,
+      tabs: [{ id: 'combat', cards: [{ componentId: 'combat', objects: [{ componentId: 'ac', span: 2 }] }] }],
+    },
+  })).layout, 'ac'), 2);
+
+  // --- what the import silently changed, reported so it can be said out loud ---------------
+  const partial = parseLayoutFile(JSON.stringify({
+    kind: LAYOUT_FILE_KIND,
+    layout: {
+      layoutSchemaVersion: 2,
+      tabs: [{ id: 'combat', label: 'Fight', cards: [{ componentId: 'combat' }, { componentId: 'bastion' }] }],
+    },
+  }));
+  is('an unknown card is reported as dropped', partial.droppedCards, ['bastion']);
+  is('cards the file omitted are reported as added',
+    partial.addedCards, CARD_ORDER.filter((id) => id !== 'combat'));
+  is('a dropped card really is gone', cardsOf(partial.layout, 'combat').includes('bastion'), false);
+  is('a custom tab label survives the import', partial.layout.tabs[0].label, 'Fight');
+  // Worth stating because it is the anti-crash invariant: an import can never add or remove a
+  // card, so no cost:'js' host can go missing however hostile the file.
+  is('every registry card is still placed exactly once', partial.cardCount, CARD_ORDER.length);
+
+  is('summary names the counts',
+    layoutImportSummary(back), `Layout imported: ${DEFAULT_LAYOUT.tabs.length} tabs, ${CARD_ORDER.length} cards.`);
+  is('summary names a dropped card', /does not recognise was left out \(bastion\)/.test(layoutImportSummary(partial)), true);
+  is('summary pluralises a single tab', /: 1 tab,/.test(layoutImportSummary(partial)), true);
+  is('summary of a refusal is empty', layoutImportSummary(charBackup), '');
+
+  // --- tab ids are sanitized, because an imported id reaches `#tab-<id>` ------------------
+  // activateTab does querySelector('#tab-' + id): a space makes it a descendant selector that
+  // matches nothing (every panel hidden — blank at 390px, silent pass at 1440px) and a quote
+  // makes it invalid and throws, breaking normalizeLayout's own "never throws" promise.
+  const dodgy = normalizeLayout({
+    layoutSchemaVersion: 2,
+    tabs: [{ id: 'my tab', label: 'Mine', cards: [] }, { id: 'a"b', cards: [] }],
+  });
+  is('a space in a tab id is substituted', tabIds(dodgy).includes('my-tab'), true);
+  is('a quote in a tab id is substituted', tabIds(dodgy).includes('a-b'), true);
+  is('no unsafe character survives',
+    tabIds(dodgy).every((id) => /^[A-Za-z0-9_-]+$/.test(id)), true);
+  is('the tab itself is kept, not dropped', dodgy.tabs[0].label, 'Mine');
+  is('sanitizing is idempotent', normalizeLayout(dodgy), dodgy);
+  is('ids differing only in unsafe characters collapse to one tab',
+    tabIds(normalizeLayout({ tabs: [{ id: 'my tab' }, { id: 'my.tab' }] })), ['my-tab']);
+  is('a tab label is stored trimmed',
+    normalizeLayout({ tabs: [{ id: 'combat', label: '   Spaced   ' }] }).tabs[0].label, 'Spaced');
 }
 
 describe('spell list (#141)');
