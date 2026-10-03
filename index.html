@@ -171,7 +171,7 @@
                nothing in render.js. card--flow: print lets the tall card fragment. -->
           <section class="card card--flow" data-editcard="combat">
             <div class="list__head">
-              <h2 class="card__title">Combat</h2>
+              <h2 class="card__title">Status</h2>
               <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="combat" aria-pressed="false">Edit</button>
             </div>
             <!-- Every box below is a placeable "object" (#54 Phase 5): the tiles AND the
@@ -232,7 +232,7 @@
               </div>
 
               <div class="tile" data-object="initiative">
-                <span class="tile__label">Initiative</span>
+                <span class="tile__label">INIT.</span>
                 <div class="tile__body">
                   <output class="tile__value" data-derived="initiative">+0</output>
                 </div>
@@ -255,7 +255,7 @@
               </div>
 
               <div class="tile" data-object="pb">
-                <span class="tile__label">Prof. Bonus</span>
+                <span class="tile__label">PB</span>
                 <div class="tile__body">
                   <output class="tile__value" data-derived="pb">+2</output>
                 </div>
@@ -300,7 +300,7 @@
                    the shape is the point: no new list mechanism, no new row CSS, and a player
                    who has used one tile already knows this one. -->
               <div class="tile status__block" data-object="resources">
-                <h3 class="tile__label">Resources</h3>
+                <h3 class="tile__label">Class Resources</h3>
                 <ul class="rows rows--tight" id="resources"></ul>
                 <button type="button" class="btn btn--small tile__add" data-action="add-row" data-list="resources">+ Add</button>
               </div>
@@ -369,7 +369,7 @@
                lets it fragment at group boundaries -->
           <section class="card card--flow" data-editcard="abilities">
             <div class="list__head">
-              <h2 class="card__title">Abilities &amp; Skills</h2>
+              <h2 class="card__title">Abilities, Saves &amp; Skills</h2>
               <button type="button" class="btn btn--small card__edit" data-action="toggle-card-edit" data-card="abilities" aria-pressed="false">Edit</button>
             </div>
             <div class="inline-fields">
@@ -614,10 +614,10 @@
     <!-- Bottom tab bar. The thumb zone, freed up by folding HP into the Combat tab.
          Hidden on a laptop, where every panel is shown at once. -->
     <nav class="tabbar" id="tabbar" role="tablist" aria-label="Character sheet sections" hidden>
-      <button type="button" class="tab" id="tab-combat"    role="tab" aria-controls="panel-combat"    aria-selected="true"  tabindex="0">Combat</button>
+      <button type="button" class="tab" id="tab-combat"    role="tab" aria-controls="panel-combat"    aria-selected="true"  tabindex="0">Status</button>
       <button type="button" class="tab" id="tab-abilities" role="tab" aria-controls="panel-abilities" aria-selected="false" tabindex="-1">Abilities</button>
       <button type="button" class="tab" id="tab-spells"    role="tab" aria-controls="panel-spells"    aria-selected="false" tabindex="-1">Spells</button>
-      <button type="button" class="tab" id="tab-gear"      role="tab" aria-controls="panel-gear"      aria-selected="false" tabindex="-1">Gear</button>
+      <button type="button" class="tab" id="tab-gear"      role="tab" aria-controls="panel-gear"      aria-selected="false" tabindex="-1">Attacks</button>
       <button type="button" class="tab" id="tab-character" role="tab" aria-controls="panel-character" aria-selected="false" tabindex="-1">Character</button>
     </nav>
 

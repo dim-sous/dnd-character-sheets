@@ -69,9 +69,24 @@ function normalizeSpan(rawSpan, componentId) {
  * legitimately report, whereas a span of 0 or 99 is not a width at all and the registry default
  * is the only sensible recovery.
  */
-function normalizeHeight(rawHeight) {
+function normalizeHeight(rawHeight, componentId) {
   const n = Math.round(Number(rawHeight));
-  if (!Number.isFinite(n)) return HEIGHT_MIN;
+  if (!Number.isFinite(n)) {
+    // #164: fall back to the registry's defaultHeight exactly as normalizeSpan falls back to
+    // defaultSpan, so the two fields have one contract instead of two. Before this the fallback
+    // was a hardcoded HEIGHT_MIN, which is why the shipped default could express order, width and
+    // naming but never height — the arrangement the app ships with could not be the arrangement
+    // anyone actually plays with.
+    //
+    // Who this changes: only a layout with NO height on an object. An explicit 0 is a finite
+    // number and is kept, so every layout saved since heights shipped is untouched. A layout
+    // saved BEFORE they shipped has no height field, and those objects now pick up the new
+    // defaults — the same treatment they already get for a span they do not mention.
+    const reg = OBJECT_REGISTRY[componentId];
+    const fallback = reg ? Math.round(Number(reg.defaultHeight)) : NaN;
+    if (!Number.isFinite(fallback)) return HEIGHT_MIN;
+    return Math.max(HEIGHT_MIN, Math.min(HEIGHT_MAX, fallback));
+  }
   return Math.max(HEIGHT_MIN, Math.min(HEIGHT_MAX, n));
 }
 
@@ -140,14 +155,15 @@ function normalizeCard(componentId, rawCard) {
     if (rawLabel) obj.label = rawLabel; // custom title overriding the registry label (#54)
     obj.hidden = Boolean(rawObj && rawObj.hidden);
     obj.span = normalizeSpan(rawObj && rawObj.span, oid);
-    obj.height = normalizeHeight(rawObj && rawObj.height);
+    obj.height = normalizeHeight(rawObj && rawObj.height, oid);
     objects.push(obj);
   }
   for (const oid of order) {
     if (seen.has(oid)) continue;
     seen.add(oid);
     objects.push({
-      componentId: oid, hidden: false, span: normalizeSpan(undefined, oid), height: HEIGHT_MIN,
+      componentId: oid, hidden: false, span: normalizeSpan(undefined, oid),
+      height: normalizeHeight(undefined, oid),
     });
   }
   card.objects = objects;
@@ -520,7 +536,7 @@ export function setObjectHeight(layout, cardId, objectId, height) {
           return {
             ...card,
             objects: card.objects.map((o) => (
-              o.componentId === objectId ? { ...o, height: normalizeHeight(height) } : o
+              o.componentId === objectId ? { ...o, height: normalizeHeight(height, objectId) } : o
             )),
           };
         }),

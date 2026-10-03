@@ -14,12 +14,20 @@
 
 /** The 5 tabs, in default order. `id` matches the `#tab-<id>` / `#panel-<id>` convention. */
 export const TAB_REGISTRY = [
-  { id: 'combat', label: 'Combat' },
+  { id: 'combat', label: 'Status' },
   { id: 'abilities', label: 'Abilities' },
   { id: 'spells', label: 'Spells' },
-  { id: 'gear', label: 'Gear' },
+  { id: 'gear', label: 'Attacks' },
   { id: 'character', label: 'Character' },
 ];
+/*
+ * #164: the labels and the homes below are a REAL arrangement, exported from a device that had
+ * been played with, not a guess at one. Two ids now read oddly against their labels — `combat`
+ * is labelled "Status" and `gear` is labelled "Attacks" — and that is deliberate: an id is
+ * internal (it is the `#tab-<id>` / `#panel-<id>` node and the `home` key), while the label is
+ * the only part a player sees. Renaming the ids would be a migration for every stored layout
+ * that already references them, bought for nothing.
+ */
 
 /**
  * The 8 cards, keyed by id (also each card's `data-editcard` value, which is how the
@@ -43,9 +51,14 @@ export const TAB_REGISTRY = [
  *   features     → #features
  */
 export const CARD_REGISTRY = {
-  combat: { label: 'Combat', home: 'combat', cost: 'js', sel: '[data-editcard="combat"]' },
-  attacks: { label: 'Attacks', home: 'combat', cost: 'js', sel: '[data-editcard="attacks"]' },
-  abilities: { label: 'Abilities & Skills', home: 'abilities', cost: 'js', sel: '[data-editcard="abilities"]' },
+  combat: { label: 'Status', home: 'combat', cost: 'js', sel: '[data-editcard="combat"]' },
+  // #164: its own tab rather than sharing Status. A fight reads one of two things — what is
+  // happening to you, or what you are about to do — and the Status card is thirteen tiles deep,
+  // so the attack rows used to start below the fold on a phone.
+  attacks: { label: 'Attacks', home: 'gear', cost: 'js', sel: '[data-editcard="attacks"]' },
+  // #164: saves are built by the same render as the scores and the skills (renderAbilities), and
+  // the old title named two of the three.
+  abilities: { label: 'Abilities, Saves & Skills', home: 'abilities', cost: 'js', sel: '[data-editcard="abilities"]' },
   spellcasting: { label: 'Spellcasting', home: 'spells', cost: 'js', sel: '[data-editcard="spellcasting"]' },
   // Split out of Spellcasting: the ability and its two derived numbers are set once, the slots
   // drain every fight, and separating them is what lets a player size or hide one without the
@@ -56,8 +69,10 @@ export const CARD_REGISTRY = {
   // wants one on screen does not necessarily want the other. cost:'js' — renderSpells
   // dereferences #spells with no null check, so it may be hidden but never detached.
   spells: { label: 'Spells', home: 'spells', cost: 'js', sel: '[data-editcard="spells"]' },
-  inventory: { label: 'Inventory', home: 'gear', cost: 'js', sel: '[data-editcard="inventory"]' },
-  features: { label: 'Features & Feats', home: 'gear', cost: 'js', sel: '[data-editcard="features"]' },
+  // #164: Gear became the Attacks tab, so what you own moved in with the rest of the reference
+  // material you read between fights rather than during one.
+  inventory: { label: 'Inventory', home: 'character', cost: 'js', sel: '[data-editcard="inventory"]' },
+  features: { label: 'Features & Feats', home: 'character', cost: 'js', sel: '[data-editcard="features"]' },
   identity: { label: 'Identity', home: 'character', cost: 'markup', sel: '[data-editcard="identity"]' },
   proficiencies: { label: 'Proficiencies', home: 'character', cost: 'markup', sel: '[data-editcard="proficiencies"]' },
   notes: { label: 'Notes', home: 'character', cost: 'markup', sel: '[data-editcard="notes"]' },
@@ -68,8 +83,16 @@ export const CARD_ORDER = [
   // The Spells tab reads in order of how often you touch it: the ability and its two derived
   // numbers (set once), then the slots (spent every fight), then the list (revised at a long
   // rest). Arrange mode can reorder all three per device; this is only where they start.
-  'combat', 'attacks', 'abilities', 'spellcasting', 'spellslots', 'spells', 'inventory', 'features',
-  'identity', 'proficiencies', 'notes',
+  //
+  // #164: only the order WITHIN a tab is visible — buildDefaultLayout filters this list by each
+  // card's `home` — so moving `attacks` down here is not what moved it to its own tab; its
+  // `home` did. The list still has to hold every card exactly once, because it also drives the
+  // place-every-registry-card pass that keeps a cost:'js' host from going missing.
+  //
+  // Character reads outside-in: who they are, what they are trained in, what they can do, what
+  // they carry, then the free-text notes last.
+  'combat', 'abilities', 'spellcasting', 'spellslots', 'spells', 'attacks',
+  'identity', 'proficiencies', 'features', 'inventory', 'notes',
 ];
 
 /**
@@ -87,28 +110,43 @@ export const CARD_ORDER = [
  *                 reproducing today's layout: 12 (a whole row), 6 (half), 3 (a quarter). The
  *                 layout config carries the live per-object span; this is the value
  *                 reconciliation falls back to. Cards keep a single column for now.
+ *   defaultHeight — the object's height in `--tile-step` units, same contract as defaultSpan one
+ *                 field over (#164). Absent means 0, which is "as tall as its contents" and what
+ *                 every tile was before this. It exists because the shipped default could express
+ *                 order, width and naming but not height, so the arrangement the app ships with
+ *                 could not be the arrangement anyone actually plays with. A non-zero value is an
+ *                 EXACT height, not a floor: `.tile.is-sized` clips, which is the point of the
+ *                 control — see normalizeHeight in layout.js.
  */
 export const OBJECT_REGISTRY = {
-  hp: { card: 'combat', label: 'Hit Points', cost: 'markup', defaultSpan: 12 },
-  rest: { card: 'combat', label: 'Rest', cost: 'markup', defaultSpan: 3 },
+  hp: { card: 'combat', label: 'Hit Points', cost: 'markup', defaultSpan: 12, defaultHeight: 7 },
+  // #164: half a row. Three fixed-height tiles sit beside it on the same line, and a quarter-row
+  // Rest cropped its own button text at 390px once the line stopped being four equal quarters.
+  rest: { card: 'combat', label: 'Rest', cost: 'markup', defaultSpan: 6, defaultHeight: 7 },
   // #75: half the row by default. AC is read on every incoming attack and was visually
   // indistinguishable from Prof. Bonus, which never changes in play — span is the grid's
   // own way of encoding "this one matters more", and it costs no new CSS.
-  ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 6 },
-  initiative: { card: 'combat', label: 'Initiative', cost: 'markup', defaultSpan: 3 },
-  speed: { card: 'combat', label: 'Speed', cost: 'markup', defaultSpan: 3 },
-  pb: { card: 'combat', label: 'Prof. Bonus', cost: 'markup', defaultSpan: 3 },
-  heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup', defaultSpan: 3 },
+  // #164 narrows it back to a quarter. #75's reasoning was that span is how the grid says "this
+  // one matters more" — but AC now leads the card instead of sitting seventh, and leading a row of
+  // four equal quarters says it at least as well as being twice the width of a tile below the fold.
+  ac: { card: 'combat', label: 'AC', cost: 'markup', defaultSpan: 3, defaultHeight: 5 },
+  initiative: { card: 'combat', label: 'INIT.', cost: 'markup', defaultSpan: 3, defaultHeight: 5 },
+  speed: { card: 'combat', label: 'Speed', cost: 'markup', defaultSpan: 3, defaultHeight: 5 },
+  // #164: abbreviated, like INIT. above. These four share one line of quarters, and at 390px a
+  // quarter is ~51px of label — "Prof. Bonus" wrapped to two lines and made the row taller than
+  // the number it was labelling.
+  pb: { card: 'combat', label: 'PB', cost: 'markup', defaultSpan: 3, defaultHeight: 5 },
+  heroic: { card: 'combat', label: 'Heroic Insp.', cost: 'markup', defaultSpan: 3, defaultHeight: 7 },
   // #78. Label matches the static markup (see applyObjects) and is abbreviated to fit a
   // quarter-row tile.
-  concentration: { card: 'combat', label: 'Conc.', cost: 'markup', defaultSpan: 3 },
+  concentration: { card: 'combat', label: 'Conc.', cost: 'markup', defaultSpan: 3, defaultHeight: 7 },
   hitdice: { card: 'combat', label: 'Hit Point Dice', cost: 'js', defaultSpan: 12 },
   // #140. cost:'js' — renderRows dereferences #resources with no null check, so the tile may be
   // hidden but must never be detached. Full width like the other row-list tiles: a row is a name
   // that grows plus two counts, and a half-row would ellipsize every name worth reading.
   // The label MUST stay identical to the <h3> in index.html — applyObjects rewrites that node
   // from this string on every layout apply, so a mismatch silently overwrites the markup.
-  resources: { card: 'combat', label: 'Resources', cost: 'js', defaultSpan: 12 },
+  resources: { card: 'combat', label: 'Class Resources', cost: 'js', defaultSpan: 12 },
   deathsaves: { card: 'combat', label: 'Death Saves', cost: 'js', defaultSpan: 12 },
   exhaustion: { card: 'combat', label: 'Exhaustion', cost: 'js', defaultSpan: 12 },
   conditions: { card: 'combat', label: 'Conditions', cost: 'js', defaultSpan: 12 },
@@ -174,9 +212,24 @@ export const OBJECT_ORDER = {
   //   initiative, speed, pb   read once a fight or never; pb never changes at all.
   //   rest              once per session and destructive, so it is last and no longer sits
   //                     next to the HP field a player taps every round.
+  //
+  // #164 reorders it again, from a layout that had actually been played with rather than from
+  // reasoning about frequency. The shape that emerged is bands, not a ranking:
+  //   pb, ac, initiative, speed          four quarters, all fixed-short — the numbers you READ.
+  //                                      None of them changes mid-fight; together they are one
+  //                                      glanceable strip instead of four tiles scattered by rank.
+  //   heroic, rest, concentration        the three things you SPEND or TOGGLE, one line.
+  //   hp                                 full width, directly under them.
+  //   resources, conditions, hitdice,    the lists, content-height, in descending order of how
+  //   deathsaves, exhaustion             often they are touched.
+  // #75 put hp first and deathsaves second so the 0-HP path was one region; that still holds —
+  // they are just no longer adjacent, because a death save is read in the lists band and current
+  // HP is a field you type in every round.
   combat: [
-    'hp', 'deathsaves', 'ac', 'conditions', 'concentration', 'resources', 'heroic',
-    'hitdice', 'exhaustion', 'initiative', 'speed', 'pb', 'rest',
+    'pb', 'ac', 'initiative', 'speed',
+    'heroic', 'rest', 'concentration',
+    'hp',
+    'resources', 'conditions', 'hitdice', 'deathsaves', 'exhaustion',
   ],
   // #67. Registering the order is what objectifies a card: normalizeCard backfills any object
   // missing from a saved layout, so every existing character gains both tiles with no migration.

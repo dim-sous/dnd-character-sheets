@@ -313,6 +313,12 @@ try {
   // elementFromPoint, not .focus() — a scripted focus() is not hit-testing, so pointer-events has
   // no say in it and an assertion about it measures nothing (CLAUDE.md's standing warning).
   const hpField = d.getElementById('f-hp-current');
+  // Scrolled into view first: elementFromPoint takes VIEWPORT coordinates, so a field below the
+  // fold resolves to whatever furniture sits at those coordinates. #164 moved the Hit Points tile
+  // from first in the card to eighth, and this assertion started reporting a tab-bar button —
+  // which reads as a broken dispatch guard rather than as a tile further down the card.
+  hpField.scrollIntoView({ block: 'center' });
+  await wait(150);
   const fr = hpField.getBoundingClientRect();
   const hitEl = d.elementFromPoint(fr.left + fr.width / 2, fr.top + fr.height / 2);
   ok('a tap over a bound field resolves to its tile, not the field',

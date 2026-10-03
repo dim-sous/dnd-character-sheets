@@ -48,6 +48,7 @@ try {
   }
 
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const { OBJECT_REGISTRY } = await import('../js/layout-registry.js');
 
   // Seeded as a PRE-#140 record on purpose: `resources` is deleted from the stored JSON, so the
   // first assertions below exercise the real migration path a player will hit — a save written
@@ -85,9 +86,12 @@ try {
   /* ---- 1. the tile exists, is wired, and says something useful when empty ---- */
 
   ok('the Resources tile is in the Combat panel', Boolean(tile()));
+  // Read from the registry rather than hardcoded: this assertion's whole claim is that the two
+  // AGREE, and naming the string here meant the probe failed when #164 renamed the tile to
+  // "Class Resources" — reporting a mismatch where there was none.
   ok('its heading matches the registry label (applyObjects rewrites this node)',
-    tile()?.querySelector('.tile__label')?.textContent.trim() === 'Resources',
-    `"${tile()?.querySelector('.tile__label')?.textContent.trim()}"`);
+    tile()?.querySelector('.tile__label')?.textContent.trim() === OBJECT_REGISTRY.resources.label,
+    `"${tile()?.querySelector('.tile__label')?.textContent.trim()}" vs registry "${OBJECT_REGISTRY.resources.label}"`);
   // Assert the INPUT too, or this whole section is testing a shape this build wrote for itself.
   ok('the seeded save really is pre-#140', !('resources' in stale));
   // ...and that the app rendered it without throwing. This is the migration observed where it
