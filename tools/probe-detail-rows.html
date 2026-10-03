@@ -104,12 +104,24 @@ try {
    * perfectly. elementFromPoint accounts for stacking, pointer-events and clipping at once.
    */
   const hits = (el) => {
+    // Scrolled into view FIRST: elementFromPoint takes VIEWPORT coordinates, so a control below
+    // the fold resolves to whatever furniture sits at those coordinates (or to null) and reads as
+    // "not hittable" when nothing is wrong with it. #164 moved the Features card down the
+    // Character tab and turned this into a failure about a button that was fine.
+    el.scrollIntoView({ block: 'center' });
     const r = box(el);
     const at = d.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return at === el || el.contains(at);
   };
 
-  d.getElementById('tab-gear').click();
+  // Activate whichever tab the Features card currently sits on, rather than naming one. An
+  // inactive panel carries `hidden`, so every control inside it measures 0x0 — this probe read
+  // `tab-gear` until #164 moved the card to Character, and the result was nine failures all
+  // saying "0x0", which reads as a broken button rather than as a card on another tab.
+  const tabOf = (cardSel) => d.querySelector(cardSel)?.closest('.tabpanel')?.id.replace('panel-', '');
+  const featuresTab = tabOf('[data-editcard="features"]');
+  ok('the Features card is on a findable tab', Boolean(featuresTab), String(featuresTab));
+  d.getElementById(`tab-${featuresTab}`).click();
   await wait(300);
 
   // --- the control exists on all three row types, and only those ------------------------

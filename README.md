@@ -105,6 +105,17 @@ Sidebar → **Import**, pick a `.json`, then choose:
 Imported files are normalised against the canonical character shape, so a backup from an
 older version — or one you hand-edited — won't crash the app on a missing field.
 
+### The default arrangement
+
+The layout a new install starts with is a real arrangement, exported from a device that had been
+played with and baked in (#164) — five tabs (**Status**, Abilities, Spells, **Attacks**,
+Character), with the Status card's tiles in bands: the four numbers you only read, then the three
+you spend, then HP, then the lists.
+
+It only reaches a browser that has **never** had anything rearranged. If you have ever moved one
+tile, your own layout wins and keeps winning — the app never overrides what you set up. To take
+the new default instead, use *Reset to original* in the arrange bar.
+
 ### Layout backup
 
 Sidebar → **Layout backup** (also in the arrange bar, under *Tabs & defaults*). The box holds

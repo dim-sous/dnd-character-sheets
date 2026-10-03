@@ -64,8 +64,14 @@ try {
     tabs: [
       { id: 'combat', label: 'Combat', cards: [{ componentId: 'combat', objects: [
         { componentId: 'pb', hidden: false, span: 'full' },   // player made PB full width
-        { componentId: 'ac', hidden: false, span: 2 },
-        { componentId: 'hp', hidden: false, span: 1 },        // ...and HP a single track
+        // height 0 EXPLICITLY (#164). A v1 layout carries no height field, and since #164 a
+        // missing height falls back to the registry's defaultHeight — so `ac` would arrive
+        // already sized at 5 steps, which makes "naturalH" not natural and parks the height
+        // slider one step off its own floor. The height half of this probe is about a tile that
+        // starts at its content height, so the fixture has to say so rather than rely on a
+        // default that has now changed twice.
+        { componentId: 'ac', hidden: false, span: 2, height: 0 },
+        { componentId: 'hp', hidden: false, span: 1, height: 0 },  // ...and HP a single track
       ] }] },
       { id: 'abilities', label: 'Abilities', cards: [] },
       { id: 'spells', label: 'Spells', cards: [] },

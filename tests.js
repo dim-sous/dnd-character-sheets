@@ -33,7 +33,7 @@ import {
 } from './js/layout.js';
 import {
   CARD_REGISTRY, CARD_ORDER, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
-  GRID_COLUMNS, SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_MAX,
+  GRID_COLUMNS, SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_SET_MIN, HEIGHT_MAX,
 } from './js/layout-registry.js';
 // #149: the spell picker's search is pure, so the ranking is testable — and the ranking is the
 // half of a picker that fails quietly (a search for "fire" that does not offer Fireball first is
@@ -1038,25 +1038,34 @@ describe('moveCard');
 {
   const cardsIn = (layout, tabId) => cardsOf(layout, tabId);
 
-  // gear holds [inventory, features] by default.
-  is('move down: inventory (0) → 1', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, 1), 'gear'),
-    ['features', 'inventory']);
-  is('move up: features (1) → 0', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 1, 0), 'gear'),
-    ['features', 'inventory']);
+  // Derived, not named. #75 reordering the combat defaults already cost this suite a false
+  // failure once — "a deliberate defaults change read as a moveObject bug" — and #164 moved three
+  // cards between tabs, which would have done it again. Pick whichever tab currently starts with
+  // at least two cards and swap its first two; the assertion is about moveCard, not about which
+  // cards happen to live together today.
+  const TWO = TAB_REGISTRY.map((t) => t.id).find((id) => cardsOf(DEFAULT_LAYOUT, id).length >= 2);
+  const PAIR = cardsOf(DEFAULT_LAYOUT, TWO);
+  const SWAPPED = [PAIR[1], PAIR[0], ...PAIR.slice(2)];
+  is('a tab with two or more cards exists to test with', PAIR.length >= 2, true);
+
+  is('move down: first → second', cardsIn(moveCard(DEFAULT_LAYOUT, TWO, 0, 1), TWO), SWAPPED);
+  is('move up: second → first', cardsIn(moveCard(DEFAULT_LAYOUT, TWO, 1, 0), TWO), SWAPPED);
 
   // Clamps to a no-op at both ends (the ↑/↓ buttons call this with fromIndex ± 1).
-  is('move up past top is a no-op', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, -1), 'gear'),
-    ['inventory', 'features']);
-  is('move down past bottom is a no-op', cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 1, 2), 'gear'),
-    ['inventory', 'features']);
+  is('move up past top is a no-op', cardsIn(moveCard(DEFAULT_LAYOUT, TWO, 0, -1), TWO), PAIR);
+  is('move down past bottom is a no-op',
+    cardsIn(moveCard(DEFAULT_LAYOUT, TWO, PAIR.length - 1, PAIR.length), TWO), PAIR);
 
   // Out-of-range fromIndex and unknown tab are no-ops.
-  is('out-of-range fromIndex → unchanged', moveCard(DEFAULT_LAYOUT, 'gear', 9, 0), DEFAULT_LAYOUT);
+  is('out-of-range fromIndex → unchanged', moveCard(DEFAULT_LAYOUT, TWO, 99, 0), DEFAULT_LAYOUT);
   is('unknown tab → unchanged', moveCard(DEFAULT_LAYOUT, 'nope', 0, 1), DEFAULT_LAYOUT);
 
   // Other tabs are untouched by a move.
-  is('combat tab unchanged when gear moves',
-    cardsIn(moveCard(DEFAULT_LAYOUT, 'gear', 0, 1), 'combat'), ['combat', 'attacks']);
+  is('other tabs unchanged when one tab moves',
+    TAB_REGISTRY.filter((t) => t.id !== TWO)
+      .every((t) => JSON.stringify(cardsIn(moveCard(DEFAULT_LAYOUT, TWO, 0, 1), t.id))
+        === JSON.stringify(cardsOf(DEFAULT_LAYOUT, t.id))),
+    true);
 
   // Immutability: the input layout is never mutated.
   {
@@ -1083,7 +1092,13 @@ describe('moveCardToTab');
   // The Spells tab holds three cards since #141 (Spellcasting → Spell Slots → Spells), so "the
   // destination end" is now genuinely an end rather than the second of two positions.
   is('card appended to destination end', cardsOf(moved, 'spells'), ['spellcasting', 'spellslots', 'spells', 'attacks']);
-  is('other tabs untouched', cardsOf(moved, 'gear'), ['inventory', 'features']);
+  {
+    // Neither the source nor the destination, derived — `attacks` moved tabs in #164, and naming
+    // a bystander tab here broke the moment the card under test lived on it.
+    const from = TAB_REGISTRY.map((t) => t.id).find((id) => cardsOf(DEFAULT_LAYOUT, id).includes('attacks'));
+    const bystander = TAB_REGISTRY.map((t) => t.id).find((id) => id !== from && id !== 'spells');
+    is('other tabs untouched', cardsOf(moved, bystander), cardsOf(DEFAULT_LAYOUT, bystander));
+  }
 
   // Invariant: still exactly one of every card after a cross-tab move.
   is('every card still placed exactly once', placed(moved).slice().sort(), [...CARD_IDS].sort());
@@ -1159,10 +1174,11 @@ describe('addTab / removeTab / renameTab / moveTab');
   is('addTab with a blank id is a no-op', addTab(DEFAULT_LAYOUT, '', 'x'), DEFAULT_LAYOUT);
 
   // removeTab: its cards move to the first REMAINING tab; last tab can't be removed.
-  const removedGear = removeTab(DEFAULT_LAYOUT, 'gear'); // gear held [inventory, features]
+  const removedGear = removeTab(DEFAULT_LAYOUT, 'gear');
   is('removeTab drops the tab', tabIds(removedGear).includes('gear'), false);
-  is('its cards move to the first remaining tab (combat)',
-    cardsOf(removedGear, 'combat'), ['combat', 'attacks', 'inventory', 'features']);
+  is('its cards move to the first remaining tab, appended in order',
+    cardsOf(removedGear, 'combat'),
+    [...cardsOf(DEFAULT_LAYOUT, 'combat'), ...cardsOf(DEFAULT_LAYOUT, 'gear')]);
   is('every card still placed exactly once after removal',
     placed(removedGear).slice().sort(), [...CARD_IDS].sort());
 
@@ -1179,7 +1195,8 @@ describe('addTab / removeTab / renameTab / moveTab');
 
   // renameTab; blank keeps the current label.
   is('renameTab sets the label', renameTab(DEFAULT_LAYOUT, 'combat', 'Fight').tabs[0].label, 'Fight');
-  is('renameTab blank keeps current', renameTab(DEFAULT_LAYOUT, 'combat', '   ').tabs[0].label, 'Combat');
+  is('renameTab blank keeps current', renameTab(DEFAULT_LAYOUT, 'combat', '   ').tabs[0].label,
+    TAB_REGISTRY.find((t) => t.id === 'combat').label);
 
   // moveTab reorders by ±1, clamped.
   is('moveTab down', tabIds(moveTab(DEFAULT_LAYOUT, 'combat', 1)),
@@ -1268,17 +1285,35 @@ describe('normalizeLayout: objects');
   const objHeight = (layout, id) => card(layout, 'combat').objects.find((o) => o.componentId === id).height;
   is('default span comes from the registry', objSpan(DEFAULT_LAYOUT, 'hp'), OBJECT_REGISTRY.hp.defaultSpan);
   is('a small vital defaults to a quarter row', objSpan(DEFAULT_LAYOUT, 'pb'), GRID_COLUMNS / 4);
-  // #75 widened AC to half a row: it is read on every incoming attack and was visually identical
-  // to Prof. Bonus, which never changes in play. Asserted by name so a silent revert to a quarter
-  // fails here rather than quietly undoing the frequency-of-use weighting.
-  is('AC defaults to half a row (#75)', objSpan(DEFAULT_LAYOUT, 'ac'), GRID_COLUMNS / 2);
+  // #75 widened AC to half a row, reasoning that span is how the grid says "this one matters
+  // more". #164 narrowed it back to a quarter, from a layout that had actually been played with:
+  // AC now LEADS the card instead of sitting seventh, and leading a line of four equal quarters
+  // weights it at least as well as double width did below the fold. Still asserted by name, for
+  // the same reason #75 did it — a silent change to the weighting should fail here.
+  is('AC defaults to a quarter row (#164, was half in #75)', objSpan(DEFAULT_LAYOUT, 'ac'), GRID_COLUMNS / 4);
   is('a status block defaults to full', objSpan(DEFAULT_LAYOUT, 'exhaustion'), SPAN_MAX);
   is('every default span is within the grid', card(DEFAULT_LAYOUT, 'combat').objects
     .every((o) => Number.isInteger(o.span) && o.span >= SPAN_MIN && o.span <= SPAN_MAX), true);
-  // Height is opt-in: nothing ships with one, so every tile is as tall as its contents until a
-  // player drags the slider. This is what makes the new field additive for every saved layout.
-  is('every object defaults to no set height',
-    card(DEFAULT_LAYOUT, 'combat').objects.every((o) => o.height === HEIGHT_MIN), true);
+  // Height used to be opt-in — nothing shipped with one, every tile was as tall as its contents.
+  // #164 gave it the same contract as span, because the shipped default could express order,
+  // width and naming but not height, so the arrangement the app ships with could not be the one
+  // anyone actually plays with.
+  is('default height comes from the registry',
+    card(DEFAULT_LAYOUT, 'combat').objects
+      .every((o) => o.height === (OBJECT_REGISTRY[o.componentId].defaultHeight ?? HEIGHT_MIN)), true);
+  is('every default height is in range or means content-height',
+    card(DEFAULT_LAYOUT, 'combat').objects
+      .every((o) => o.height === HEIGHT_MIN || (o.height >= HEIGHT_SET_MIN && o.height <= HEIGHT_MAX)), true);
+  // The #164 shape, asserted as bands rather than per tile: the four numbers you only READ are
+  // fixed and short, the three you SPEND are fixed and taller, and every list stays
+  // content-height — a fixed height on a list would clip rows the player added.
+  is('the four read-only numbers are fixed and short',
+    ['pb', 'ac', 'initiative', 'speed'].map((id) => objHeight(DEFAULT_LAYOUT, id)), [5, 5, 5, 5]);
+  is('the spend/toggle band plus HP is fixed and taller',
+    ['heroic', 'rest', 'concentration', 'hp'].map((id) => objHeight(DEFAULT_LAYOUT, id)), [7, 7, 7, 7]);
+  is('every row-list tile stays content-height',
+    ['resources', 'conditions', 'hitdice', 'deathsaves', 'exhaustion']
+      .map((id) => objHeight(DEFAULT_LAYOUT, id)), [0, 0, 0, 0, 0]);
 
   // Reconcile: unknown dropped, duplicate collapsed, bare-string coerced, hidden preserved,
   // and every registered object present exactly once (js hosts included — anti-crash).
@@ -1298,7 +1333,8 @@ describe('normalizeLayout: objects');
   is('hidden flag preserved', card(messy, 'combat').objects.find((o) => o.componentId === 'ac').hidden, true);
   is('a v1 span is rescaled, not dropped', objSpan(messy, 'ac'), 6);
   is('invalid span coerced to registry default', objSpan(messy, 'speed'), OBJECT_REGISTRY['speed'].defaultSpan);
-  is('a missing height reads as none', objHeight(messy, 'ac'), HEIGHT_MIN);
+  is('a missing height falls back to the registry default (#164)',
+    objHeight(messy, 'ac'), OBJECT_REGISTRY.ac.defaultHeight);
 
   // Height reconciliation, same contract as span: valid kept, junk and out-of-range clamped
   // rather than rejected, so a hand-edited file can never produce a broken tile.
@@ -1313,7 +1349,8 @@ describe('normalizeLayout: objects');
     ] }] }],
   });
   is('a valid height is preserved', objHeight(heights, 'ac'), 5);
-  is('junk height reads as none', objHeight(heights, 'speed'), HEIGHT_MIN);
+  is('junk height falls back to the registry default',
+    objHeight(heights, 'speed'), OBJECT_REGISTRY.speed.defaultHeight);
   is('height above the maximum clamps', objHeight(heights, 'pb'), HEIGHT_MAX);
   is('negative height clamps to none', objHeight(heights, 'heroic'), HEIGHT_MIN);
   is('a fractional height rounds to a step', objHeight(heights, 'rest'), 3);
@@ -1404,7 +1441,8 @@ describe('setObjectSpan / setObjectHeight (#54 Phase 6, sliders in item 1)');
   is('0 clears the height', heightOf(setObjectHeight(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6), 'combat', 'ac', 0), 'ac'), HEIGHT_MIN);
   is('height past the top clamps to the top', heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 99), 'ac'), HEIGHT_MAX);
   is('height below zero clamps to zero', heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', -3), 'ac'), HEIGHT_MIN);
-  is('junk height reads as none', heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 'tall'), 'ac'), HEIGHT_MIN);
+  is('junk height falls back to the registry default',
+    heightOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 'tall'), 'ac'), OBJECT_REGISTRY.ac.defaultHeight);
   is('height leaves width alone', spanOf(setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ac', 6), 'ac'), OBJECT_REGISTRY.ac.defaultSpan);
   is('unknown object is a no-op', setObjectHeight(DEFAULT_LAYOUT, 'combat', 'ghost', 6), DEFAULT_LAYOUT);
   is('a heightened layout survives normalize unchanged',
@@ -1444,8 +1482,15 @@ describe('layout migration: v1 spans → twelfths (item 1)');
   is('v1 double track becomes half a row', spanOf(migrated, 'ac'), 6);
   is('v1 full becomes the whole row', spanOf(migrated, 'hp'), SPAN_MAX);
   is('the migrated layout reports the new version', migrated.layoutSchemaVersion, LAYOUT_SCHEMA_VERSION);
-  is('migration adds the height field', migrated.tabs.flatMap((t) => t.cards)
-    .find((c) => c.componentId === 'combat').objects.every((o) => o.height === HEIGHT_MIN), true);
+  // The claim is that the field is PRESENT and valid on a layout saved before it existed — not
+  // that it is zero. Since #164 a v1 blob picks up the registry's default heights here, exactly
+  // as it already picked up a registry default for any span it did not mention.
+  is('migration adds a valid height to every object', migrated.tabs.flatMap((t) => t.cards)
+    .find((c) => c.componentId === 'combat').objects
+    .every((o) => Number.isInteger(o.height) && o.height >= HEIGHT_MIN && o.height <= HEIGHT_MAX), true);
+  is('migration takes the height from the registry', migrated.tabs.flatMap((t) => t.cards)
+    .find((c) => c.componentId === 'combat').objects
+    .every((o) => o.height === (OBJECT_REGISTRY[o.componentId].defaultHeight ?? HEIGHT_MIN)), true);
 
   // A NON-default v1 arrangement is the case that matters: the defaults would survive being
   // dropped, because they'd be re-derived from the registry. A player's own widths would not.
@@ -1490,6 +1535,75 @@ describe('renameObject (#54)');
   }
 }
 
+describe('the shipped default arrangement (#164)');
+{
+  /*
+   * The shipped default is no longer a guess at a good arrangement — it IS one, exported
+   * from a device that had been played with and baked into the registry. This block is the
+   * fixture for that arrangement, so a later edit to TAB_REGISTRY / CARD_REGISTRY /
+   * CARD_ORDER / OBJECT_REGISTRY / OBJECT_ORDER that changes what a new player sees has to
+   * change it here too, deliberately, instead of drifting.
+   *
+   * Note what it does NOT pin: nothing here asserts a registry field directly. It asserts
+   * the arrangement those fields are supposed to PRODUCE, which is the thing with a reason
+   * behind it.
+   */
+  const TABS = [
+    { id: 'combat', label: 'Status', cards: ['combat'] },
+    { id: 'abilities', label: 'Abilities', cards: ['abilities'] },
+    { id: 'spells', label: 'Spells', cards: ['spellcasting', 'spellslots', 'spells'] },
+    { id: 'gear', label: 'Attacks', cards: ['attacks'] },
+    { id: 'character', label: 'Character', cards: ['identity', 'proficiencies', 'features', 'inventory', 'notes'] },
+  ];
+
+  is('the tab set and their labels', DEFAULT_LAYOUT.tabs.map((t) => ({ id: t.id, label: t.label })),
+    TABS.map((t) => ({ id: t.id, label: t.label })));
+  is('every tab holds the right cards, in order',
+    DEFAULT_LAYOUT.tabs.map((t) => t.cards.map((c) => c.componentId)), TABS.map((t) => t.cards));
+
+  // Card titles that override the registry label are stored on the card; the rest read
+  // through to CARD_REGISTRY, so a renamed card shows up as a changed label here either way.
+  const cardTitle = (id) => {
+    const c = DEFAULT_LAYOUT.tabs.flatMap((t) => t.cards).find((x) => x.componentId === id);
+    return c.label ?? CARD_REGISTRY[id].label;
+  };
+  is('the Status card is named Status, not Combat', cardTitle('combat'), 'Status');
+  is('the Abilities card names all three of its halves', cardTitle('abilities'), 'Abilities, Saves & Skills');
+  is('Attacks has its own tab', DEFAULT_LAYOUT.tabs.find((t) => t.cards.some((c) => c.componentId === 'attacks')).label, 'Attacks');
+
+  // id, span, height, the name the player sees. That last one is deliberately the EFFECTIVE
+  // label, not the stored override: #164 put the renames in OBJECT_REGISTRY.label rather than as
+  // per-tile overrides, so the shipped default stores no override at all and a player who renames
+  // a tile is still overriding something. Asserting the stored field would have passed while
+  // every tile showed its old name.
+  const TILES = [
+    ['pb', 3, 5, 'PB'],
+    ['ac', 3, 5, 'AC'],
+    ['initiative', 3, 5, 'INIT.'],
+    ['speed', 3, 5, 'Speed'],
+    ['heroic', 3, 7, 'Heroic Insp.'],
+    ['rest', 6, 7, 'Rest'],
+    ['concentration', 3, 7, 'Conc.'],
+    ['hp', 12, 7, 'Hit Points'],
+    ['resources', 12, 0, 'Class Resources'],
+    ['conditions', 12, 0, 'Conditions'],
+    ['hitdice', 12, 0, 'Hit Point Dice'],
+    ['deathsaves', 12, 0, 'Death Saves'],
+    ['exhaustion', 12, 0, 'Exhaustion'],
+  ];
+  const combatTiles = DEFAULT_LAYOUT.tabs.flatMap((t) => t.cards)
+    .find((c) => c.componentId === 'combat').objects;
+  is('the Status card tiles, in order with their widths, heights and names',
+    combatTiles.map((o) => [o.componentId, o.span, o.height, o.label ?? OBJECT_REGISTRY[o.componentId].label]),
+    TILES);
+  is('the shipped default stores no per-tile name override',
+    combatTiles.every((o) => o.label === undefined), true);
+  is('no tile ships hidden', combatTiles.every((o) => o.hidden === false), true);
+
+  // The arrangement has to survive its own file format, or it cannot be handed to anyone.
+  is('the shipped default round-trips through an export',
+    parseLayoutFile(serializeLayout(DEFAULT_LAYOUT, '2026-01-01')).layout, DEFAULT_LAYOUT);
+}
 describe('layout export / import (#162)');
 {
   // A layout had no backup path: its own localStorage key, absent from every character export,
