@@ -92,7 +92,8 @@ try {
     { name: 'Dagger', ability: 'dex', proficient: true, damage: '1d4', notes: '' },
     { name: 'Longbow of the Deep Wood', ability: 'dex', proficient: true, damage: '1d8+2 piercing', notes: 'Range 150/600' },
   ];
-  c.inventory = [{ name: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
+  // `item`, not `name`: that is what the row binds, and the wrong key rendered an empty box (#145).
+  c.inventory = [{ item: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
   /*
    * #145: features and feats, seeded for the reason every list above is seeded — an empty one
    * renders its empty-state line and nothing else, so the row is never measured and the card
@@ -132,6 +133,13 @@ try {
     { name: 'Rage', remaining: 2, total: 3 },
     { name: 'Channel Divinity: Turn Undead', remaining: 14, total: 20 },
   ];
+  /*
+   * #145: a second Hit Point Dice pool, with two-digit counts. blankCharacter() ships one d8 row,
+   * so the tile was measured, but only ever as one row of one-digit numbers — and a field sized
+   * around "3" is a different measurement from one holding "10", the reason the resource row
+   * above carries 14/20.
+   */
+  c.hitDice.push({ size: 'd10', total: 12, remaining: 10 });
   /*
    * #141: spells, for exactly the reason the resource rows above are seeded. An UNSEEDED spell
    * list renders one empty-state line per visible level and nothing else, so the row — a 44px
@@ -700,15 +708,42 @@ try {
   }
 
   const tab = async (id) => { d.getElementById(`tab-${id}`)?.click(); await settle(); };
+  /*
+   * Brings forward whichever tab holds the card first. A scene that picked the tab by NAME broke
+   * silently when #164 moved Features to Character: at 390px the card sat in a `hidden` panel,
+   * every control measured 0x0 and was skipped as "not rendered in this scene", and the scene
+   * reported nothing — the same empty PASS as an unseeded list. 1440px kept measuring it, because
+   * every panel is revealed there, so the two widths disagreed without either saying so.
+   */
+  const unshownCards = [];
   const edit = async (card) => {
-    d.querySelector(`[data-editcard="${card}"] .card__edit`)?.click();
+    const el = d.querySelector(`[data-editcard="${card}"]`);
+    const panel = el?.closest('[role="tabpanel"]');
+    if (panel?.hidden) d.querySelector(`[role="tab"][aria-controls="${panel.id}"]`)?.click();
+    el?.querySelector('.card__edit')?.click();
     await settle();
+    // ...and the guard for it: a card that is not on screen when its scene is measured is a FAIL,
+    // so the next layout change cannot empty a scene quietly.
+    if (!el?.checkVisibility()) unshownCards.push(card);
   };
 
   // Named in the report because a PASS means nothing without it: headless Chrome reports dark by
   // default, so an unflagged "light" run is a second dark run. See CLAUDE.md.
   const THEME = w.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   const report = { viewport: VIEWPORT, theme: THEME, tap: TAP, scenes: [] };
+
+  /*
+   * #145: a seeded value that never reaches a field measures nothing, and reads as PASS. The
+   * inventory seed used `name` where the row binds `item`, so its long value — the fixture that
+   * exists to push a row sideways — rendered as an empty box in every run since it was added.
+   * So: every string seeded into a list row must be the value of some field once the app is up.
+   */
+  const fieldValues = new Set([...d.querySelectorAll('input, textarea, select')].map((el) => el.value));
+  const seededRows = [
+    c.attacks, c.inventory, c.features, c.feats, c.resources, c.hitDice, c.spellcasting.spells,
+  ].flat();
+  report.unrenderedFixtures = [...new Set(seededRows.flatMap((row) => Object.values(row)))]
+    .filter((v) => typeof v === 'string' && v !== '' && !fieldValues.has(v));
 
   await tab('combat');
   report.scenes.push(auditScene('combat / view'));
@@ -777,28 +812,43 @@ try {
 
   await tab('gear');
   report.scenes.push(auditScene('gear / view'));
+  await tab('character');
+  report.scenes.push(auditScene('character / view'));
 
   /*
-   * #145/#147: Features & Feats, which lives on this tab, has three states and the scene above
-   * reaches one. Edit adds the ✕ and the two "+ Add" buttons; a row's detail block (source /
-   * level / description textarea) is `display:none` until something opens it, so its controls are
-   * invisible to every measurement until then — and as of #147 that is true in Edit mode too,
-   * which is the change: Edit used to force every block open, so this scene would have measured
-   * them by accident and stopped doing so silently.
+   * #145/#147: Features & Feats has three states and the view scene reaches one. Edit adds the ✕
+   * and the two "+ Add" buttons; a row's detail block (source / level / description textarea) is
+   * `display:none` until something opens it, so its controls are invisible to every measurement
+   * until then — and as of #147 that is true in Edit mode too, which is the change: Edit used to
+   * force every block open, so this scene would have measured them by accident and stopped doing
+   * so silently.
    *
    * Opened by setting the class rather than clicking the button, for the same reason the spell
    * sections are: the gesture is what probe-detail-rows.html tests, and the job here is only to
-   * get the controls on screen so they can be sized and contrast-checked.
+   * get the controls on screen so they can be sized and contrast-checked. Named by the card, not
+   * a tab: edit() finds the tab, which is what keeps this scene measuring after a layout change.
    */
   await edit('features');
   for (const row of d.querySelectorAll('#features .row--feature, #feats .row--feat')) {
     row.classList.add('is-expanded');
   }
   await settle(200);
-  report.scenes.push(auditScene('gear / features edit, rows expanded'));
+  report.scenes.push(auditScene('features / edit, rows expanded'));
   await edit('features');
-  await tab('character');
-  report.scenes.push(auditScene('character / view'));
+
+  /*
+   * #145: every other card's Edit mode. Edit is where a card's ✕ and "+ Add" buttons appear and
+   * its read-only fields become boxes, so a card never put into Edit had never had those
+   * controls measured at all — six of the eleven, until this. Read off the page rather than
+   * listed, so a card added later is audited in Edit without anyone remembering to add a scene.
+   */
+  const HAND_WRITTEN = new Set(['combat', 'abilities', 'spellslots', 'spells', 'features']);
+  for (const card of [...d.querySelectorAll('[data-editcard]')].map((el) => el.dataset.editcard)) {
+    if (HAND_WRITTEN.has(card)) continue;
+    await edit(card);
+    report.scenes.push(auditScene(`${card} / edit`));
+    await edit(card);
+  }
 
   await tab('combat');
   d.querySelector('[data-action="arrange-toggle"]')?.click();
@@ -918,7 +968,15 @@ try {
   // app's worth of checkboxes turned out to be painting nothing at all.
   report.controlEdgeFailures = [...new Set(report.scenes.flatMap((s) => s.controlEdges))];
 
+  report.unshownCards = [...new Set(unshownCards)];
   const parts = [];
+  if (report.unshownCards.length) {
+    parts.push(`${report.unshownCards.length} card(s) were off screen while their Edit scene was measured: ${report.unshownCards.join(', ')}`);
+  }
+  if (report.unrenderedFixtures.length) {
+    parts.push(`${report.unrenderedFixtures.length} seeded value(s) never reached a field, so their rows were measured empty: `
+      + report.unrenderedFixtures.map((v) => `"${v}"`).join(', '));
+  }
   if (report.contrastFailures.length) parts.push(`${report.contrastFailures.length} text colour pairing(s) under WCAG AA`);
   if (report.controlEdgeFailures.length) parts.push(`${report.controlEdgeFailures.length} control edge(s) under 3:1 (WCAG 1.4.11)`);
   if (report.escapedPseudos.length) parts.push(`${report.escapedPseudos.length} pseudo-element(s) escape their owner`);
@@ -932,7 +990,7 @@ try {
     ? ` [note: ${report.truncatedRowNames.length} row name(s) ellipsize by design — ${report.truncatedRowNames[0]}]`
     : '';
   report.verdict = (parts.length === 0
-    ? `PASS — at ${VIEWPORT}px in the ${THEME} theme, every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, every text colour clears WCAG AA against what is actually behind it, every control's own edge clears 3:1, nothing scrolls sideways, and no field outside a list row crops its value`
+    ? `PASS — at ${VIEWPORT}px in the ${THEME} theme, every seeded value reached a field, every measured control has a >=${TAP}px hit area and is the thing a tap would actually hit, every text colour clears WCAG AA against what is actually behind it, every control's own edge clears 3:1, nothing scrolls sideways, and no field outside a list row crops its value`
     : `FAIL — at ${VIEWPORT}px in the ${THEME} theme: ${parts.join('; ')}`) + note;
   out.textContent = JSON.stringify(report, null, 1);
 } catch (err) {

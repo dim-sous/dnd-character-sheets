@@ -53,7 +53,7 @@ try {
     { name: 'Circle of the Moon Spells', source: 'Moon', level: '3', text: '' },
   ];
   c.feats = [{ name: 'Tough', source: 'Origin', text: '' }];
-  c.inventory = [{ name: 'A', qty: 1, notes: '' }, { name: 'Item', qty: 1, notes: '' }];
+  c.inventory = [{ item: 'A', qty: 1, notes: '' }, { item: 'Item', qty: 1, notes: '' }];
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
   localStorage.removeItem('dnd-character-sheets:layout');
   localStorage.removeItem('dnd-character-sheets:layout-default');

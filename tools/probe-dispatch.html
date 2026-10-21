@@ -47,7 +47,7 @@ try {
   c.spellcasting.ability = 'int';
   c.spellcasting.slots[1] = { total: 4, used: 1 };
   c.attacks = [{ name: 'Dagger', ability: 'dex', proficient: true, damage: '1d4', notes: '' }];
-  c.inventory = [{ name: 'Rope', qty: 1, notes: '' }];
+  c.inventory = [{ item: 'Rope', qty: 1, notes: '' }];
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
   localStorage.removeItem('dnd-character-sheets:layout');
   localStorage.removeItem('dnd-character-sheets:layout-default');
