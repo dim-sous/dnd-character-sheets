@@ -41,6 +41,9 @@ const LAYOUT_DEFAULT_KEY = 'dnd-character-sheets:layout-default';
 
 try {
   // Kill the worker first or every assertion below measures the last build.
+  // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
+  const hold = setInterval(() => {}, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -49,6 +52,7 @@ try {
     const keys = await caches.keys();
     await Promise.all(keys.map((k) => caches.delete(k)));
   }
+  clearInterval(hold);
 
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
   const { CARD_ORDER } = await import('../js/layout-registry.js');
@@ -146,12 +150,49 @@ try {
     ok('the JSON box clears the iOS-zoom font floor', parseFloat(cs.fontSize) >= 16, cs.fontSize);
   }
 
-  // Copy must never claim to have copied when it did not. In an iframe with no clipboard-write
-  // permission the API throws, so the honest branch is the one under test.
-  $('[data-action="layout-copy"]').click();
-  await wait(300);
-  ok('Copy reports honestly either way',
-    /Copied to the clipboard\.|Copy was blocked here\./.test(status()), `"${status()}"`);
+  // Copy must never claim to have copied when it did not. The REAL clipboard cannot be the one
+  // under test: it answers in real time, and --virtual-time-budget fast-forwards only timers, so a
+  // fixed wait() read the status before the promise settled — and the late "blocked" then landed
+  // on the NEXT check, where it read as Download misreporting. Which answer a headless browser
+  // gives also varies by environment, which is why this used to accept "either". A stub that
+  // settles in a microtask makes both answers deterministic, so both are asserted.
+  const clip = { calls: [] };
+  const clipboardThat = (granted) => ({
+    writeText(text) {
+      clip.calls.push(text);
+      return granted ? Promise.resolve()
+        : Promise.reject(new w.DOMException('Write permission denied.', 'NotAllowedError'));
+    },
+  });
+  const copyWith = async (clipboard) => {
+    // An own property shadows Navigator.prototype's getter; `delete` puts the real one back.
+    Object.defineProperty(w.navigator, 'clipboard', { configurable: true, value: clipboard });
+    $('#layout-transfer-status').textContent = '';   // so a stale message cannot pass for this one
+    box().setSelectionRange(0, 0);
+    $('[data-action="layout-copy"]').focus();        // where a tap or a keypress leaves focus
+    $('[data-action="layout-copy"]').click();
+    await wait(100);
+  };
+  const selectedAll = () => d.activeElement === box()
+    && box().selectionStart === 0 && box().selectionEnd === box().value.length;
+  const selection = () => `${d.activeElement?.id || d.activeElement?.tagName} `
+    + `${box().selectionStart}-${box().selectionEnd} of ${box().value.length}`;
+
+  await copyWith(clipboardThat(true));
+  ok('Copy reports a copy that happened', status() === 'Copied to the clipboard.', `"${status()}"`);
+  ok('...of exactly what is in the box', clip.calls.length === 1 && clip.calls[0] === box().value,
+    `${clip.calls.length} write(s)`);
+
+  // Blocked, the message tells the player the text is selected — so it had better be.
+  await copyWith(clipboardThat(false));
+  ok('Copy reports a blocked copy', /^Copy was blocked here\./.test(status()), `"${status()}"`);
+  ok('...and the text IS selected, as that message says', selectedAll(), selection());
+
+  // No clipboard API at all: it is secure-context only, so plain http:// on a LAN address — how a
+  // phone reaches a dev server — has none. The same honest branch, not a throw out of the handler.
+  await copyWith(undefined);
+  ok('no clipboard API: still reports blocked', /^Copy was blocked here\./.test(status()), `"${status()}"`);
+  ok('...and still selects the text', selectedAll(), selection());
 
   // An empty box must not report a save or a copy. Both act on the BOX, not on the live layout,
   // so "there is nothing to copy" is the honest answer rather than silently re-exporting.
@@ -159,9 +200,12 @@ try {
   $('[data-action="layout-download"]').click();
   await wait(200);
   ok('Download refuses an empty box', /nothing in the box to save/.test(status()), `"${status()}"`);
-  $('[data-action="layout-copy"]').click();
-  await wait(200);
+  const writesBefore = clip.calls.length;
+  await copyWith(clipboardThat(true));
   ok('Copy refuses an empty box', /nothing in the box to copy/.test(status()), `"${status()}"`);
+  ok('...and writes nothing over what the player had copied', clip.calls.length === writesBefore,
+    `${clip.calls.length - writesBefore} write(s)`);
+  delete w.navigator.clipboard;
   typeInto(box(), exported);          // put the real export back for the refusal checks below
 
   // A rule whose whole job is to suppress something, asserted as PARSED — an unbalanced comment

@@ -22,6 +22,9 @@ try {
  * and a "module does not provide export X" error for code you just wrote. Silently wrong
  * measurements are worse than none, and this harness exists to be trusted.
  */
+// These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
+// to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
+const hold = setInterval(() => {}, 10);
 if (navigator.serviceWorker) {
   const regs = await navigator.serviceWorker.getRegistrations();
   await Promise.all(regs.map((r) => r.unregister()));
@@ -30,6 +33,7 @@ if (window.caches) {
   const keys = await caches.keys();
   await Promise.all(keys.map((k) => caches.delete(k)));
 }
+clearInterval(hold);
 
 const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
 const a = blankCharacter(); a.name='Alpha'; a.hp.max=30; a.hp.current=20; a.hp.temp=0;

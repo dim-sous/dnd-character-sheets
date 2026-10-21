@@ -29,11 +29,15 @@ const L = [];
 const say = (s) => L.push(s);
 
 try {
+  // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
+  const hold = setInterval(() => {}, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
   }
   if (window.caches) { const k = await caches.keys(); await Promise.all(k.map((x) => caches.delete(x))); }
+  clearInterval(hold);
 
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
   const c = blankCharacter();
