@@ -1,0 +1,50 @@
+<!doctype html>
+<!--
+  The service-worker update check. Copied into each snapshot's root by run.sh, so it sits inside the
+  worker's scope; never part of the deployed site.
+
+  One browser session, two deploys: open the app on snapshot A and let its worker install, switch
+  the server to snapshot B mid-session (a "deploy"), let the browser find the new worker, and ask that
+  NEW worker which js/state.js and js/main.js it serves. Each snapshot marks both files MARKER-<name>.
+
+  The bug this exists for: cache.addAll() precached through the browser's HTTP cache, and Pages sends
+  max-age=600, so a worker installing within ten minutes of the previous build's fetches stored the
+  PREVIOUS build's files under the NEW build's cache name and served them cache-first until the next
+  deploy. The long-rest change reached a phone that way: old question, nothing refilled.
+-->
+<meta charset="utf-8">
+<pre id="out">pending</pre>
+<!-- Cross-origin (another port), so the worker does not handle it: a fetch the active worker is still
+     handling holds back the next worker's activation, and this one is meant to last 20 seconds. -->
+<img id="hold" alt="">
+<iframe id="app" style="width:390px;height:600px"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const log = [];
+const say = (s) => { log.push(s); out.textContent = log.join('\n'); };
+const marker = (t) => (t.match(/MARKER-\w+/) || ['no marker'])[0];
+const params = new URLSearchParams(location.search);
+const control = `${location.protocol}//${location.hostname}:${params.get('control')}`;
+document.getElementById('hold').src = `${control}/__delay?ms=20000`;
+try {
+  document.getElementById('app').src = './index.html';     // the app registers its own worker
+  const reg = await navigator.serviceWorker.ready;
+  if (!navigator.serviceWorker.controller) {
+    await new Promise((r) => navigator.serviceWorker.addEventListener('controllerchange', r, { once: true }));
+  }
+  say(`first build: ${(await caches.keys()).join(', ')} serves ${marker(await (await fetch('./js/state.js')).text())}`);
+  await fetch(`${control}/__switch?to=${params.get('next')}`);
+  await reg.update();
+  const next = reg.installing || reg.waiting;
+  if (!next) throw new Error('the browser found no newer worker after the deploy');
+  await new Promise((r) => {
+    if (next.state === 'activated') r();
+    next.addEventListener('statechange', () => { if (next.state === 'activated') r(); });
+  });
+  say(`second build: ${(await caches.keys()).join(', ')}`);
+  say(`  state.js served: ${marker(await (await fetch('./js/state.js')).text())}`);
+  say(`  main.js served: ${marker(await (await fetch('./js/main.js')).text())}`);
+} catch (e) {
+  say(`ERROR ${e && e.message || e}`);
+}
+</script>

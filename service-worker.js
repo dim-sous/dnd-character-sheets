@@ -43,10 +43,29 @@ const SHELL = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL))
+      .then((cache) => Promise.all(SHELL.map((url) => precache(cache, url))))
       .then(() => self.skipWaiting()),
   );
 });
+
+/*
+ * Fetch one shell file FRESH, and store it under the plain URL the page will ask for.
+ *
+ * Not cache.addAll(): its requests go through the browser's HTTP cache, and GitHub Pages sends
+ * every file with max-age=600. So a worker installing within ten minutes of the previous build's
+ * fetches precached the PREVIOUS build's copies of whatever had changed — under the NEW build's
+ * cache name — and then served them cache-first until the next deploy. That is how the long-rest
+ * change reached a phone as a new cache holding the old main.js and state.js: the question kept
+ * its old wording and nothing was refilled. The version in the query makes each build's URLs new
+ * to the HTTP cache and to the CDN in front of Pages alike; `cache: 'reload'` says it outright.
+ */
+function precache(cache, url) {
+  const fresh = `${url}${url.includes('?') ? '&' : '?'}v=${CACHE_VERSION}`;
+  return fetch(fresh, { cache: 'reload' }).then((response) => {
+    if (!response.ok) throw new Error(`precache ${url}: HTTP ${response.status}`);
+    return cache.put(url, response);
+  });
+}
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
