@@ -202,22 +202,74 @@ export function canPrepare(level) {
 }
 
 /**
+ * The rows a count runs over: one level's, or — with `level` omitted — the whole preparable
+ * list, which skips cantrips (#158) so a stale tick or flag on one, from an old save or from
+ * re-filing a spell down to level 0, cannot inflate a card total from a row that no longer shows
+ * a control to clear it. Asking for level 0 explicitly still counts what is stored there, because
+ * that is what the caller asked for and a count should not pretend the data says something else.
+ */
+function countedSpells(char, level) {
+  const all = (char.spellcasting && char.spellcasting.spells) || [];
+  return level == null
+    ? all.filter((spell) => canPrepare(spell.level))
+    : spellsAtLevel(char, level).map((row) => row.spell);
+}
+
+/**
  * How many spells are ticked prepared — at one level, or across the whole preparable list when
  * `level` is omitted. Counting a checkbox the player ticked is arithmetic, not a rule: nothing
- * here knows how many spells a class may prepare, and nothing stops them from ticking more.
+ * here stops them from ticking more than `spellcasting.preparedMax`.
  *
- * The one rule it does apply is `canPrepare` (#158): the whole-list total skips cantrips, so a
- * stale tick on one — from an old save, or from re-filing a prepared spell down to level 0 —
- * cannot inflate "N prepared" from a row that no longer shows a tick to clear it. Asking for
- * level 0 explicitly still counts the ticks, because that is what the caller asked for and this
- * function should not pretend stored data says something else.
+ * An ALWAYS-prepared spell is not counted, whatever its tick says. In the 2024 rules a spell a
+ * subclass, species, feat or item gives you is always prepared and does not count against the
+ * number you may prepare — so this is the number that is compared with that limit, and folding
+ * the always-prepared ones in would make every Cleric look over it from level 1. Its stored
+ * `prepared` is left alone, so unflagging it brings the old tick back.
  */
 export function preparedCount(char, level) {
-  const all = (char.spellcasting && char.spellcasting.spells) || [];
-  const rows = level == null
-    ? all.filter((spell) => canPrepare(spell.level)).map((spell) => ({ spell }))
-    : spellsAtLevel(char, level);
-  return rows.filter((row) => row.spell.prepared).length;
+  return countedSpells(char, level).filter((spell) => spell.prepared && !spell.alwaysPrepared).length;
+}
+
+/** How many spells are flagged always prepared — at one level, or across the preparable list. */
+export function alwaysPreparedCount(char, level) {
+  return countedSpells(char, level).filter((spell) => spell.alwaysPrepared).length;
+}
+
+/**
+ * The count beside a level heading ("2 of 4 · 1 always"), or beside the card title with `level`
+ * omitted ("6 prepared · 3 always"). Here rather than in the renderer so the arithmetic of the
+ * sentence is in the suite.
+ *
+ * The "of N" counts the spells at that level the player CHOOSES between — the always-prepared ones
+ * are taken out of it, not just out of the numerator. "2 of 6" over a section holding two ★ rows
+ * would say four spells were unprepared when two of those four are ready every day; "2 of 4 ·
+ * 2 always" accounts for all six rows. Each part is dropped when it is empty, so a level holding
+ * only always-prepared spells reads "2 always" rather than "0 of 0 · 2 always".
+ *
+ * Cantrips read as a plain count (#158): a cantrip is always available, so there is no "of" to
+ * state and no flag worth calling out.
+ */
+export function preparedSummary(char, level) {
+  const always = alwaysPreparedCount(char, level);
+  const tail = always > 0 ? ` · ${always} always` : '';
+  if (level == null) return `${preparedCount(char)} prepared${tail}`;
+
+  const known = spellsAtLevel(char, level).length;
+  if (known === 0) return '';
+  if (!canPrepare(level)) return String(known);
+  const chosen = known - always;
+  if (chosen === 0) return `${always} always`;
+  return `${preparedCount(char, level)} of ${chosen}${tail}`;
+}
+
+/**
+ * Whether more spells are ticked than the class allows — the Prepared spells tile's red cue. Only
+ * ever a cue: nothing refuses the tick, and the DM may well allow it. A limit of 0 is "not
+ * tracked" (see blankCharacter), so it is never exceeded.
+ */
+export function isOverPrepared(char) {
+  const max = num(char.spellcasting && char.spellcasting.preparedMax);
+  return max > 0 && preparedCount(char) > max;
 }
 
 /* ------------------------------------------------------------ attack to-hit (#84) */

@@ -1811,7 +1811,7 @@ describe('spell list (#141)');
   // everything new is free text — the app does not know that V/S/M is a closed set.
   is('blank character starts with no spells', blankCharacter().spellcasting.spells, []);
   is('row template', ROW_TEMPLATES.spells(), {
-    name: '', level: 0, prepared: false,
+    name: '', level: 0, prepared: false, alwaysPrepared: false,
     castingTime: '', range: '', duration: '', components: '', notes: '',
   });
 
@@ -1829,7 +1829,7 @@ describe('spell list (#141)');
     ROW_TEMPLATES.spells());
   is('unknown row keys are dropped',
     Object.keys(normalizeCharacter({ spellcasting: { spells: [{ name: 'X', school: 'evocation' }] } }).spellcasting.spells[0]),
-    ['name', 'level', 'prepared', 'castingTime', 'range', 'duration', 'components', 'notes']);
+    ['name', 'level', 'prepared', 'alwaysPrepared', 'castingTime', 'range', 'duration', 'components', 'notes']);
 
   // --- grouping ------------------------------------------------------------------------
   // The array stays FLAT and is grouped at render time, so what spellsAtLevel returns is the
@@ -1933,6 +1933,109 @@ describe('spell list (#141)');
     Object.keys(CARD_REGISTRY).every((id) => CARD_ORDER.includes(id)), true);
   is('the default layout carries both new cards',
     ['spellslots', 'spells'].every((id) => cardsOf(DEFAULT_LAYOUT, 'spells').includes(id)), true);
+}
+
+describe('always-prepared spells and the prepare limit');
+{
+  // In the 2024 rules a spell a subclass, species, feat or item hands you is ALWAYS prepared and
+  // does not count against the number you may prepare. So it is its own flag, it never reaches
+  // the count the limit is compared with, and the heading sentence reports it as its own part.
+  const spell = (name, level, prepared = false, alwaysPrepared = false) =>
+    ({ ...ROW_TEMPLATES.spells(), name, level, prepared, alwaysPrepared });
+
+  // A Life cleric: domain spells flagged, two daily picks ticked at level 1, two not.
+  const cleric = blankCharacter();
+  cleric.spellcasting.ability = 'wis';
+  cleric.spellcasting.spells = [
+    spell('Sacred Flame', 0),
+    spell('Bless', 1, false, true),
+    // Ticked AND flagged — a spell the player had ticked before they flagged it. The tick is
+    // kept in storage (un-flagging brings it back) but must not count while the flag is on.
+    spell('Cure Wounds', 1, true, true),
+    spell('Guiding Bolt', 1, true),
+    spell('Healing Word', 1, true),
+    spell('Command', 1),
+    spell('Shield of Faith', 1),
+    spell('Aid', 2, false, true),
+  ];
+
+  // --- storage: the free ride, again --------------------------------------------------------
+  const old = normalizeCharacter({ spellcasting: { spells: [{ name: 'Bless', level: 1, prepared: true }] } });
+  is('a spell saved before the flag existed is not always prepared',
+    old.spellcasting.spells[0].alwaysPrepared, false);
+  is('...and keeps its tick', old.spellcasting.spells[0].prepared, true);
+  is('a stored flag survives a load',
+    normalizeCharacter({ spellcasting: { spells: [spell('Bless', 1, false, true)] } }).spellcasting.spells[0].alwaysPrepared,
+    true);
+
+  // --- the counts ---------------------------------------------------------------------------
+  is('an always-prepared spell does not count toward the limit, tick or no tick',
+    rules.preparedCount(cleric, 1), 2);
+  is('...nor in the whole-list total', rules.preparedCount(cleric), 2);
+  is('always-prepared spells are counted on their own, at a level', rules.alwaysPreparedCount(cleric, 1), 2);
+  is('...and across the list', rules.alwaysPreparedCount(cleric), 3);
+  {
+    // The #158 rule holds for the flag as it does for the tick: re-filing a flagged spell down to
+    // Cantrips leaves the flag in storage with no control to clear it, so the total skips it.
+    const stale = blankCharacter();
+    stale.spellcasting.spells = [spell('Light', 0, false, true), spell('Bless', 1, false, true)];
+    is('a flag on a cantrip does not reach the card total', rules.alwaysPreparedCount(stale), 1);
+    is('...and is still what is stored, so re-filing it restores the ★',
+      stale.spellcasting.spells[0].alwaysPrepared, true);
+  }
+
+  // --- the heading sentence -----------------------------------------------------------------
+  // "of 4", not "of 6": the always-prepared spells are not among the ones the player chooses, so
+  // they leave the denominator as well as the numerator. Two ticked + two not + two ★ = six rows.
+  is('a level heading accounts for every row', rules.preparedSummary(cleric, 1), '2 of 4 · 2 always');
+  is('a level of only always-prepared spells says just that, not "0 of 0"',
+    rules.preparedSummary(cleric, 2), '1 always');
+  is('cantrips stay a plain count (#158)', rules.preparedSummary(cleric, 0), '1');
+  is('an empty level says nothing', rules.preparedSummary(cleric, 5), '');
+  is('a level accepts a numeric string', rules.preparedSummary(cleric, '1'), '2 of 4 · 2 always');
+  is('the card total names both kinds', rules.preparedSummary(cleric), '2 prepared · 3 always');
+  {
+    const wizard = blankCharacter();
+    wizard.spellcasting.spells = [spell('Fire Bolt', 0), spell('Fireball', 3, true), spell('Counterspell', 3)];
+    is('with nothing flagged a level reads exactly as before', rules.preparedSummary(wizard, 3), '1 of 2');
+    is('...and so does the card total', rules.preparedSummary(wizard), '1 prepared');
+    is('...including at zero', rules.preparedSummary(blankCharacter()), '0 prepared');
+  }
+
+  // --- the limit ----------------------------------------------------------------------------
+  // The class table's "Prepared Spells" number, typed by the player. 0 is "not tracked", the
+  // contract Max HP and a resource total already have.
+  is('a new character tracks no limit', blankCharacter().spellcasting.preparedMax, 0);
+  is('an old save backfills it as untracked',
+    normalizeCharacter({ spellcasting: { ability: 'int' } }).spellcasting.preparedMax, 0);
+  is('a stored limit survives a load',
+    normalizeCharacter({ spellcasting: { preparedMax: 6 } }).spellcasting.preparedMax, 6);
+  is('a hand-edited numeric string reads as its number',
+    normalizeCharacter({ spellcasting: { preparedMax: '7' } }).spellcasting.preparedMax, 7);
+  is('garbage falls back to untracked',
+    normalizeCharacter({ spellcasting: { preparedMax: 'lots' } }).spellcasting.preparedMax, 0);
+
+  {
+    const at = (max) => ({ ...cleric, spellcasting: { ...cleric.spellcasting, preparedMax: max } });
+    is('an untracked limit is never exceeded', rules.isOverPrepared(at(0)), false);
+    is('exactly at the limit is not over it', rules.isOverPrepared(at(2)), false);
+    is('one past it is', rules.isOverPrepared(at(1)), true);
+    // Three always-prepared spells against a limit of 1, with nothing ticked: the case that would
+    // make every domain cleric read as over-prepared from level 1 if the flag counted.
+    const domainOnly = blankCharacter();
+    domainOnly.spellcasting.preparedMax = 1;
+    domainOnly.spellcasting.spells = [spell('Bless', 1, false, true), spell('Cure Wounds', 1, true, true), spell('Aid', 2, false, true)];
+    is('always-prepared spells cannot push a character over', rules.isOverPrepared(domainOnly), false);
+  }
+
+  {
+    const before = JSON.stringify(cleric);
+    rules.preparedCount(cleric, 1);
+    rules.alwaysPreparedCount(cleric);
+    rules.preparedSummary(cleric, 1);
+    rules.isOverPrepared(cleric);
+    is('none of them mutate the character', JSON.stringify(cleric), before);
+  }
 }
 
 /* ------------------------------------------------- the spell library (#149) */
