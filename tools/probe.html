@@ -174,7 +174,26 @@ try {
     },
     { name: 'Shield', level: 1, prepared: true, castingTime: '1 reaction', range: 'Self', duration: '1 round', components: 'V, S', notes: '' },
     { name: 'Magic Missile', level: 1, prepared: false, castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
+    /*
+     * ALWAYS prepared — a subclass, species, feat or item gave it. Two things only this row
+     * renders: a ★ in the tick's 44px column (a glyph, so a contrast pairing of its own), and the
+     * flag in its details outside Edit too. A long name, because the ★ takes the same column the
+     * tick does and the name still has to fit beside it in both modes.
+     */
+    {
+      name: 'Protection from Evil and Good', level: 1, prepared: false, alwaysPrepared: true,
+      castingTime: '1 action', range: 'Touch', duration: 'Concentration, up to 10 minutes',
+      components: 'V, S, M (a flask of Holy Water worth 25+ GP)', notes: '',
+    },
   ];
+  /*
+   * The Prepared spells tile, seeded OVER its limit: two spells ticked (Shield, Otiluke's — the
+   * cantrip tick and the ★ do not count) against a limit of 1. The over state is the one that
+   * repaints the count in `--bad`, so it is the pairing worth measuring; under the limit the
+   * count is `--ink`, the strongest colour on the card. A limit of 0 would hide the field
+   * outside Edit and measure nothing of it.
+   */
+  c.spellcasting.preparedMax = 1;
   c.proficiencies = {
     armor: 'Light, medium, heavy, shields', weapons: 'Simple, martial',
     tools: 'Smith’s tools, dice set', languages: 'Common, Dwarvish, Undercommon',
@@ -765,6 +784,16 @@ try {
   // measure a scene with no total inputs in it while still reporting PASS.
   await tab('spells');
   report.scenes.push(auditScene('spells / view'));
+  /*
+   * Play mode now opens every spell level but Cantrips COLLAPSED, showing only what is prepared —
+   * so the scene above measures the ticked and ★ rows and nothing else, and an unticked row in
+   * play mode (Magic Missile: an empty box, the edge #159 found transparent) would never be looked
+   * at. Opened the way the Edit scene below opens them, directly: the gesture is
+   * probe-spells.html's job, and the point here is only to get the rows on screen.
+   */
+  for (const level of d.querySelectorAll('.spelllevel')) level.classList.remove('is-collapsed');
+  await settle(200);
+  report.scenes.push(auditScene('spells / view, levels open'));
   await edit('spellslots');
   report.scenes.push(auditScene('spells / slot setup'));
   await edit('spellslots');
@@ -772,7 +801,7 @@ try {
   /*
    * #141: the spell list has three states worth measuring and the two above reach only one.
    *
-   * Play mode shows the stocked levels open, which the 'spells / view' scene covers. Edit shows
+   * Play mode shows the stocked levels, which the two 'spells / view' scenes cover. Edit shows
    * all TEN sections with their fields unlocked and their disclosures shut — a different set of
    * controls (the level <select> and the per-section "+ Add" exist only here). And a row's
    * detail block is `display:none` until the row is expanded, so its six controls are invisible

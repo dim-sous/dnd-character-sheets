@@ -15,7 +15,14 @@
     - changing a row's level is a STRUCTURAL change and must re-file the row;
     - "+ Add" inside a section creates a spell at that section's level, not a cantrip;
     - a collapsed level still shows the spells you have PREPARED and hides the rest (#155),
-      which is why the level stopped being a <details>: a shut one hides all of its content;
+      which is why the level stopped being a <details>: a shut one hides all of its content —
+      and play mode now STARTS every level but Cantrips collapsed, so the tab opens on what is
+      ready rather than on the whole spellbook;
+    - an ALWAYS-prepared spell shows a ★ in its tick's column, counts as prepared for the
+      collapse but not toward the class limit, and is flagged in its details under Edit —
+      flagging is a derived change, so the section it happens in is not rebuilt;
+    - the Spellcasting card's third tile, Prepared spells: the ticked count over the limit the
+      player types, "/ 0" hidden while no limit is set, red when over and nothing refused;
     - the @media print rule that reveals a collapsed level's rows is actually PARSED — the
       beforeprint handler that used to do that in JS is gone with the <details>.
 
@@ -74,7 +81,8 @@ try {
   clearInterval(hold);
 
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter, ROW_TEMPLATES } = await import('../js/constants.js');
-  const spell = (name, level, prepared = false) => ({ ...ROW_TEMPLATES.spells(), name, level, prepared });
+  const spell = (name, level, prepared = false, alwaysPrepared = false) =>
+    ({ ...ROW_TEMPLATES.spells(), name, level, prepared, alwaysPrepared });
 
   const c = blankCharacter();
   c.name = 'Probe'; c.class = 'Wizard'; c.level = 5;
@@ -90,6 +98,9 @@ try {
     // spell name meets a 44px tick, a ✕ and a caret on a 390px line — with only "Shield" in here
     // the row is 69px of name in 220px of space and the probe reports PASS through all of it.
     spell('Otiluke\u2019s Irresistible Dance', 2),  // index 5
+    // Always prepared \u2014 a domain or oath spell. Appended LAST so every index above stays what the
+    // checks below name; it lands third in Level 1 (storage order), after Shield and Magic Missile.
+    spell('Protection from Evil and Good', 1, false, true),  // index 6
   ];
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
@@ -176,12 +187,89 @@ try {
   ok('a real heading exists outside the summary (SR heading nav)',
     section(1).querySelector('h3.spelllevel__heading') !== null
     && !section(1).querySelector('summary h3'));
-  ok('sections start open in play mode',
-    sections().every((s) => !s.classList.contains('is-collapsed')));
+  /*
+   * Play mode opens on what is READY: every level but Cantrips starts collapsed, which since #155
+   * means it shows its prepared spells — always-prepared ones included — and hides the rest.
+   * Cantrips start open; a cantrip is always ready (#158), so a collapsed Cantrips section would
+   * show every row anyway and an open marker is the honest one. This used to be the opposite
+   * ("sections start open in play mode") and a player opened the tab onto their whole spellbook.
+   */
+  ok('Cantrips start open in play mode', isOpen(0));
+  ok('...and every other level starts collapsed', [1, 2].every((l) => !isOpen(l)),
+    `open: ${[1, 2].filter(isOpen).join(',') || 'none'}`);
+  is('...and says so to a screen reader', summaryOf(1).getAttribute('aria-expanded'), 'false');
+  const shownAtStart = (level) => rowsIn(level).filter((r) => r.checkVisibility()).map((r) => nameField(r).value);
+  eq('a collapsed level opens on its ticked spells AND its always-prepared ones',
+    shownAtStart(1), ['Shield', 'Protection from Evil and Good']);
+  eq('...and hides the rest', rowsIn(1).filter((r) => !r.checkVisibility()).map((r) => nameField(r).value),
+    ['Magic Missile']);
+
+  // --- the Prepared spells tile (Spellcasting card) --------------------------------------
+  /*
+   * A third tile beside Spell save DC and Spell attack: the ticked count over the class's limit.
+   * The count leaves out cantrips and always-prepared spells — the 2024 rule for what counts
+   * against the limit — so with Shield and Misty Step ticked and Protection flagged it is 2.
+   */
+  const statTiles = () => [...d.querySelectorAll('#card-spellcasting .spell-stats > .tile')];
+  const tile = () => d.querySelector('#card-spellcasting .tile--prepared');
+  const tally = () => tile().querySelector('.prepared__count');
+  const maxField = () => d.getElementById('f-prepared-max');
+  const storedMax = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters[0].spellcasting.preparedMax;
+  eq('the Spellcasting card holds three tiles, Prepared spells last',
+    statTiles().map((t) => t.querySelector('.tile__label').textContent.trim()),
+    ['Spell save DC', 'Spell attack', 'Prepared spells']);
+  const widths = statTiles().map((t) => t.getBoundingClientRect().width);
+  ok('...all three the same width', widths[0] > 0 && Math.max(...widths) - Math.min(...widths) < 1,
+    widths.map((x) => x.toFixed(1)).join(' / '));
+  ok('...side by side on one row',
+    new Set(statTiles().map((t) => Math.round(t.getBoundingClientRect().top))).size === 1);
+  is('the tally counts ticked spells, not cantrips or always-prepared ones', tally().textContent, '2');
+  ok('with no limit set, play mode shows the bare count — no "/ 0"',
+    !maxField().checkVisibility() && !tile().querySelector('.prepared__of').checkVisibility());
+
+  cardEdit('spellcasting').click();
+  await wait(350);
+  ok('Edit on Spellcasting brings the limit field in', maxField().checkVisibility());
+  ok('...unlocked', maxField().readOnly === false);
+  const typeNumber = async (el, text) => {
+    // execCommand, not .value: a script-assigned value fires nothing (CLAUDE.md).
+    el.focus();
+    d.execCommand('selectAll');
+    d.execCommand('insertText', false, text);
+    await wait(600);   // past the 400ms storage debounce
+  };
+  await typeNumber(maxField(), '3');
+  is('typing a limit stores it', storedMax(), 3);
+  cardEdit('spellcasting').click();
+  await wait(350);
+  ok('back in play mode the tile reads count / limit',
+    maxField().checkVisibility() && tile().querySelector('.prepared__of').checkVisibility());
+  is('...with the limit flattened in place, not editable', maxField().readOnly, true);
+  is('...showing the number typed', maxField().value, '3');
+  ok('...and not flagged as over it', !tile().classList.contains('is-over'));
+  const box = (el) => el.getBoundingClientRect();
+  ok('...on one line', Math.abs(box(tally()).top - box(maxField()).top) < 12,
+    `count top ${Math.round(box(tally()).top)}, limit top ${Math.round(box(maxField()).top)}`);
+  ok('...inside its tile', box(maxField()).right <= box(tile()).right + 0.5,
+    `limit right ${Math.round(box(maxField()).right)}, tile right ${Math.round(box(tile()).right)}`);
+
+  const inkOf = (el) => W.getComputedStyle(el).color;
+  const dcInk = inkOf(d.querySelector('[data-derived="spellDC"]'));
+  is('under the limit the count is the same ink as the DC beside it', inkOf(tally()), dcInk);
+  cardEdit('spellcasting').click();
+  await wait(350);
+  await typeNumber(maxField(), '1');
+  ok('one past the limit flags the tile', tile().classList.contains('is-over'));
+  ok('...and the count changes colour', inkOf(tally()) !== dcInk, `${inkOf(tally())} vs ${dcInk}`);
+  is('...but nothing is refused: the ticks are all still there', tally().textContent, '2');
+  await typeNumber(maxField(), '3');
+  ok('back under it, the flag clears', !tile().classList.contains('is-over'));
+  cardEdit('spellcasting').click();
+  await wait(350);
 
   // --- the counts ---------------------------------------------------------------------
-  is('a level count reads "prepared of known"',
-    section(1).querySelector('.spelllevel__count').textContent, '1 of 2');
+  is('a level count reads "prepared of known", the always-prepared ones as their own part',
+    section(1).querySelector('.spelllevel__count').textContent, '1 of 2 · 1 always');
   /*
    * #158: Cantrips read as a plain count. "0 of 2" claimed one of two cantrips was ready and the
    * other was not, which cannot be true — a cantrip is always available.
@@ -189,7 +277,7 @@ try {
   is('the Cantrips heading counts them rather than claiming a "prepared of"',
     section(0).querySelector('.spelllevel__count').textContent, '2');
   is('the card total names what it counts',
-    d.querySelector('.spells__count').textContent, '2 prepared');
+    d.querySelector('.spells__count').textContent, '2 prepared · 1 always');
 
   // --- rows bind to the FLAT array index ----------------------------------------------
   // Mage Hand is the SECOND cantrip but the THIRD spell. If the row bound to its position in
@@ -235,8 +323,9 @@ try {
   await setOpen(1, true);
   prepared.click();
   await wait(400);
-  is('unticking Prepared updates the level count', section(1).querySelector('.spelllevel__count').textContent, '0 of 2');
-  is('...and the card total', d.querySelector('.spells__count').textContent, '1 prepared');
+  is('unticking Prepared updates the level count', section(1).querySelector('.spelllevel__count').textContent, '0 of 2 · 1 always');
+  is('...and the card total', d.querySelector('.spells__count').textContent, '1 prepared · 1 always');
+  is('...and the Prepared spells tally', tally().textContent, '1');
   ok('...without collapsing the section being ticked in', isOpen(1) === true);
 
   /*
@@ -255,7 +344,7 @@ try {
 
   prepared.click();
   await wait(400);
-  is('re-ticking puts the count back', section(1).querySelector('.spelllevel__count').textContent, '1 of 2');
+  is('re-ticking puts the count back', section(1).querySelector('.spelllevel__count').textContent, '1 of 2 · 1 always');
 
   /*
    * And it looks like a checkbox. `.row__primary input` (0,1,1) sits 1100 lines below the base
@@ -281,8 +370,14 @@ try {
    */
   ok('a level the player has never opened starts closed in Edit (ten open empties is a page of nothing)',
     [3, 4, 5, 6, 7, 8, 9].every((l) => !isOpen(l)));
-  ok('...but a section already on screen survives the Edit flip open (#146)',
-    [0, 1, 2].every((l) => isOpen(l)));
+  /*
+   * Both ways round, which play mode's collapsed default now makes possible: Cantrips started open
+   * and Level 1 was opened above, while Level 2 has been left as it started. A flip that
+   * re-derived the state from the mode would open or shut all three alike.
+   */
+  ok('...but a section already on screen keeps what it was left at — open (#146)',
+    [0, 1].every((l) => isOpen(l)));
+  ok('...or collapsed', !isOpen(2));
   ok('the name field unlocks in Edit', nameField(rowsIn(1)[0]).readOnly === false);
 
   /*
@@ -370,6 +465,14 @@ try {
   const longRow = () => rowsIn(2).find((r) => nameField(r).value.includes('Irresistible'));
   const lineHeight = (row) => row.querySelector('.row__primary').getBoundingClientRect().height;
   const fits = (row) => nameField(row).scrollWidth <= nameField(row).clientWidth + 1;
+  /*
+   * Open Level 2 first. The long name is NOT prepared, so in a collapsed level — play mode's
+   * default now — its row is `display: none`, measures 0x0, and every check below passes on
+   * nothing: "0px tall" is on one line, and "needs 0 in 0" fits. Asserted visible so that can
+   * never be what a PASS here means.
+   */
+  await setOpen(2, true);
+  ok('the long-name row is on screen to be measured', longRow().checkVisibility());
   ok('a long spell name keeps its row on one line in play mode',
     lineHeight(longRow()) <= 60, `${Math.round(lineHeight(longRow()))}px tall`);
   /*
@@ -492,8 +595,11 @@ try {
   const namesIn = (level) => rowsIn(level)
     .filter((r) => r.checkVisibility())
     .map((r) => nameField(r).value);
+  // "Prepared" for what a collapsed level keeps: ticked, OR flagged always prepared — read off the
+  // two checkboxes, not the class the app sets, so the check cannot agree with a wrong class.
   const preparedIn = (level) => rowsIn(level)
-    .filter((r) => r.querySelector('[data-bind$=".prepared"]').checked)
+    .filter((r) => r.querySelector('[data-bind$=".prepared"]').checked
+      || r.querySelector('[data-bind$=".alwaysPrepared"]').checked)
     .map((r) => nameField(r).value);
 
   ok('an open level shows everything', namesIn(1).length === rowsIn(1).length,
@@ -501,6 +607,8 @@ try {
 
   await setOpen(1, false);
   eq('a collapsed level shows exactly the prepared spells', namesIn(1), preparedIn(1));
+  ok('...always-prepared ones included', namesIn(1).includes('Protection from Evil and Good'),
+    `showing ${namesIn(1).join(', ')}`);
   ok('...which is fewer than it holds', namesIn(1).length < rowsIn(1).length,
     `${namesIn(1).length} of ${rowsIn(1).length}`);
   is('...and the heading button says it is collapsed',
@@ -546,6 +654,86 @@ try {
   ok('opening it brings the rest back', namesIn(1).length === rowsIn(1).length,
     `${namesIn(1).length} of ${rowsIn(1).length}`);
   is('...and the button says so', summaryOf(1).getAttribute('aria-expanded'), 'true');
+
+  /*
+   * --- always prepared ------------------------------------------------------------------
+   *
+   * A spell a subclass, species, feat or item gives you. It shows a ★ where the tick would be —
+   * a mark, not a control, so a mis-tap cannot clear it — and the flag itself lives in the row's
+   * details, under Edit. That it survives a collapse is asserted above; here is the swap, the
+   * column it keeps, the gating of the flag, and that flagging is a DERIVED change (#146).
+   */
+  const protRow = () => rowsIn(1).find((r) => nameField(r).value === 'Protection from Evil and Good');
+  const mmRow = () => rowsIn(1).find((r) => nameField(r).value === 'Magic Missile');
+  const star = (row) => row.querySelector('.row__always');
+  const tickLabel = (row) => row.querySelector('.row__prepared');
+  const flagPick = (row) => row.querySelector('.row__alwayspick');
+  const flagBox = (row) => row.querySelector('[data-bind$=".alwaysPrepared"]');
+
+  ok('an always-prepared spell shows the ★', star(protRow()).checkVisibility());
+  ok('...instead of a tick, not as well as one', !tickLabel(protRow()).checkVisibility());
+  ok('...and an ordinary spell shows the tick and no ★',
+    tickLabel(mmRow()).checkVisibility() && !star(mmRow()).checkVisibility());
+  ok('the ★ is a mark, not a control: nothing in it takes focus',
+    !star(protRow()).querySelector('input, button, select, [tabindex]'));
+  is('...it is named for a screen reader', star(protRow()).querySelector('.visually-hidden').textContent, 'Always prepared');
+  is('...with the glyph itself kept out of that name',
+    star(protRow()).querySelector('[aria-hidden="true"]').textContent, '★');
+  const starBox = star(protRow()).getBoundingClientRect();
+  ok('the ★ holds the tick\'s 44px column', starBox.width >= 44 && starBox.height >= 44,
+    `${Math.round(starBox.width)}x${Math.round(starBox.height)}`);
+  ok('...so its name keeps the left edge every ticked row has',
+    Math.abs(nameField(protRow()).getBoundingClientRect().left - nameField(mmRow()).getBoundingClientRect().left) < 1,
+    `★ row ${Math.round(nameField(protRow()).getBoundingClientRect().left)}, tick row ${Math.round(nameField(mmRow()).getBoundingClientRect().left)}`);
+
+  // Play mode: the flag shows only where it is set, where it is the explanation of the ★.
+  nameField(protRow()).click();
+  await wait(250);
+  ok('in play mode a ★ spell\'s details say why', flagPick(protRow()).checkVisibility());
+  ok('...ticked', flagBox(protRow()).checked === true);
+  ok('...and locked, because the flag is setup data behind Edit', flagBox(protRow()).disabled === true);
+  nameField(mmRow()).click();
+  await wait(250);
+  ok('an ordinary spell\'s details carry no flag box in play mode',
+    mmRow().classList.contains('is-expanded') && !flagPick(mmRow()).checkVisibility());
+
+  // Edit: the flag is offered on every row, and it is live.
+  editBtn().click();
+  await wait(400);
+  mmRow().querySelector('.row__expand').click();   // the Edit flip rebuilt the rows, shut
+  await wait(200);
+  ok('Edit offers the flag on an ordinary spell', flagPick(mmRow()).checkVisibility());
+  ok('...unlocked', flagBox(mmRow()).disabled === false);
+  const flagTarget = flagPick(mmRow()).getBoundingClientRect();
+  ok('...on a 44px tap target', flagTarget.height >= 44,
+    `${Math.round(flagTarget.width)}x${Math.round(flagTarget.height)}`);
+  const mmNode = mmRow();
+  flagBox(mmRow()).click();
+  await wait(600);                                   // past the 400ms storage debounce
+  is('flagging a spell stores it', stored()[4].alwaysPrepared, true);
+  ok('...and swaps its tick for the ★ at once',
+    star(mmRow()).checkVisibility() && !tickLabel(mmRow()).checkVisibility());
+  ok('...without rebuilding the section it was flagged in (a derived change, #146)',
+    mmRow() === mmNode && isOpen(1) && mmRow().classList.contains('is-expanded'));
+  is('...and the level count moves it into the "always" part',
+    section(1).querySelector('.spelllevel__count').textContent, '1 of 1 · 2 always');
+  is('...as does the card total', d.querySelector('.spells__count').textContent, '2 prepared · 2 always');
+  flagBox(mmRow()).click();
+  await wait(600);
+  is('unflagging stores that too', stored()[4].alwaysPrepared, false);
+  ok('...and gives back the tick as it was — unticked',
+    tickLabel(mmRow()).checkVisibility() && mmRow().querySelector('[data-bind$=".prepared"]').checked === false);
+  is('...and the count with it', section(1).querySelector('.spelllevel__count').textContent, '1 of 2 · 1 always');
+
+  // A cantrip is always available (#158), so there is nothing to flag.
+  const cantripNow = rowsIn(0)[0];
+  cantripNow.querySelector('.row__expand').click();
+  await wait(200);
+  ok('a cantrip is never offered the flag',
+    cantripNow.classList.contains('is-expanded') && !flagPick(cantripNow).checkVisibility());
+  cantripNow.querySelector('.row__expand').click();
+  editBtn().click();
+  await wait(400);
 
   /*
    * The shape of the disclosure itself. The <h3> used to sit outside the <summary>, visually

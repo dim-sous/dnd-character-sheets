@@ -237,6 +237,17 @@ try {
   // --- the spell row is the same shape and gets the same control ------------------------
   d.getElementById('tab-spells').click();
   await wait(300);
+  /*
+   * Open the level first. Play mode starts a level collapsed, showing only what is prepared, and
+   * the tick check below UNprepares this spell — so in a collapsed level the row would vanish
+   * under the click and every check after it would measure a `display: none` row.
+   */
+  const spellLevel = d.querySelector('.spelllevel');
+  if (spellLevel.classList.contains('is-collapsed')) {
+    spellLevel.querySelector('.spelllevel__summary').click();
+    await wait(200);
+  }
+  ok('the spell level is open, so its row stays on screen', !spellLevel.classList.contains('is-collapsed'));
   const spell = d.querySelector('.row--spell');
   ok('a spell row carries the reveal button too', Boolean(expandOf(spell)));
   ok('...and its Prepared tick still owns its own tap (#146)',

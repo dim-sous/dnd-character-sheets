@@ -229,13 +229,16 @@ try {
   d.querySelector('.arrange-bar [data-action="arrange-toggle"]').click();
   await wait(300);
   // The one .tiles grid with no layout objects in it, so nothing writes it an inline span —
-  // under a fixed twelve-column grid it needs the rule in style.css or both tiles collapse to a
-  // twelfth each. `grid-column: span 6` sets the START; the END stays auto.
-  ok('the Spells stat tiles still share a row',
-    d.querySelectorAll('.spell-stats > .tile').length === 2
-      && [...d.querySelectorAll('.spell-stats > .tile')]
-        .every((t) => w.getComputedStyle(t).gridColumnStart === 'span 6'),
-    [...d.querySelectorAll('.spell-stats > .tile')].map((t) => w.getComputedStyle(t).gridColumnStart).join(' '));
+  // under a fixed twelve-column grid it needs the rule in style.css or every tile collapses to a
+  // twelfth. Three tiles since the Prepared spells count joined Spell save DC and Spell attack,
+  // a third of the row each: `grid-column: span 4` sets the START; the END stays auto.
+  // Read off the computed span, not measured: this fixture is not a caster, so #spell-body is
+  // hidden and every rect is 0. probe-spells.html measures the three widths on a caster.
+  const statTiles = [...d.querySelectorAll('.spell-stats > .tile')];
+  ok('the Spells stat tiles still share a row, a third each',
+    statTiles.length === 3
+      && statTiles.every((t) => w.getComputedStyle(t).gridColumnStart === 'span 4'),
+    statTiles.map((t) => w.getComputedStyle(t).gridColumnStart).join(' '));
   ok('the document does not scroll sideways',
     d.documentElement.scrollWidth <= w.innerWidth,
     `${d.documentElement.scrollWidth} vs ${w.innerWidth}`);

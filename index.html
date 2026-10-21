@@ -413,8 +413,8 @@
                    numbers. The <label> itself stays — it is the select's only accessible name,
                    and a card title is not programmatically associated with anything, so
                    dropping it would leave a screen-reader user hearing the selected value and
-                   nothing else. The two tiles below keep their "Spell" for the opposite reason:
-                   a tile labelled "Attack" sits one tab away from the Attacks card. -->
+                   nothing else. The DC and attack tiles below keep their "Spell" for the opposite
+                   reason: a tile labelled "Attack" sits one tab away from the Attacks card. -->
               <p class="field"><label for="f-spell-ability">Ability</label>
                 <select id="f-spell-ability" data-bind="spellcasting.ability" data-structural="true">
                   <option value="">— none (not a caster) —</option>
@@ -439,6 +439,25 @@
                   <span class="tile__label">Spell attack</span>
                   <div class="tile__body">
                     <output class="tile__value" data-derived="spellAtk">—</output>
+                  </div>
+                </div>
+                <!-- How many spells are ticked, over how many the class allows: "4 / 6". The count
+                     is derived and leaves out cantrips and always-prepared spells, which is the
+                     2024 rule for what counts against the limit (rules.preparedCount). The limit is
+                     the class table's "Prepared Spells" column, typed by the player — the app does
+                     not know a class's progression — and it is an Edit-gated STORED value, so it
+                     flattens in place like Max HP: flat text in play, a box under Edit.
+
+                     A limit of 0 is "not tracked" and the tile shows the bare count, so a character
+                     who never opens Edit is not shown "4 / 0" (render.js toggles .is-untracked).
+                     Going over turns the count red (.is-over) and refuses nothing: a tracker, not a
+                     rules engine, and the DM may allow it. -->
+                <div class="tile tile--prepared">
+                  <span class="tile__label">Prepared spells</span>
+                  <div class="tile__body prepared__body">
+                    <output class="tile__value prepared__count" data-derived="preparedTally">0</output>
+                    <span class="prepared__of" aria-hidden="true">/</span>
+                    <input class="tile__input prepared__max" id="f-prepared-max" type="number" inputmode="numeric" data-bind="spellcasting.preparedMax" data-type="number" aria-label="Spells you can prepare">
                   </div>
                 </div>
               </div>
@@ -899,7 +918,15 @@
      The level SELECT lives in the detail so a mis-filed spell can be moved without deleting it.
      It is data-structural, so changing it rebuilds the sections and the row lands in its new
      one; its options are written by renderSpells from SPELL_LIST_LEVELS rather than authored
-     here, keeping the range in the one place constants.js already defines it. -->
+     here, keeping the range in the one place constants.js already defines it.
+
+     An ALWAYS-prepared spell (a subclass, species, feat or item gave it) shows a ★ where the
+     tick would be, in the same 44px column, so its name keeps the left edge every other row
+     has. The ★ is a mark, not a control: the flag is setup data and is set in the detail block
+     under Edit, next to the level it is filed at — the same reason Max HP is Edit-gated and the
+     tick is not. With no tick on the line, a mis-tap cannot unprepare a spell the character
+     cannot actually lose. Which of the two shows is a class renderDerived toggles (.is-always),
+     because flagging a spell is a derived change and must not rebuild the section (#146). -->
 <template id="tpl-spell">
   <li class="row row--spell">
     <div class="row__primary">
@@ -907,6 +934,10 @@
         <input type="checkbox" data-bind-suffix="prepared" data-type="checkbox" data-live>
         <span class="visually-hidden">Prepared</span>
       </label>
+      <span class="row__always" title="Always prepared">
+        <span aria-hidden="true">★</span>
+        <span class="visually-hidden">Always prepared</span>
+      </span>
       <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
       <button type="button" class="row__remove" data-action="remove-row" data-list="spells" aria-label="Remove spell">✕</button>
       <button type="button" class="row__expand" data-action="toggle-row" aria-expanded="false" aria-label="Details">▸</button>
@@ -915,6 +946,13 @@
       <label class="row__levelpick">
         <span class="visually-hidden">Spell level</span>
         <select class="row__levelselect" data-bind-suffix="level" data-type="number" data-structural="true"></select>
+      </label>
+      <!-- Edit-gated (no data-live), and shown outside Edit only on a row that HAS the flag, where
+           it is the explanation of the ★ — on every other row it would be a disabled box per
+           spell saying nothing. Hidden on cantrips, which are always available anyway (#158). -->
+      <label class="row__alwayspick">
+        <input type="checkbox" data-bind-suffix="alwaysPrepared" data-type="checkbox">
+        <span>Always prepared</span>
       </label>
       <!-- Casting time and Range hold words ("1 action", "120 ft") and pair on one line.
            Duration holds a phrase — "Concentration, up to 1 minute" — so `.row__wide` gives it

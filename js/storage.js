@@ -164,6 +164,9 @@ export function normalizeCharacter(raw) {
   }
   char.spellcasting = {
     ability: str(raw.spellcasting?.ability, ''),
+    // Absent in every older file, so it backfills to 0 — "not tracked" — with no migration.
+    // Not clamped: like Max HP it is a typed number, and the player can always correct it.
+    preparedMax: num(raw.spellcasting?.preparedMax, base.spellcasting.preparedMax),
     slots,
     spells: normalizeRows('spells', raw.spellcasting?.spells),
   };

@@ -129,6 +129,12 @@ export function blankCharacter() {
 
     spellcasting: {
       ability: '',
+      // How many spells the class lets you prepare: the "Prepared Spells" column of the 2024
+      // class table, typed by the player — nothing here knows a class's progression. 0 means
+      // "not tracked", the same contract Max HP and a resource total have, so the Prepared
+      // spells tile shows a bare count until a number is set. Not clamped against anything:
+      // ticking more than this is allowed, and the tile only says so.
+      preparedMax: 0,
       // Derived from SPELL_LEVELS so the range lives in exactly one place.
       slots: Object.fromEntries(SPELL_LEVELS.map((l) => [l, { total: 0, used: 0 }])),
       spells: [],
@@ -175,9 +181,15 @@ export const ROW_TEMPLATES = {
    * normalizeRow builds its output solely from template keys, so every spell saved before this
    * backfills to '' with no migration code and no SCHEMA_VERSION bump — the same free ride
    * #67 took when it added source/level to features.
+   *
+   * `alwaysPrepared` is the spell a subclass, species, feat or item hands you: "you always have
+   * that spell prepared", which in the 2024 rules also means it does not count against the
+   * number you may prepare. A separate flag rather than a third value of `prepared`, so the two
+   * stay independent — ticking it off returns the row to whatever its daily tick was, and an
+   * old save backfills to false through the same free ride.
    */
   spells: () => ({
-    name: '', level: 0, prepared: false,
+    name: '', level: 0, prepared: false, alwaysPrepared: false,
     castingTime: '', range: '', duration: '', components: '', notes: '',
   }),
   // #67: source (Species / Background / Class / Other) and level stay FREE TEXT — the sheet

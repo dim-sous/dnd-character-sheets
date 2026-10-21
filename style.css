@@ -451,10 +451,10 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
      measures it rather than parsing it, since it is authored in rem. */
   --tile-step: .75rem;
 }
-/* The Spells card's two stat tiles are the one `.tiles` grid with no layout objects in it, so
-   nothing writes them an inline span. Half each, which is what auto-fit's collapsing empty
-   tracks gave them before. */
-.spell-stats > .tile { grid-column: span 6; }
+/* The Spellcasting card's stat tiles are the one `.tiles` grid with no layout objects in it, so
+   nothing writes them an inline span. A third each — Spell save DC, Spell attack, Prepared
+   spells — equal on purpose: three numbers of one kind, read as a row. */
+.spell-stats > .tile { grid-column: span 4; }
 .tile {
   display: flex; flex-direction: column; gap: var(--space-0);
   padding: var(--space-2) var(--space-1);
@@ -1224,6 +1224,45 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
 .spell-stats { margin-bottom: var(--space-2); }
 
+/* Prepared spells: "4 / 6", a derived count over an Edit-gated limit. One line, never wrapped —
+   a tile a third of a phone wide has ~100px, and "12 / 15" needs about 90 of it. The limit is the
+   AC idiom (#76): the field is always there, flat when locked and boxed under Edit, so the two
+   numbers read as one figure in play. */
+/* Centred on the "/", not as a group. The limit's field keeps its 44px box in play too (the audit
+   measures every input, locked or not), so a one-digit limit centred in it left ~15px of blank
+   after the slash against 4px before it: "4 /   6". Two equal columns either side of the slash,
+   the count pushed to its end and the limit's text to its start, read as "4 / 6". The field's
+   44px floor can make its column a few px wider than the count's at a phone's ~100px tile. */
+.prepared__body {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; column-gap: var(--space-1);
+}
+.prepared__count { justify-self: end; }
+.prepared__of {
+  color: var(--ink-faint);
+  font-family: var(--serif); font-size: var(--text-xl); line-height: 1.1;
+}
+/* Two classes (0,2,0), because the base `input[type="number"]` (0,1,1) sets `width: 100%` and
+   would take the whole body from the count beside it — the trap this stylesheet keeps setting.
+   44px is the touch floor; two digits at the tile's 22px serif fit inside it. */
+.spell-stats .prepared__max {
+  justify-self: start; width: var(--tap); min-width: var(--tap);
+  padding-inline: var(--space-1);
+}
+/* Locked, the box is invisible, so its text starts at the slash rather than floating in the middle
+   of an empty one. Under Edit the box is drawn and the number centres in it like every other. */
+.spell-stats .prepared__max:read-only { text-align: left; }
+/* No limit set: the bare count, so a player who never opens Edit is not shown "4 / 0". Edit
+   brings the field back — it is the only way to set one. The count then has the row to itself,
+   so it centres in the whole tile rather than in the left-hand column. */
+[data-editcard="spellcasting"]:not(.is-editing) .tile--prepared.is-untracked .prepared__of,
+[data-editcard="spellcasting"]:not(.is-editing) .tile--prepared.is-untracked .prepared__max { display: none; }
+[data-editcard="spellcasting"]:not(.is-editing) .tile--prepared.is-untracked .prepared__count {
+  grid-column: 1 / -1; justify-self: center;
+}
+/* Over the limit: a cue, not a refusal. The numbers already say it; the colour is so it is seen. */
+.tile--prepared.is-over .prepared__count { color: var(--bad); }
+
 .slots { display: flex; flex-direction: column; gap: var(--space-2); }
 
 .slots__actions { display: flex; gap: var(--space-2); }
@@ -1303,7 +1342,9 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 
 /* COLLAPSED MEANS "SHOW ME WHAT I HAVE PREPARED" (#155), not "hide this".
    A shut level keeps its prepared spells on screen and drops the rest — the state a druid or a
-   cleric wants during play, where the full list is a long-rest concern. `display: none` rather
+   cleric wants during play, where the full list is a long-rest concern, and the state every
+   level but Cantrips now STARTS in. "Prepared" here is `.is-prepared`, which renderDerived also
+   sets on an always-prepared (★) row, so those stay with the ticked ones. `display: none` rather
    than a visual collapse on purpose: a hidden row must leave the tab order and the accessibility
    tree, or every unprepared spell's name field, level select and ✕ stay reachable behind a
    control that says "collapsed". That came free with <details> and has to be asked for here.
@@ -1341,6 +1382,31 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   min-width: var(--tap); min-height: var(--tap); cursor: pointer;
 }
+/* ALWAYS PREPARED. The ★ takes the tick's place and its 44px column, so a name sits on the same
+   left edge whichever of the two its row shows; only one of them is ever displayed. It is a mark,
+   not a control — the flag is set in the row's details under Edit — so there is no tick left on
+   the line for a mis-tap to clear. Accent, the colour a ticked box fills with: it reads as
+   "prepared", and the shape is what says "differently". */
+.row__always {
+  display: none;
+  flex: none; align-items: center; justify-content: center;
+  min-width: var(--tap); min-height: var(--tap);
+  color: var(--accent); font-size: var(--text-lg); line-height: 1;
+}
+.row--spell.is-always .row__always { display: inline-flex; }
+.row--spell.is-always .row__prepared { display: none; }
+/* The same 44px gutter as the hidden cantrip tick above, for a stale flag on a cantrip. */
+.spelllevel[data-level="0"] .row__always { visibility: hidden; }
+/* The flag itself, in the row's detail block. Shown under Edit on every row, and outside Edit only
+   on a row that carries it, where it explains the ★; on any other row a disabled box per spell
+   would say nothing. Never on a cantrip, which is always available (#158) — that rule comes last,
+   so it wins over both. */
+.row__alwayspick {
+  display: none; flex: 0 0 auto; align-items: center; gap: var(--space-2);
+  min-height: var(--tap); cursor: pointer; font-size: var(--text-sm);
+}
+.is-editing .row__alwayspick, .row--spell.is-always .row__alwayspick { display: inline-flex; }
+.spelllevel[data-level="0"] .row__alwayspick { display: none; }
 /* The level select sits first in the detail block and stays narrow — it is a closed set of ten
    short strings, so letting it flex like the free-text fields beside it would spend a third of
    the line on whitespace. */
@@ -2132,6 +2198,9 @@ select:disabled { appearance: none; -webkit-appearance: none; }
      revealed explicitly. The marker goes with the caret below: nothing on paper folds. */
   .row--feature > .row__detail, .row--feat > .row__detail,
   .row--spell > .row__detail { display: flex !important; }
+  /* An unticked "Always prepared" box is Edit chrome; paper carries the flag only where it is set,
+     so a card left in Edit does not print an empty box under every spell. */
+  .row--spell:not(.is-always) .row__alwayspick { display: none !important; }
   /* #155: the SECTIONS are revealed from here now, in one rule, and the beforeprint handler that
      used to do it in JS is gone. It existed because a closed <details> is content containment —
      `details:not([open]) > *` stays unrendered whatever `display` you give it, the same trap

@@ -423,10 +423,17 @@ function renderSpells(char) {
     );
 
     /*
-     * Open by default in play mode, so the card reads as a spell list rather than as ten shut
-     * drawers — a player opening the tab wants to SEE their spells. Setup mode starts every
-     * section closed instead: it shows all ten levels, most of them empty, and ten open empty
-     * sections is a page of nothing to scroll past to reach the one being filled in.
+     * Collapsed by default in play mode, Cantrips excepted — which since #155 means "showing what
+     * is prepared", not "shut". That is the list a player wants at the table: the spells they can
+     * cast today, always-prepared ones included, with the rest of the spellbook a tap away. It
+     * used to open every level, which put a wizard's whole book on screen to find the six spells
+     * actually ready. Cantrips start open because a cantrip is always ready (#158), so a
+     * collapsed Cantrips section shows every row anyway, and an open marker is the honest one.
+     * The test is `canPrepare` rather than `level === 0` so the exemption is the same rule the
+     * tick and the count already use.
+     *
+     * Setup mode starts every section closed: it shows all ten levels, most of them empty, and
+     * ten open empty sections is a page of nothing to scroll past to reach the one being filled.
      *
      * This is not persisted, and deliberately: the open/shut state is ephemeral UI, the same
      * call the Conditions disclosure and the tap-expanded rows make. Storing it would put a
@@ -443,7 +450,7 @@ function renderSpells(char) {
      * reason setRowExpanded exists in main.js: two places setting the same state drift, and the
      * one that drifts is the one nobody can see.
      */
-    setLevelOpen(node, wasOpen.get(level) ?? !setup);
+    setLevelOpen(node, wasOpen.get(level) ?? (!setup && !rules.canPrepare(level)));
 
     const rowHost = $('.spelllevel__rows', node);
     for (const { spell, index } of pairs) {
@@ -760,21 +767,15 @@ function derivedValue(char, key) {
      * heading is ambiguous (prepared? known?) where the total sits next to the card title and
      * has room to say which it is.
      *
-     * The "of N" is a count of what is written down, never of what the class may prepare —
-     * nothing here knows that number, and nothing stops the player exceeding it.
-     *
-     * Cantrips read as a plain count (#158). "0 of 2" said one of two cantrips was ready and the
-     * other was not, which is not a thing that can be true: a cantrip is always available, so
-     * there is no "of" to state and no tick on the row to make one. The card total skips them
-     * for the same reason — see rules.canPrepare.
+     * The "of N" is a count of what is written down, never of what the class may prepare — that
+     * number is the player's, on the Prepared spells tile below. Always-prepared spells are
+     * reported as their own part ("2 of 4 · 2 always"), and cantrips as a plain count (#158); the
+     * sentence is rules.preparedSummary, so its arithmetic is in the suite.
      */
-    case 'spellsPrepared': {
-      if (arg === '') return `${rules.preparedCount(char)} prepared`;
-      const known = rules.spellsAtLevel(char, arg).length;
-      if (known === 0) return '';
-      if (!rules.canPrepare(arg)) return String(known);
-      return `${rules.preparedCount(char, arg)} of ${known}`;
-    }
+    case 'spellsPrepared': return rules.preparedSummary(char, arg === '' ? undefined : arg);
+    // The Prepared spells tile's count: ticked spells, without cantrips or always-prepared ones —
+    // the number the class limit is about. The limit beside it is a bound field, not derived.
+    case 'preparedTally': return String(rules.preparedCount(char));
     // #84: an attack row's to-hit — the only derived value keyed by ARRAY POSITION rather
     // than a domain key. Safe because every length change emits 'structural' (state.js
     // addRow/removeRow, import, opening a character), which re-bakes every index through
@@ -850,10 +851,25 @@ export function renderDerived(char) {
    * already written every bound input back from state by the time this runs, except the one with
    * the caret — and the one with the caret is the one the player just changed, so its DOM state
    * is the newest truth there is.
+   *
+   * An always-prepared spell is ready whatever its tick says, so it survives the collapse too —
+   * and `.is-always` is what swaps its tick for the ★. Both on this pass for the same reason the
+   * tick is: flagging a spell must not rebuild the section it is flagged in.
    */
   for (const row of $$('.row--spell')) {
     const tick = $('[data-bind$=".prepared"]', row);
-    row.classList.toggle('is-prepared', Boolean(tick && tick.checked));
+    const flag = $('[data-bind$=".alwaysPrepared"]', row);
+    const always = Boolean(flag && flag.checked);
+    row.classList.toggle('is-always', always);
+    row.classList.toggle('is-prepared', always || Boolean(tick && tick.checked));
+  }
+
+  // The Prepared spells tile. Untracked (a limit of 0) hides the "/ 0" outside Edit; over the
+  // limit reddens the count. Both read state, not the field: the field is only the limit's half.
+  const preparedTile = $('.tile--prepared');
+  if (preparedTile) {
+    preparedTile.classList.toggle('is-untracked', !(Number(char.spellcasting.preparedMax) > 0));
+    preparedTile.classList.toggle('is-over', rules.isOverPrepared(char));
   }
 
   for (const row of $$('#slots .slot')) {

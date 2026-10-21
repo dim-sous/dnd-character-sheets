@@ -138,13 +138,15 @@ export function searchSpells(spells, options = {}) {
  *
  * `prepared` starts false. Adding a spell to the list is not preparing it, and the tick is the
  * one thing on this card a player touches every long rest — pre-ticking it would quietly claim
- * they had made that decision.
+ * they had made that decision. `alwaysPrepared` starts false for the same reason: the library
+ * knows a spell, not which feature handed it to this character.
  */
 export function spellToRow(spell) {
   return {
     name: String(spell?.name ?? ''),
     level: Number.isFinite(Number(spell?.level)) ? Number(spell.level) : 0,
     prepared: false,
+    alwaysPrepared: false,
     castingTime: String(spell?.castingTime ?? ''),
     range: String(spell?.range ?? ''),
     duration: String(spell?.duration ?? ''),
