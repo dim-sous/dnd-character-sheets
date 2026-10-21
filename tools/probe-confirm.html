@@ -1,0 +1,200 @@
+<!doctype html>
+<!--
+  Regression check for #124: the app's own "are you sure?" dialog, which replaced native confirm().
+
+  The first attempt at #124 was backed out because it made three probes non-deterministic: a
+  <dialog> is asynchronous where confirm() was not, and an answer that waited on the dialog's
+  `close` event settled a turn late — or, with the listener attached after showModal(), never. So
+  the claim this page exists to hold is that the answer settles ON THE CLICK, and the action has
+  run by the next timer. Every check below that clicks an answer reads the result after a single
+  `wait(0)` for exactly that reason.
+
+  What is here and not in the five probes that drive a confirmed action (hp-result, resources,
+  arrange-fn, arrange-place, layout-transfer): the dialog itself — modal, an alertdialog, Cancel
+  focused on open, focus handed back on close — and the two actions none of them reach, Delete
+  character and Remove tab; Cancel and Escape as a No; Escape not also shutting the drawer behind
+  the dialog; and a second question while one is open being answered No instead of replacing the
+  one the player is reading.
+
+  Escape is driven two ways on purpose. A scripted keydown is untrusted, so the browser runs no
+  default action for it — it cannot close a dialog — but it does reach the page's own listeners,
+  which is what the drawer guard is. `requestClose()` runs the real close-request steps, which is
+  the path a real Escape takes into the dialog: `cancel`, then `close`.
+
+  Run it like probe.html; prints ALL PASS or the failing checks. Reseeds both layout keys.
+-->
+<meta charset="utf-8">
+<title>confirm dialog probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+const eq = (name, a, b) => ok(name, JSON.stringify(a) === JSON.stringify(b), `${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
+
+try {
+  // Kill the worker first or every assertion below measures the last build.
+  // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops the
+  // leap; the busy work in each tick makes the budget last seconds of real time, not ~0.15s.
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+  clearInterval(hold);
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+  const alpha = blankCharacter();
+  alpha.name = 'Alpha'; alpha.hp.max = 30; alpha.hp.current = 11;
+  const beta = blankCharacter();
+  beta.name = 'Beta'; beta.hp.max = 20; beta.hp.current = 9;   // hurt, so a rest would show
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: alpha.id, characters: [alpha, beta],
+  }));
+  // Both layout keys: probe-arrange-place saves a WRECKED default on purpose, and inheriting it
+  // would put the tab this page removes somewhere it does not expect.
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const frame = document.getElementById('frame');
+  await new Promise((res) => { frame.onload = res; frame.src = '../index.html'; });
+  await wait(1200);
+  const d = frame.contentDocument;
+  const w = frame.contentWindow;
+
+  const $ = (sel) => d.querySelector(sel);
+  const dialog = () => $('#confirm-dialog');
+  const asking = () => Boolean(dialog()?.open);
+  const said = () => `${$('#confirm-title').textContent} | ${$('#confirm-body').textContent}`;
+  const answerBtn = (yes) => $(`#confirm-dialog [data-answer="${yes ? 'confirm' : 'cancel'}"]`);
+  const roster = () => [...d.querySelectorAll('.roster__btn')].map((b) => b.textContent.trim());
+  const named = (n) => roster().some((t) => t.includes(n));
+  const drawerOpen = () => d.body.classList.contains('drawer-open');
+
+  /* ------------------------------------------- 1. the dialog itself, via Delete */
+
+  ok('starts shut', !asking());
+  $('#btn-menu').click();
+  await wait(400);
+  ok('the drawer opens', drawerOpen());
+
+  const del = $('#btn-delete');
+  del.focus();                        // a keyboard player, so "focus comes back" means something
+  del.click();
+  ok('Delete asks first', asking());
+  ok('...in a MODAL dialog, so the sheet behind is inert', dialog().matches(':modal'));
+  ok('...announced as an alertdialog', dialog().getAttribute('role') === 'alertdialog');
+  ok('...with the old wording', said() === 'Delete Alpha? | This cannot be undone.', said());
+  ok('...a verb on the Yes button', answerBtn(true).textContent === 'Delete', answerBtn(true).textContent);
+  ok('...styled as dangerous', answerBtn(true).classList.contains('btn--danger')
+    && !answerBtn(true).classList.contains('btn--primary'));
+  ok('Cancel starts focused, so a stray Enter costs nothing', d.activeElement === answerBtn(false),
+    d.activeElement ? `${d.activeElement.tagName}.${d.activeElement.className}` : 'null');
+
+  // One question at a time: a second ask while this one is open is answered No, and does not
+  // replace the question on screen. Long rest is the second ask — a scripted click reaches it
+  // even though the modal has made it unreachable to a finger.
+  $('[data-action="long-rest"]').click();
+  await wait(0);
+  ok('a second question does not replace the first', said().startsWith('Delete Alpha?'), said());
+  ok('...and is answered No: no rest was taken', Number($('#f-hp-current').value) === 11,
+    `current ${$('#f-hp-current').value}`);
+
+  answerBtn(false).click();
+  await wait(0);
+  ok('Cancel shuts the dialog', !asking());
+  ok('Cancel is a No: Alpha is still here', named('Alpha') && roster().length === 2, roster().join(', '));
+  ok('focus comes back to Delete', d.activeElement === del,
+    d.activeElement ? `${d.activeElement.tagName}#${d.activeElement.id}` : 'null');
+  ok('the drawer is still open', drawerOpen());
+
+  // Escape, in two halves (see the header).
+  del.click();
+  answerBtn(false).dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await wait(0);
+  ok('Escape inside the dialog does not shut the drawer behind it', drawerOpen());
+  dialog().requestClose();
+  await wait(0);
+  ok('Escape (a close request) shuts the dialog', !asking());
+  ok('Escape is a No: Alpha is still here', named('Alpha') && roster().length === 2, roster().join(', '));
+
+  del.click();
+  answerBtn(true).click();
+  await wait(0);                      // the claim: the action has run by the next timer
+  ok('Yes deletes, settled by the next timer', !named('Alpha') && roster().length === 1, roster().join(', '));
+  ok('...and the dialog is shut', !asking());
+
+  $('#btn-menu-close').click();
+  await wait(400);
+
+  /* ---------------------------------------------- 2. Long rest: the other style */
+
+  $('[data-action="long-rest"]').click();
+  ok('Long rest asks first', asking());
+  ok('...as a primary action, not a dangerous one', answerBtn(true).classList.contains('btn--primary')
+    && !answerBtn(true).classList.contains('btn--danger'));
+  answerBtn(false).click();
+  await wait(0);
+  ok('Cancel on Long rest changes nothing', Number($('#f-hp-current').value) === 9
+    && !asking(), `current ${$('#f-hp-current').value}`);
+
+  // A late `close` must not answer the NEXT question. Cancel one and ask again in the same breath:
+  // Cancel's `close` event is queued, so it arrives while the second question is open — and an
+  // answer that trusted `close` dismissed that second question with it. Under load that happened
+  // about one run in ten (Cancel on Long rest, then Delete); here it is made to happen every time.
+  $('[data-action="long-rest"]').click();
+  answerBtn(false).click();
+  $('[data-action="long-rest"]').click();
+  await wait(300);
+  ok('a late close event does not answer the next question', asking(),
+    'the second question was dismissed by the first one’s close event');
+  answerBtn(false).click();
+  await wait(0);
+
+  /* ------------------------------------------------- 3. Remove tab, from arrange */
+
+  $('#btn-arrange').click();
+  await wait(400);
+  $('.arrange-more')?.setAttribute('open', '');
+  await wait(200);
+  const tabIds = () => [...d.querySelectorAll('.tabbar .tab')].map((b) => b.id);
+  const before = tabIds();
+  const victim = before[before.length - 2]?.replace(/^tab-/, '');   // a tab with cards on it
+  const removeBtn = () => $(`.tabrow[data-tab="${victim}"] [data-action="tab-remove"]`);
+  ok('found a tab to remove', Boolean(victim && removeBtn()), String(victim));
+  removeBtn().click();
+  ok('removing a tab with cards asks first', asking());
+  ok('...naming the tab and where its cards go', /^Remove the “.+” tab\? \| Its \d+ cards? will move to “.+”\.$/.test(said()), said());
+  ok('...as a dangerous action', answerBtn(true).classList.contains('btn--danger'));
+  answerBtn(false).click();
+  await wait(0);
+  eq('Cancel keeps the tab', tabIds(), before);
+  removeBtn().click();
+  answerBtn(true).click();
+  await wait(0);
+  ok('Yes removes it, settled by the next timer', !tabIds().includes(`tab-${victim}`)
+    && tabIds().length === before.length - 1, tabIds().join(', '));
+  ok('...and the dialog is shut', !asking());
+  ok('arrange mode survived the question', d.body.classList.contains('is-arranging'));
+  $('.arrange-bar [data-action="arrange-toggle"]')?.click();
+  await wait(300);
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
+}
+</script>

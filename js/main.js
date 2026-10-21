@@ -24,6 +24,7 @@ import {
 import {
   openSpellPicker, SPELL_PICKER_ACTIONS, onSpellPickerInput, onSpellPickerChange,
 } from './spell-picker.js';
+import { askConfirm } from './confirm-dialog.js';
 import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
@@ -317,8 +318,12 @@ const ACTIONS = {
   // Clears the saved default as well as restoring the shipped layout, so a bad "Set as
   // default" can no longer lock the player out of the original arrangement (#73). Confirmed
   // because it discards something they deliberately saved — undo can't bring that key back.
-  'arrange-reset-factory': () => {
-    const ok = confirm('Reset to the original layout? This also clears the default you saved.');
+  'arrange-reset-factory': async () => {
+    const ok = await askConfirm({
+      title: 'Reset to the original layout?',
+      body: 'This also clears the default you saved.',
+      confirmLabel: 'Reset layout',
+    });
     if (!ok) return;
     resetLayout({ factory: true });
     activateTab(getTabIds()[0]);
@@ -337,14 +342,14 @@ const ACTIONS = {
   // and reactivateTab is the only one of the two that guards an active tab the import deleted.
   // activateTab with a dead key hides EVERY panel, which is a blank sheet at phone width and a
   // silent pass at 1440px, where .tabpanel[hidden]{display:contents!important} reveals them all.
-  'layout-import': () => { if (importLayoutFromDialog()) reactivateTab(); },
+  'layout-import': async () => { if (await importLayoutFromDialog()) reactivateTab(); },
 
   // Tab CRUD (#54 Phase 4b). Each tab-set change re-applies the active tab (which tolerates
   // the active one having been removed). Removing a non-empty tab confirms first.
   'tab-add': () => { tabAdd(); reactivateTab(); },
   'tab-up': (el) => { tabMove(tabIdOf(el), -1); reactivateTab(); },
   'tab-down': (el) => { tabMove(tabIdOf(el), 1); reactivateTab(); },
-  'tab-remove': (el) => {
+  'tab-remove': async (el) => {
     const tabId = tabIdOf(el);
     const layout = getLayout();
     const tab = layout.tabs.find((t) => t.id === tabId);
@@ -352,9 +357,11 @@ const ACTIONS = {
     if (tab.cards.length) {
       const dest = layout.tabs.find((t) => t.id !== tabId);
       const n = tab.cards.length;
-      const ok = confirm(
-        `Remove the “${tab.label}” tab? Its ${n} card${n === 1 ? '' : 's'} will move to “${dest.label}”.`,
-      );
+      const ok = await askConfirm({
+        title: `Remove the “${tab.label}” tab?`,
+        body: `Its ${n} card${n === 1 ? '' : 's'} will move to “${dest.label}”.`,
+        confirmLabel: 'Remove tab',
+      });
       if (!ok) return;
     }
     tabRemove(tabId);
@@ -387,7 +394,7 @@ const ACTIONS = {
     snoozeInstall();
     clearNudge('install');
   },
-  'long-rest': (el) => {
+  'long-rest': async (el) => {
     // Current HP commits on blur (#65); flush a pending edit first so a still-focused HP field
     // can't blur *after* the rest and silently overwrite it back. No-op when nothing's focused.
     document.activeElement?.blur?.();
@@ -395,10 +402,18 @@ const ACTIONS = {
     // what you were tracking, so gate it behind a confirm.
     // "Restores lost HP", not "restores HP to max" (#106): a rest no longer lowers a hand-set
     // current that sits above max, so promising a set-to-max would now misdescribe it.
-    const ok = confirm(
-      'Take a long rest? Restores lost HP, recovers all your Hit Point Dice, reduces '
-      + 'exhaustion by 1, clears temp HP and death saves, and resets spell slots.',
-    );
+    const ok = await askConfirm({
+      title: 'Take a long rest?',
+      body: 'Restores lost HP, recovers all your Hit Point Dice, reduces exhaustion by 1, '
+        + 'clears temp HP and death saves, and resets spell slots.',
+      confirmLabel: 'Take long rest',
+      danger: false,
+    });
+    // And again after (#124): a modal dialog hands focus back to whatever had it when it opened.
+    // Native confirm() never moved focus, so this hazard arrived with the dialog — and the HP
+    // field is the one renderDerived never writes to while focused, so a rest would land in
+    // state while the field kept showing the old number.
+    document.activeElement?.blur?.();
     if (ok) {
       state.longRest();
       // One rest rewrites HP, temp, hit dice, exhaustion, death saves and concentration at
@@ -779,11 +794,17 @@ $('#btn-duplicate').addEventListener('click', () => {
   closeDrawer();
 });
 
-$('#btn-delete').addEventListener('click', () => {
+$('#btn-delete').addEventListener('click', async () => {
   const char = state.getActive();
   if (!char) return;
   const name = char.name || 'this unnamed character';
-  if (confirm(`Delete ${name}? This cannot be undone.`)) state.deleteCharacter(char.id);
+  const ok = await askConfirm({
+    title: `Delete ${name}?`,
+    body: 'This cannot be undone.',
+    confirmLabel: 'Delete',
+  });
+  // By id, as before — and re-checked: the dialog is a pause the native confirm() never had.
+  if (ok && state.getCharacters().some((c) => c.id === char.id)) state.deleteCharacter(char.id);
 });
 
 $('#btn-export-one').addEventListener('click', () => {
@@ -994,7 +1015,9 @@ $('#btn-menu').addEventListener('click', openDrawer);
 $('#btn-menu-close').addEventListener('click', closeDrawer);
 scrim.addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closeDrawer();
+  // Not from inside an open dialog: that Escape belongs to the dialog. Native confirm() never let
+  // the key reach the page, so cancelling "Delete …?" (#124) would otherwise shut the drawer too.
+  if (event.key === 'Escape' && !event.target.closest?.('dialog[open]')) closeDrawer();
 });
 
 // Crossing the breakpoint (rotate/resize) must not strand a half-open drawer or a stray

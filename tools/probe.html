@@ -50,8 +50,10 @@ try {
    * measurements are worse than none, and this harness exists to be trusted.
    */
   // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
-  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
-  const hold = setInterval(() => {}, 10);
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops the
+  // leap; the busy work in each tick makes the budget last seconds of real time, not ~0.15s.
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -715,7 +717,7 @@ try {
    * reported nothing — the same empty PASS as an unseeded list. 1440px kept measuring it, because
    * every panel is revealed there, so the two widths disagreed without either saying so.
    */
-  const unshownCards = [];
+  const unshown = [];   // scene targets that were not on screen when measured
   const edit = async (card) => {
     const el = d.querySelector(`[data-editcard="${card}"]`);
     const panel = el?.closest('[role="tabpanel"]');
@@ -724,7 +726,7 @@ try {
     await settle();
     // ...and the guard for it: a card that is not on screen when its scene is measured is a FAIL,
     // so the next layout change cannot empty a scene quietly.
-    if (!el?.checkVisibility()) unshownCards.push(card);
+    if (!el?.checkVisibility()) unshown.push(`${card} card`);
   };
 
   // Named in the report because a PASS means nothing without it: headless Chrome reports dark by
@@ -850,6 +852,20 @@ try {
     await edit(card);
   }
 
+  /*
+   * #124: the confirm dialog. Like the picker, none of it is on the sheet and a shut dialog
+   * measures 0x0, so without a scene that opens it the question and its two buttons are never
+   * looked at once. Long rest asks with a primary Yes; the dangerous style is audited from the
+   * arrange bar below. Answered No, so nothing changes for the scenes after it.
+   */
+  await tab('combat');
+  d.querySelector('[data-action="long-rest"]')?.click();
+  await settle(200);
+  if (!d.getElementById('confirm-dialog')?.open) unshown.push('confirm dialog (long rest)');
+  report.scenes.push(auditScene('confirm / long rest asked'));
+  d.querySelector('#confirm-dialog [data-answer="cancel"]')?.click();
+  await settle(200);
+
   await tab('combat');
   d.querySelector('[data-action="arrange-toggle"]')?.click();
   await settle(250);
@@ -876,6 +892,19 @@ try {
   d.querySelector('.arrange-more')?.setAttribute('open', '');
   await settle(250);
   report.scenes.push(auditScene('arrange / tabs & defaults open'));
+
+  /*
+   * #124: the confirm dialog's DANGEROUS style — red text on the card, the pairing worth a contrast
+   * check. Asked by "Reset to original", which is already on screen here. Not by Delete: that lives
+   * in the drawer, and a drawer opened and shut under virtual time can be left mid-slide, so the
+   * scenes after it measured its buttons as covered by the sheet — in two runs out of three.
+   */
+  d.querySelector('[data-action="arrange-reset-factory"]')?.click();
+  await settle(200);
+  if (!d.getElementById('confirm-dialog')?.open) unshown.push('confirm dialog (reset to original)');
+  report.scenes.push(auditScene('confirm / reset to original asked'));
+  d.querySelector('#confirm-dialog [data-answer="cancel"]')?.click();
+  await settle(200);
 
   /*
    * #162: the layout backup dialog. Like the picker, none of it is on the sheet, so no other
@@ -968,10 +997,10 @@ try {
   // app's worth of checkboxes turned out to be painting nothing at all.
   report.controlEdgeFailures = [...new Set(report.scenes.flatMap((s) => s.controlEdges))];
 
-  report.unshownCards = [...new Set(unshownCards)];
+  report.unshown = [...new Set(unshown)];
   const parts = [];
-  if (report.unshownCards.length) {
-    parts.push(`${report.unshownCards.length} card(s) were off screen while their Edit scene was measured: ${report.unshownCards.join(', ')}`);
+  if (report.unshown.length) {
+    parts.push(`${report.unshown.length} scene target(s) were not on screen while measured: ${report.unshown.join(', ')}`);
   }
   if (report.unrenderedFixtures.length) {
     parts.push(`${report.unrenderedFixtures.length} seeded value(s) never reached a field, so their rows were measured empty: `

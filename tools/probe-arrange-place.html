@@ -28,8 +28,10 @@ const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'} 
 
 try {
   // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
-  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
-  const hold = setInterval(() => {}, 10);
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops the
+  // leap; the busy work in each tick makes the budget last seconds of real time, not ~0.15s.
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -191,8 +193,17 @@ try {
   ok('the saved default is the wrecked one', localStorage.getItem('dnd-character-sheets:layout-default') === null
     ? false : true);
 
-  w.confirm = () => true;   // the factory reset asks first
+  // The factory reset asks first, in the app's own dialog (#124), answered with the click a
+  // player makes. Cancel goes first: backing out of the question must leave everything alone.
+  const answer = (yes) => d.querySelector(`#confirm-dialog [data-answer="${yes ? 'confirm' : 'cancel'}"]`).click();
   btn('arrange-reset-factory').click();
+  ok('the factory reset asks first', d.getElementById('confirm-dialog').open);
+  answer(false);
+  await wait(300);
+  ok('Cancel leaves the wrecked layout in place', JSON.stringify(ids()) === JSON.stringify(wrecked));
+  ok('...and its saved default too', Boolean(localStorage.getItem('dnd-character-sheets:layout-default')));
+  btn('arrange-reset-factory').click();
+  answer(true);
   await wait(400);
   ok('factory reset restores the original order', JSON.stringify(ids()) === JSON.stringify(order0),
     `${ids().slice(0, 3)} vs ${order0.slice(0, 3)}`);

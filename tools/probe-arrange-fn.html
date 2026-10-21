@@ -21,8 +21,10 @@ const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'} 
 
 try {
   // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
-  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
-  const hold = setInterval(() => {}, 10);
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops the
+  // leap; the busy work in each tick makes the budget last seconds of real time, not ~0.15s.
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -253,14 +255,14 @@ try {
   const restTile = d.querySelector('#panel-combat [data-object="rest"]');
   const restBtn = restTile && restTile.querySelector('[data-action="long-rest"]');
   ok('the Rest tile still contains the Long rest action', Boolean(restBtn));
-  // Counted rather than blocked: `confirm` returning true is what makes the HP assertion below
-  // meaningful, so a regression fails loudly on both counts instead of being swallowed here.
-  let confirms = 0;
-  frame.contentWindow.confirm = () => { confirms++; return true; };
+  // Watched rather than blocked (#124): the question opening is what "fired" means, and answering
+  // Yes later is what makes the HP assertion at the end meaningful — so a regression fails loudly
+  // on both counts instead of being swallowed here.
+  const asking = () => d.getElementById('confirm-dialog').open;
   const hpBefore = d.getElementById('f-hp-current').value;
   restBtn.click();
   await wait(300);
-  ok('tapping Long rest while arranging does not fire it', confirms === 0, `${confirms} confirm(s)`);
+  ok('tapping Long rest while arranging does not fire it', !asking(), 'the rest asked to be confirmed');
   ok('it selects the tile instead', restTile.classList.contains('is-selected'));
   ok('and hit points are untouched', d.getElementById('f-hp-current').value === hpBefore,
     `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);
@@ -336,8 +338,8 @@ try {
   await wait(350);
   restBtn.click();
   await wait(300);
-  ok('a [data-action] inside a tile stays suppressed while placing', confirms === 0,
-    `${confirms} confirm(s)`);
+  ok('a [data-action] inside a tile stays suppressed while placing', !asking(),
+    'the rest asked to be confirmed');
   d.querySelector('[data-action="place-object-cancel"]').click();
   await wait(300);
 
@@ -346,8 +348,10 @@ try {
   d.querySelector('.arrange-bar [data-action="arrange-toggle"]').click();
   await wait(300);
   d.querySelector('#panel-combat [data-object="rest"] [data-action="long-rest"]').click();
+  const askedOutside = asking();
+  d.querySelector('#confirm-dialog [data-answer="confirm"]').click();
   await wait(300);
-  ok('and Long rest still works outside arrange mode', confirms === 1, `${confirms} confirm(s)`);
+  ok('and Long rest still works outside arrange mode', askedOutside, 'the rest never asked');
   ok('the rest actually restored the lost hit points',
     d.getElementById('f-hp-current').value === '32',
     `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);

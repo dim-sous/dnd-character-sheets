@@ -36,8 +36,10 @@ const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'} 
 
 try {
   // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
-  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
-  const hold = setInterval(() => {}, 10);
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops the
+  // leap; the busy work in each tick makes the budget last seconds of real time, not ~0.15s.
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -86,6 +88,20 @@ try {
     d.execCommand('insertText', false, text);
     el.dispatchEvent(new w.Event('change', { bubbles: true }));
     await wait(250);
+  };
+
+  /*
+   * #124: the app asks through #confirm-dialog now, not window.confirm, so there is nothing to
+   * stub — the question is answered the way a player answers it, by clicking. The app settles
+   * on that click synchronously, so the rest has run by the next timer. Returns what the dialog
+   * said, or null when no question was open.
+   */
+  const answerConfirm = (doc, yes = true) => {
+    const dlg = doc.getElementById('confirm-dialog');
+    if (!dlg?.open) return null;
+    const said = `${doc.getElementById('confirm-title').textContent} ${doc.getElementById('confirm-body').textContent}`;
+    dlg.querySelector(`[data-answer="${yes ? 'confirm' : 'cancel'}"]`).click();
+    return said;
   };
 
   ok('starts with nothing announced', spoken() === '', `spoken="${spoken()}"`);
@@ -139,10 +155,18 @@ try {
 
   // --- a long rest still announces what it did --------------------------------------------
   await type('-5');
-  w.confirm = () => true;
+  // The HP field still has focus here (a scripted click moves none), which is the case #124's
+  // first attempt broke: a modal dialog hands focus back on close, and renderDerived never writes
+  // to the focused field — so the rest landed in state while the box kept the old number.
   d.querySelector('[data-action="long-rest"]').click();
+  ok('the rest asks first, in the app’s own dialog', answerConfirm(d) !== null);
   await wait(350);
   ok('the rest is still announced', /Long rest taken/.test(spoken()), `"${spoken()}"`);
+  ok('the HP field shows the rested value, not the one it had focus with', curVal() === 20,
+    `current ${curVal()}`);
+  ok('focus is back on Long rest, not in the HP field',
+    d.activeElement === d.querySelector('[data-action="long-rest"]'),
+    d.activeElement ? `${d.activeElement.tagName}#${d.activeElement.id}` : 'null');
 
   // --- switching character still commits the pending entry ---------------------------------
   await type('-3');
@@ -183,8 +207,8 @@ try {
   ok('seeded with Max never set', cur2() === 14 && Number(d2.getElementById('f-hp-max').value) === 0,
     `current ${cur2()} max ${d2.getElementById('f-hp-max').value}`);
   ok('Max really is Edit-gated', d2.getElementById('f-hp-max').readOnly);
-  w2.confirm = () => true;
   d2.querySelector('[data-action="long-rest"]').click();
+  answerConfirm(d2);
   await wait(400);
   ok('a rest with Max unset does NOT zero current HP', cur2() === 14, `current ${cur2()}`);
   ok('and still clears temp', temp2() === 0, `temp ${temp2()}`);
@@ -195,9 +219,8 @@ try {
   const d3 = frame.contentDocument;
   // Capture what the dialog actually says, rather than asserting against the button's label —
   // the promise the player agrees to has to match what the rest now does.
-  let confirmText = '';
-  frame.contentWindow.confirm = (msg) => { confirmText = String(msg); return true; };
   d3.querySelector('[data-action="long-rest"]').click();
+  const confirmText = answerConfirm(d3) ?? '';
   await wait(400);
   ok('a rest does not lower a hand-set current above max',
     Number(d3.getElementById('f-hp-current').value) === 30,
