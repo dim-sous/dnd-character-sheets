@@ -119,10 +119,10 @@ export function blankCharacter() {
     // #140: class/subclass resources — Rage, Ki, Bardic Inspiration, Channel Divinity, a
     // once-per-rest subclass trick. Deliberately the SHAPE of `hitDice` and nothing more: a
     // name the player types and a remaining/total pair. The app never learns which resource
-    // recovers on which rest, which is why there is no `recovery` field and why `longRest()`
-    // does not touch this list — see the note there. Absent in every pre-#140 file, and
-    // normalizeRows turns a missing array into [], so no migration and no SCHEMA_VERSION bump
-    // (exactly the path `feats` took in #67).
+    // recovers on which rest, which is why there is no `recovery` field; a long rest refills
+    // them all (the owner's call, reversing #140 — see the note at `longRest()`). Absent in
+    // every pre-#140 file, and normalizeRows turns a missing array into [], so no migration
+    // and no SCHEMA_VERSION bump (exactly the path `feats` took in #67).
     resources: [],
 
     attacks: [],

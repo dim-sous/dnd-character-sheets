@@ -404,8 +404,8 @@ const ACTIONS = {
     // current that sits above max, so promising a set-to-max would now misdescribe it.
     const ok = await askConfirm({
       title: 'Take a long rest?',
-      body: 'Restores lost HP, recovers all your Hit Point Dice, reduces exhaustion by 1, '
-        + 'clears temp HP and death saves, and resets spell slots.',
+      body: 'Restores lost HP, recovers all your Hit Point Dice, refills your class resources, '
+        + 'reduces exhaustion by 1, clears temp HP and death saves, and resets spell slots.',
       confirmLabel: 'Take long rest',
       danger: false,
     });
@@ -416,13 +416,15 @@ const ACTIONS = {
     document.activeElement?.blur?.();
     if (ok) {
       state.longRest();
-      // One rest rewrites HP, temp, hit dice, exhaustion, death saves and concentration at
-      // once; none of it was announced (#100). Lead with HP — it is what a player checks.
+      // One rest rewrites HP, temp, hit dice, resources, exhaustion, death saves and
+      // concentration at once; none of it was announced (#100). Lead with HP — it is what a
+      // player checks. Resources are named only when there are some to name.
       const char = state.getActive();
       const max = char && Number(char.hp.max) > 0 ? ` of ${char.hp.max}` : '';
+      const restored = char?.resources?.length ? 'Hit dice and class resources restored.' : 'Hit dice restored.';
       announcePlay(
         `Long rest taken. Hit points ${char ? char.hp.current : 0}${max}. `
-        + 'Temp HP, death saves and concentration cleared. Hit dice restored.',
+        + `Temp HP, death saves and concentration cleared. ${restored}`,
       );
     }
     // Re-home focus (#100). The flush above blurs whatever was focused — including this very

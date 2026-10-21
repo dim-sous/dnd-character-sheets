@@ -12,10 +12,11 @@
       contract — get it wrong and either a resource cannot be spent without pressing Edit, or a
       mis-tap mid-fight silently rewrites the pool's size (the Max HP rule, #65);
     - a real keystroke in `remaining` reaches state and survives the debounce;
-    - LONG REST LEAVES RESOURCES ALONE. This is the #140 decision most likely to be "fixed" by a
-      later contributor adding one line to state.longRest(), and nothing else in the repo would
-      complain — the pure suite cannot see longRest() (it is a side-effecting state.js mutator,
-      deliberately untested there), so this is the only guard it has.
+    - A LONG REST REFILLS THEM. #140 shipped the opposite — a rest left resources alone — and
+      this probe guarded that; the owner reversed it on 2026-10-21. The arithmetic is
+      rules.restoreResources, covered by the pure suite; what only this page can see is that
+      state.longRest() actually calls it (it is a side-effecting state.js mutator, deliberately
+      untested there) and that the refilled count reaches the field on screen.
 
   Run: see CLAUDE.md -> "Measuring the running app", pointing --dump-dom at this file.
   Expect: "ALL PASS".
@@ -199,24 +200,30 @@ try {
   ok('spending a resource in play mode commits', stored().resources[0].remaining === 2,
     `remaining = ${stored().resources[0].remaining}`);
 
-  /* ---- 5. the #140 decision: a long rest must NOT touch resources ----------- */
+  /* ---- 5. a long rest refills resources (the owner's call, reversing #140) -- */
 
   const hpBefore = d.getElementById('f-hp-current').value;
   d.querySelector('#panel-combat [data-object="rest"] [data-action="long-rest"]').click();
   // #124: answered in the app's own dialog, with the click a player makes.
   const asked = d.getElementById('confirm-dialog').open;
+  const promised = d.getElementById('confirm-body').textContent;
   d.querySelector('#confirm-dialog [data-answer="confirm"]').click();
   await wait(700);
   ok('the long rest was confirmed and taken', asked, asked ? 'asked once' : 'never asked');
+  // The promise the player agrees to has to match what the rest now does (#106's lesson).
+  ok('the question says it refills class resources', /refills your class resources/.test(promised),
+    JSON.stringify(promised));
   // The control: the rest really did run, so the assertion below means something.
   ok('the rest restored the lost hit points', d.getElementById('f-hp-current').value === '45',
     `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);
-  ok('the long rest left the resource spent (#140)', stored().resources[0].remaining === 2,
-    `remaining = ${stored().resources[0].remaining}, expected 2`);
-  ok('...and did not touch its total either', stored().resources[0].total === 3,
+  ok('the long rest refilled the spent resource', stored().resources[0].remaining === 3,
+    `remaining = ${stored().resources[0].remaining}, expected 3 (its total)`);
+  ok('...and did not touch its total', stored().resources[0].total === 3,
     `total = ${stored().resources[0].total}`);
-  ok('...and the field on screen still shows it spent', field(0, 'remaining').value === '2',
+  ok('...and the field on screen shows it full', field(0, 'remaining').value === '3',
     `"${field(0, 'remaining').value}"`);
+  ok('the rest is announced with the resources in it', /class resources restored/.test(
+    d.getElementById('play-status').textContent), `"${d.getElementById('play-status').textContent.trim()}"`);
 
   /* ---- 6. rows are removable, and the empty state comes back ---------------- */
 
