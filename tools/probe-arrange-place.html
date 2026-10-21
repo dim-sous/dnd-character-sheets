@@ -27,6 +27,9 @@ const results = [];
 const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
 
 try {
+  // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
+  const hold = setInterval(() => {}, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -35,6 +38,7 @@ try {
     const keys = await caches.keys();
     await Promise.all(keys.map((k) => caches.delete(k)));
   }
+  clearInterval(hold);
 
   const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
   // Read the expected tile count from the registry rather than hardcoding it. It was 12 until
