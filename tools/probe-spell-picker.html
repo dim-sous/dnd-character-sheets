@@ -16,6 +16,9 @@
     - a pick reaches the character through state.addRow with every field filled — the round trip
       the pure test cannot make, since it ends at a plain object;
     - a spell files itself by ITS OWN level, not the section the picker was opened from;
+    - the table's hand-written js/extra-spells.js is merged into the same list, loaded with the
+      library rather than at boot, tagged with the book it comes from, and a pick of one stores
+      a plain row;
     - the picker stays open across picks and marks what it has already added;
     - the custom/blank escape hatch still works when the library never loads (offline, first
       open) — the picker must not become the only way to add a spell;
@@ -112,9 +115,12 @@ try {
    * resource the page has fetched. A static import anywhere would have pulled spell-data.js in
    * during boot and this is the only thing that would notice.
    */
-  const fetched = () => w.performance.getEntriesByType('resource')
-    .some((e) => e.name.includes('spell-data.js'));
+  const fetchedFile = (file) => w.performance.getEntriesByType('resource')
+    .some((e) => e.name.includes(file));
+  const fetched = () => fetchedFile('spell-data.js');
   ok('the 330KB library is NOT loaded at boot', fetched() === false);
+  // The table's hand-written additions ride the same dynamic import, so they cost boot nothing.
+  ok('...nor the table\'s extra spells', fetchedFile('extra-spells.js') === false);
 
   d.getElementById('tab-spells').click();
   await wait(300);
@@ -148,6 +154,7 @@ try {
   await wait(1500);                       // the dynamic import has to resolve
   ok('the picker opens as a modal dialog', dialog().open === true);
   ok('...and NOW the library has been fetched', fetched() === true);
+  ok('...with the table\'s extra spells alongside it', fetchedFile('extra-spells.js') === true);
   ok('the search box has focus', d.activeElement === d.getElementById('spell-search'));
   ok('the SRD attribution is on screen (CC-BY requires it)',
     /SRD 5\.2\.1/.test(d.getElementById('spell-picker-attrib').textContent));
@@ -249,6 +256,35 @@ try {
   await wait(700);
   const cantrip = stored().find((s) => s.name === 'Light');
   is('...and files itself under Cantrips, not level 3', cantrip.level, 0);
+
+  /*
+   * --- a spell from beyond the SRD (js/extra-spells.js) -------------------------------------
+   *
+   * Hand-written entries for spells the table uses that the SRD lacks, merged into the same list.
+   * What only a browser shows: that the merge really happened (the pure suite searches its own
+   * concatenation, not the picker's), that the result names its book so the SRD attribution at
+   * the foot of the dialog is not read as covering it, and that a pick stores a plain row — the
+   * `source` tag stays in the library.
+   */
+  type(d.getElementById('spell-search'), 'summon beast');
+  await wait(300);
+  const beast = resultNamed('Summon Beast');
+  ok('a spell from the table\'s extra list is in the picker', Boolean(beast));
+  is('...first for its own name', resultRows()[0]?.querySelector('.result__name').textContent, 'Summon Beast');
+  is('...naming the book it comes from',
+    beast?.querySelector('.result__meta').textContent, 'Level 2 Conjuration · Druid, Ranger · Concentration · PHB 2024');
+  beast.querySelector('.result__add').click();
+  await wait(700);
+  const beastRow = stored().find((s) => s.name === 'Summon Beast');
+  ok('picking it adds it to the character', Boolean(beastRow));
+  is('...at its own level', beastRow?.level, 2);
+  ok('...with its fields and its stat block filled in',
+    /gilded acorn/.test(beastRow?.components) && /Bestial Spirit/.test(beastRow?.notes)
+      && beastRow?.duration === 'Concentration, up to 1 hour',
+    JSON.stringify({ components: beastRow?.components, duration: beastRow?.duration }));
+  ok('...and as a plain row: the book tag stays in the library', beastRow && !('source' in beastRow));
+  is('it lands in the Level 2 section', rowsIn(2).map((r) => r.querySelector('[data-bind$=".name"]').value).join(','),
+    'Summon Beast');
 
   // --- the escape hatch --------------------------------------------------------------------
   type(d.getElementById('spell-search'), 'Blade of My Own Invention');

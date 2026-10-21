@@ -43,6 +43,8 @@ import {
   searchSpells, spellToRow, spellSummary, normalizeText, SPELL_CLASSES, SPELL_SCHOOLS,
 } from './js/spell-library.js';
 import { SRD_SPELLS, SRD_ATTRIBUTION } from './js/spell-data.js';
+// The table's hand-written additions — not generated, so nothing but this suite checks them.
+import { EXTRA_SPELLS } from './js/extra-spells.js';
 
 const results = [];
 let group = '';
@@ -2154,6 +2156,69 @@ describe('always-prepared spells and the prepare limit');
   is('a "1 minute or Ritual" casting time is flagged as a ritual', alarm.ritual, true);
   const bless = SRD_SPELLS.find((s) => s.name === 'Bless');
   is('a "Concentration, up to…" duration is flagged as concentration', bless.concentration, true);
+
+  describe('spell library — the table\'s extra spells');
+
+  /*
+   * js/extra-spells.js is hand-written: spells the table uses that the SRD does not have. Nothing
+   * generates or parses it, so a typo in a key is a spell that arrives half-filled, and only this
+   * block would notice. Every entry is held to the SRD entries' shape, plus a named source.
+   */
+  const srdKeys = Object.keys(SRD_SPELLS[0]).sort();
+  is('there is at least one', EXTRA_SPELLS.length > 0, true);
+  is('every extra spell has exactly the SRD entry\'s keys, plus its source',
+    EXTRA_SPELLS.filter((s) => JSON.stringify(Object.keys(s).sort())
+      !== JSON.stringify([...srdKeys, 'source'].sort())).map((s) => s.name), []);
+  is('every extra spell carries every field the picker shows',
+    EXTRA_SPELLS.filter((s) => !s.name || !s.school || !s.castingTime || !s.range
+      || !s.components || !s.duration || !s.text).map((s) => s.name), []);
+  is('every extra spell is filed at a level the sheet has',
+    EXTRA_SPELLS.filter((s) => !SPELL_LIST_LEVELS.includes(s.level)).map((s) => s.name), []);
+  is('...under a school the picker offers',
+    EXTRA_SPELLS.filter((s) => !SPELL_SCHOOLS.includes(s.school)).map((s) => s.name), []);
+  is('...for classes the picker offers',
+    EXTRA_SPELLS.filter((s) => !s.classes.length || s.classes.some((c) => !SPELL_CLASSES.includes(c)))
+      .map((s) => s.name), []);
+  // The site is public and only the SRD is licensed for sharing, so an entry must say which book
+  // it is from — and must not pass itself off as SRD text.
+  is('every extra spell names the book it is from',
+    EXTRA_SPELLS.filter((s) => typeof s.source !== 'string' || !s.source.trim() || /SRD/i.test(s.source))
+      .map((s) => s.name), []);
+  // Same name twice in the picker would list it twice, and mark both "Added" after one pick.
+  {
+    const srdNames = new Set(SRD_SPELLS.map((s) => normalizeText(s.name)));
+    is('no extra spell repeats an SRD name', EXTRA_SPELLS.filter((s) => srdNames.has(normalizeText(s.name)))
+      .map((s) => s.name), []);
+    const seen = EXTRA_SPELLS.map((s) => normalizeText(s.name));
+    is('...or another extra spell', seen.filter((n, i) => seen.indexOf(n) !== i), []);
+  }
+  is('the flags agree with the duration and casting time, as the generator derives them',
+    EXTRA_SPELLS.filter((s) => s.concentration !== /^Concentration/.test(s.duration)
+      || s.ritual !== /Ritual/.test(s.castingTime)).map((s) => s.name), []);
+  is('no markdown in the descriptions either',
+    EXTRA_SPELLS.filter((s) => /[*_]/.test(s.text) || /<[a-z]/i.test(s.text)).map((s) => s.name), []);
+
+  // What a pick turns it into: the eight row fields, and `source` left behind with the library.
+  const beast = EXTRA_SPELLS.find((s) => s.name === 'Summon Beast');
+  is('Summon Beast is a level 2 Conjuration for Druids and Rangers',
+    [beast.level, beast.school, beast.classes], [2, 'Conjuration', ['Druid', 'Ranger']]);
+  is('...at 90 feet, concentration, not a ritual',
+    [beast.range, beast.concentration, beast.ritual], ['90 feet', true, false]);
+  const beastRow = spellToRow(beast);
+  is('...and becomes exactly a template row — its source does not ride along',
+    Object.keys(beastRow).sort(), Object.keys(ROW_TEMPLATES.spells()).sort());
+  is('...with its stat block in the notes', /Bestial Spirit/.test(beastRow.notes), true);
+  is('its summary line names the book', spellSummary(beast), 'Level 2 Conjuration · Druid, Ranger · Concentration · PHB 2024');
+  is('...while an SRD spell\'s reads as before', /PHB|SRD/.test(spellSummary(fireball)), false);
+
+  // Searched as one list with the SRD, the way the picker merges them.
+  const merged = [...SRD_SPELLS, ...EXTRA_SPELLS];
+  is('searching its name finds it first', searchSpells(merged, { text: 'summon beast' })[0]?.name, 'Summon Beast');
+  is('...and "summon" offers it beside the SRD\'s Summon Dragon',
+    ['Summon Beast', 'Summon Dragon'].every((name) => searchSpells(merged, { text: 'summon' }).some((s) => s.name === name)),
+    true);
+  is('...and the Ranger filter at level 2 includes it',
+    searchSpells(merged, { levels: [2], classes: ['Ranger'] }).some((s) => s.name === 'Summon Beast'), true);
 }
 
 export { results };

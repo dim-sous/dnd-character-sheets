@@ -1,5 +1,6 @@
 /**
- * Searching and filtering the SRD spell library, as pure functions (#149).
+ * Searching and filtering the spell library — the SRD plus the table's extra-spells.js — as pure
+ * functions (#149).
  *
  * DOM-free and side-effect-free, like rules.js, so the whole of it is under test — the ranking
  * is the part of a picker that quietly goes wrong (a search for "fire" that does not put
@@ -158,6 +159,10 @@ export function spellToRow(spell) {
 /**
  * The one-line summary under a name in the results list: "Level 3 Evocation · Wizard, Sorcerer".
  * Cantrips say "Cantrip" rather than "Level 0", because the rules do.
+ *
+ * A spell from extra-spells.js ends with the book it comes from ("· PHB 2024"). SRD entries carry
+ * no `source` and read exactly as before; the tag is what keeps the picker's SRD attribution from
+ * reading as a claim about a spell that is not in the SRD.
  */
 export function spellSummary(spell) {
   const level = Number(spell?.level) === 0 ? 'Cantrip' : `Level ${Number(spell?.level)}`;
@@ -165,5 +170,6 @@ export function spellSummary(spell) {
   if (spell?.classes?.length) parts.push(spell.classes.join(', '));
   if (spell?.concentration) parts.push('Concentration');
   if (spell?.ritual) parts.push('Ritual');
+  if (spell?.source) parts.push(spell.source);
   return parts.join(' · ');
 }
