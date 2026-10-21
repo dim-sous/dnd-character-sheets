@@ -60,7 +60,7 @@ try {
     { name: 'Dagger', ability: 'dex', proficient: true, damage: '1d4', notes: '' },
     { name: 'Longbow of the Deep Wood', ability: 'dex', proficient: true, damage: '1d8+2 piercing', notes: 'Range 150/600' },
   ];
-  c.inventory = [{ name: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
+  c.inventory = [{ item: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [c] }));
   localStorage.removeItem('dnd-character-sheets:layout');
   localStorage.removeItem('dnd-character-sheets:layout-default');
