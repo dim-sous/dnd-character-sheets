@@ -42,8 +42,10 @@ const LAYOUT_DEFAULT_KEY = 'dnd-character-sheets:layout-default';
 try {
   // Kill the worker first or every assertion below measures the last build.
   // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
-  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
-  const hold = setInterval(() => {}, 10);
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops the
+  // leap; the busy work in each tick makes the budget last seconds of real time, not ~0.15s.
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -80,9 +82,12 @@ try {
   await load();
   let d = frame.contentDocument;
   let w = frame.contentWindow;
-  w.confirm = () => true;   // the import is gated on confirm(), like arrange-reset-factory
-
   const $ = (sel) => d.querySelector(sel);
+  // #124: the import asks in the app's own dialog, which opens OVER this one. Answered the way a
+  // player answers it, with a click — the app settles on the click, so the import has run by the
+  // next timer.
+  const asking = () => Boolean($('#confirm-dialog')?.open);
+  const answer = (yes) => $(`#confirm-dialog [data-answer="${yes ? 'confirm' : 'cancel'}"]`)?.click();
   const dialog = () => $('#layout-transfer');
   const box = () => $('#layout-json');
   const status = () => $('#layout-transfer-status').textContent;
@@ -228,6 +233,10 @@ try {
   const refuse = async (label, text, pattern) => {
     typeInto(box(), text);
     $('[data-action="layout-import"]').click();
+    // Refused BEFORE the question: asking "replace your layout?" about a file that cannot be one
+    // would put the player's Yes between a character backup and a factory reset.
+    ok(`${label}: refused before asking`, !asking());
+    answer(false);                    // so a wrong ask cannot leak into the next case
     await wait(300);
     ok(`${label}: reports the reason`, pattern.test(status()), `"${status()}"`);
     eq(`${label}: the live layout is untouched`, tabButtonIds(), before);
@@ -264,7 +273,17 @@ try {
       ],
     },
   }));
+  // A good file asks first, and backing out of the question is a No that changes nothing.
   $('[data-action="layout-import"]').click();
+  ok('a good file asks before replacing anything', asking());
+  answer(false);
+  await wait(300);
+  ok('Cancel on the question changes nothing', /Nothing was changed/.test(status()), `"${status()}"`);
+  eq('...and leaves the live layout alone', tabButtonIds(), before);
+  ok('...and the backup dialog stays open under it', dialog().open && !asking());
+
+  $('[data-action="layout-import"]').click();
+  answer(true);
   await wait(600);
 
   eq('the imported tab set reaches the tab bar', tabButtonIds(), ['tab-front', 'tab-back']);
@@ -286,6 +305,7 @@ try {
     layout: { layoutSchemaVersion: 2, tabs: [{ id: 'solo', label: 'Solo', cards: [{ componentId: 'bastion' }] }] },
   }));
   $('[data-action="layout-import"]').click();
+  answer(true);
   await wait(600);
   ok('a dropped card is named out loud', /does not recognise was left out \(bastion\)/.test(status()), `"${status()}"`);
   ok('the cards the file omitted are named too', /added at their usual place/.test(status()));
@@ -346,7 +366,6 @@ try {
   await load();
   d = frame.contentDocument;
   w = frame.contentWindow;
-  w.confirm = () => true;
 
   ok('no characters: the arrange gear is hidden', d.querySelector('#btn-arrange').hidden);
   d.querySelector('#btn-menu').click();

@@ -39,8 +39,10 @@ try {
   // Cache-first service worker: without this the run measures the PREVIOUS build, which shows
   // up as a change that "didn't apply" or a bogus missing-export error.
   // These awaits are not timers, so under --virtual-time-budget nothing stops virtual time leaping
-  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops it.
-  const hold = setInterval(() => {}, 10);
+  // to the budget mid-teardown — the page is dumped reading `pending`. A ticking interval stops the
+  // leap; the busy work in each tick makes the budget last seconds of real time, not ~0.15s.
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
   if (navigator.serviceWorker) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -199,12 +201,13 @@ try {
 
   /* ---- 5. the #140 decision: a long rest must NOT touch resources ----------- */
 
-  let confirms = 0;
-  frame.contentWindow.confirm = () => { confirms++; return true; };
   const hpBefore = d.getElementById('f-hp-current').value;
   d.querySelector('#panel-combat [data-object="rest"] [data-action="long-rest"]').click();
+  // #124: answered in the app's own dialog, with the click a player makes.
+  const asked = d.getElementById('confirm-dialog').open;
+  d.querySelector('#confirm-dialog [data-answer="confirm"]').click();
   await wait(700);
-  ok('the long rest was confirmed and taken', confirms === 1, `${confirms} confirm(s)`);
+  ok('the long rest was confirmed and taken', asked, asked ? 'asked once' : 'never asked');
   // The control: the rest really did run, so the assertion below means something.
   ok('the rest restored the lost hit points', d.getElementById('f-hp-current').value === '45',
     `${hpBefore} -> ${d.getElementById('f-hp-current').value}`);

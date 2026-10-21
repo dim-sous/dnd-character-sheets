@@ -708,6 +708,22 @@
   </form>
 </dialog>
 
+<!-- The app's one "are you sure?" (#124), replacing native confirm(): that ignored the theme and
+     dark mode, and in an installed PWA drew system chrome with the origin printed on it.
+     js/confirm-dialog.js fills in the question and resolves the answer on the button's own click.
+
+     No <form method="dialog"> and no data-action: the answer must not depend on the `close` event
+     or travel through main.js's ACTIONS map. Cancel comes first and carries `autofocus`, so the
+     answer a stray Enter gives is the one that costs nothing. -->
+<dialog class="dialog" id="confirm-dialog" role="alertdialog" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+  <h2 class="dialog__title" id="confirm-title"></h2>
+  <p class="dialog__body" id="confirm-body"></p>
+  <menu class="dialog__actions">
+    <button type="button" class="btn" data-answer="cancel" autofocus>Cancel</button>
+    <button type="button" class="btn btn--danger" data-answer="confirm">OK</button>
+  </menu>
+</dialog>
+
 <!-- Layout transfer (#162). A layout had no backup path at all: it lives under its own
      localStorage key, it is NOT in a character export, and the README called export "the only
      backup" while meaning characters only — so a reinstall or a cleared site took an arrangement

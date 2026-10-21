@@ -20,6 +20,7 @@ import {
   CARD_REGISTRY, OBJECT_REGISTRY, SPAN_MIN, SPAN_MAX, HEIGHT_SET_MIN, HEIGHT_MAX,
 } from './layout-registry.js';
 import { newId } from './constants.js';
+import { askConfirm } from './confirm-dialog.js';
 
 const LAYOUT_KEY = 'dnd-character-sheets:layout';
 // A per-device "saved default" the player sets from their current arrangement; Reset restores
@@ -1426,7 +1427,7 @@ export function downloadLayoutFile() {
  * nothing — parseLayoutFile refuses before normalizeLayout can turn a character backup into a
  * silent factory reset.
  */
-export function importLayoutFromDialog() {
+export async function importLayoutFromDialog() {
   const box = document.getElementById('layout-json');
   if (!box) return false;
   const result = parseLayoutFile(box.value);
@@ -1437,8 +1438,14 @@ export function importLayoutFromDialog() {
   // Confirmed for the same reason arrange-reset-factory is: it replaces work wholesale. The undo
   // entry commitLayout pushes is only reachable from the arrange bar, and the drawer entry point
   // is reachable with no character open at all — so outside arrange mode this prompt is the only
-  // thing between a mistap and a replaced arrangement.
-  if (!window.confirm('Replace this device\'s layout with the one in the box? Your characters are not affected.')) {
+  // thing between a mistap and a replaced arrangement. It opens OVER this dialog (#124): the top
+  // layer stacks, and closing it hands focus back to the Replace button underneath.
+  const ok = await askConfirm({
+    title: 'Replace this device’s layout with the one in the box?',
+    body: 'Your characters are not affected.',
+    confirmLabel: 'Replace layout',
+  });
+  if (!ok) {
     transferStatus('Nothing was changed.');
     return false;
   }
