@@ -1,5 +1,6 @@
 /**
- * The spell picker (#149): search the SRD library and add a spell to the sheet.
+ * The spell picker (#149): search the SRD library — plus the table's extra-spells.js — and add a
+ * spell to the sheet.
  *
  * The DOM half of the library, the way layout-view.js is the DOM half of layout.js — every
  * decision it makes (what matches, how results rank, what a library entry becomes as a row)
@@ -34,10 +35,13 @@ const $ = (sel, root = document) => root.querySelector(sel);
  *
  * The promise is cached, not the module: two taps before the first load resolves must not start
  * two downloads.
+ *
+ * The table's own additions (extra-spells.js) come with it, in parallel: hand-written spells that
+ * are not in the SRD, kept out of the generated file so a regeneration cannot erase them.
  */
 let libraryPromise = null;
 function loadLibrary() {
-  libraryPromise ??= import('./spell-data.js');
+  libraryPromise ??= Promise.all([import('./spell-data.js'), import('./extra-spells.js')]);
   return libraryPromise;
 }
 
@@ -197,7 +201,7 @@ function renderResults() {
     const empty = document.createElement('li');
     empty.className = 'rows__empty';
     empty.textContent = filters.text
-      ? 'No SRD spell matches that. You can still add it as your own.'
+      ? 'No spell in the library matches that. You can still add it as your own.'
       : 'No spell matches these filters.';
     results.append(empty);
   }
@@ -253,8 +257,11 @@ export async function openSpellPicker({ level = null, existing = [], onAdd: hand
   if (spells.length === 0) {
     announce('Loading the spell library…');
     try {
-      const data = await loadLibrary();
-      spells = data.SRD_SPELLS;
+      const [data, extra] = await loadLibrary();
+      // One list, so search, filters and ranking treat both alike. Each extra entry names its
+      // `source`, which the result's summary line shows, so the SRD attribution below never
+      // reads as a claim about a spell that is not from the SRD.
+      spells = [...data.SRD_SPELLS, ...extra.EXTRA_SPELLS];
       el.attrib.textContent = data.SRD_ATTRIBUTION;
       announce('');
     } catch {

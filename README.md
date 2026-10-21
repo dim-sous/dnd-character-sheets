@@ -255,6 +255,13 @@ python3 tools/build-spell-data.py --check  # parse and report, write nothing
 It is ~330KB, so it is **not** loaded when the app starts — only the first time the picker opens.
 The service worker precaches it, so after that first open it works at a table with no signal.
 
+Spells the table uses that the SRD does not have — Summon Beast was the first — live in
+`js/extra-spells.js`, written by hand in the same shape and searched as one list with the SRD.
+The picker tags each with the book it is from ("PHB 2024"). Add one there, never in
+`spell-data.js`, which the next regeneration rewrites. Keep each entry to the spell's facts —
+level, range, components, duration, the numbers of any stat block — with any prose short and in
+your own words: the SRD is licensed for sharing and the books are not, and this site is public.
+
 > This work includes material from the System Reference Document 5.2.1 (“SRD 5.2.1”) by Wizards
 > of the Coast LLC, available at <https://www.dndbeyond.com/srd>. The SRD 5.2.1 is licensed under
 > the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/legalcode).
