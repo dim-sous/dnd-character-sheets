@@ -439,3 +439,21 @@ export function describeHpChange(before, after, raw = '') {
 export function restoreHitDice(pools) {
   return pools.map((pool) => ({ ...pool, remaining: num(pool.total) }));
 }
+
+/**
+ * A long rest refills every class resource to its total. #140 shipped with a rest leaving them
+ * alone, on the grounds that recovery is per-resource and this app holds no class knowledge; the
+ * owner reversed that (2026-10-21), and for class resources the 2024 rules agree — one that comes
+ * back on a short rest comes back on a long rest too.
+ *
+ * The two edge cases are the HP ones. A resource with no total is not tracked (0 means "not
+ * tracked", never "a ceiling of zero", #106), so it is left as it is rather than "refilled" to
+ * nothing; and a hand-set count above its total is kept, because a rest never takes anything away
+ * (#107). New rows; never mutates.
+ */
+export function restoreResources(rows) {
+  return rows.map((row) => {
+    const total = num(row.total);
+    return total > 0 ? { ...row, remaining: Math.max(num(row.remaining), total) } : { ...row };
+  });
+}

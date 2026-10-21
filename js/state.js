@@ -288,23 +288,21 @@ export function setSlotsUsed(level, used) {
 
 /**
  * A long rest applies the full 2024 recovery: lost HP back, temp HP and death saves
- * cleared, all spent Hit Point Dice back, exhaustion down one, all spell slots reset.
- * Every field stays hand-editable afterwards — this automates the common case, it does
- * not take the ruling away from the player. Confirmed at the call site (main.js).
+ * cleared, all spent Hit Point Dice back, every class resource refilled, exhaustion down one,
+ * all spell slots reset. Every field stays hand-editable afterwards — this automates the
+ * common case, it does not take the ruling away from the player. Confirmed at the call site
+ * (main.js).
  *
  * The HP half is `rules.restoreHp`, not an inline assignment: it has two edge cases worth
  * stating and testing (an unset max, and a hand-set current above max), and the rest of the
  * recovery arithmetic already lives in the pure module for exactly that reason.
  *
- * Class resources (#140) are deliberately NOT in this list, and that is a decision rather than
- * an omission. Everything restored above recovers on a long rest for EVERY character — the rule
- * is a property of the game, not of the sheet's owner. "Does this resource come back?" is the
- * opposite: Rage does on a long rest, Channel Divinity on a short one, a Warlock's slots on a
- * short one, and a once-per-day item on neither. Restoring them all would be wrong for most
- * characters, and silently wrong — the player would have to notice and undo it, which is worse
- * than never doing it, and there is no undo for character data (#107). Encoding it properly
- * needs a per-resource recovery rule, i.e. the class knowledge this app has refused to hold.
- * So a resource is spent and refilled by hand, like every other free-form field here.
+ * Class resources (#140) shipped OUT of this list, on the grounds that whether a resource comes
+ * back is per-resource and this app holds no class knowledge. The owner reversed that on
+ * 2026-10-21, and for class resources the 2024 rules agree: a resource that comes back on a short
+ * rest (Channel Divinity, a Warlock's slots) comes back on a long one too, so refilling them all
+ * is right for every class. What it can get wrong is a non-class row someone keeps in the
+ * same tile — an item that recharges at dawn — and that stays a hand edit, like everything here.
  */
 export function longRest() {
   const char = getActive();
@@ -314,6 +312,7 @@ export function longRest() {
   char.deathSaves = { successes: 0, failures: 0 };
   char.concentration = false;   // #78: nothing you concentrate on survives 8 hours of rest
   char.hitDice = rules.restoreHitDice(char.hitDice);
+  char.resources = rules.restoreResources(char.resources || []);
   char.exhaustion = Math.max(0, char.exhaustion - 1);
   for (const slot of Object.values(char.spellcasting.slots)) slot.used = 0;
 

@@ -500,6 +500,42 @@ describe('restoreHitDice');
   })(), [{ size: 'd8', total: 4, remaining: 1 }]);
 }
 
+/* ---------------------------------------------- restoreResources (long rest) */
+
+describe('restoreResources');
+{
+  // The owner's call (2026-10-21), reversing #140: a long rest refills every class resource.
+  const one = (row) => rules.restoreResources([row])[0];
+  is('spent → full', one({ name: 'Rage', remaining: 0, total: 3 }).remaining, 3);
+  is('partly spent → full', one({ name: 'Focus', remaining: 14, total: 20 }).remaining, 20);
+  is('full stays full', one({ name: 'Rage', remaining: 3, total: 3 }).remaining, 3);
+  is('numeric strings count', one({ name: 'Rage', remaining: '1', total: '3' }).remaining, 3);
+
+  // A rest never takes anything away (#107): a hand-set count above the total survives it.
+  is('a count above its total is kept', one({ name: 'Rage', remaining: 5, total: 3 }).remaining, 5);
+
+  // No total means "not tracked" (#106), so there is nothing to refill TO — refilling to 0 would
+  // wipe the count the player was keeping by hand.
+  is('total 0 → left alone', one({ name: 'Lucky', remaining: 2, total: 0 }).remaining, 2);
+  is('blank total → left alone', one({ name: 'Lucky', remaining: 2, total: null }).remaining, 2);
+  is('unreadable total → left alone', one({ name: 'Lucky', remaining: 2, total: 'x' }).remaining, 2);
+
+  is('every row is refilled', rules.restoreResources([
+    { name: 'Rage', remaining: 0, total: 3 },
+    { name: 'Second Wind', remaining: 1, total: 2 },
+  ]).map((r) => r.remaining), [3, 2]);
+  is('keeps the name and the total', one({ name: 'Channel Divinity', remaining: 0, total: 2 }),
+    { name: 'Channel Divinity', remaining: 2, total: 2 });
+  is('an empty list stays empty', rules.restoreResources([]), []);
+
+  // Pure — does not mutate the rows passed in, the untracked ones included.
+  is('does not mutate input', (() => {
+    const rows = [{ name: 'Rage', remaining: 0, total: 3 }, { name: 'Lucky', remaining: 2, total: 0 }];
+    rules.restoreResources(rows);
+    return rows;
+  })(), [{ name: 'Rage', remaining: 0, total: 3 }, { name: 'Lucky', remaining: 2, total: 0 }]);
+}
+
 /* -------------------------------------------------------- hitDice migration */
 
 describe('hitDice migration');
