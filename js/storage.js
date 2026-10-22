@@ -411,12 +411,12 @@ export function importCharacters(existing, incoming) {
  * The file brings the BUILD, the device keeps the PLAY: `incoming` with this device's
  * inventory, coins, notes and everything that moves at the table carried over from `prior`.
  *
- * Pools carry over what was SPENT, not what is left, so a level-up in the file shows up:
- * 5 HP down stays 5 down under the new max, one Rage spent stays one spent out of the new
- * total. A pool with no size on either side (a max or total of 0 — "not tracked", the Max HP
- * contract) has no "spent" to speak of, so its current value is kept as typed. Spell slots are
- * the exception only because they are already stored as `used`, clamped to the new total for
- * the same reason normalizeCharacter clamps them: a pip that does not exist cannot be cleared.
+ * The device's numbers are kept exactly as they were, even when the file raises a total: 15 of
+ * 20 HP is 15 of 28 after a level-up, not 23 (the owner's call — the player heals by hand if
+ * the table says the new HP arrive with the level). Nothing is clamped to a lower total either,
+ * because current HP and a remaining count above their total are already legal overrides. Spell
+ * slots are the one exception: `used` is clamped to the new total for the reason
+ * normalizeCharacter clamps it, that a pip which does not exist cannot be cleared.
  *
  * Rows are matched by name (resources, spells) or die size (Hit Point Dice), each prior row
  * used once. A row only the file has comes in exactly as the file has it; a row only the
@@ -434,7 +434,7 @@ export function keepPlayState(prior, incoming) {
 
   char.hp = {
     max: char.hp.max,
-    current: carrySpent(kept.hp.max, kept.hp.current, char.hp.max),
+    current: kept.hp.current,
     temp: kept.hp.temp,
   };
   char.deathSaves = kept.deathSaves;
@@ -443,9 +443,7 @@ export function keepPlayState(prior, incoming) {
   char.concentration = kept.concentration;
   char.heroicInspiration = kept.heroicInspiration;
 
-  const keepRemaining = (row, old) => ({
-    ...row, remaining: carrySpent(old.total, old.remaining, row.total),
-  });
+  const keepRemaining = (row, old) => ({ ...row, remaining: old.remaining });
   char.hitDice = carryRows(char.hitDice, kept.hitDice, (row) => row.size, keepRemaining);
   char.resources = carryRows(char.resources, kept.resources, (row) => row.name, keepRemaining);
   char.spellcasting.spells = carryRows(
@@ -458,12 +456,6 @@ export function keepPlayState(prior, incoming) {
   }
 
   return char;
-}
-
-/** Same amount spent out of the new size, floored at 0; as typed when either size is unset. */
-function carrySpent(oldSize, oldLeft, newSize) {
-  if (!(oldSize > 0) || !(newSize > 0)) return oldLeft;
-  return Math.max(0, newSize - (oldSize - oldLeft));
 }
 
 /** Each of `rows` that has a namesake in `priorRows` goes through `carry`; first come, first matched. */

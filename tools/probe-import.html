@@ -118,7 +118,7 @@ R.updateKeepsPlay = {
   notes: d.getElementById('f-notes').value,
   inventory: alphaNow().inventory.map((i) => i.item),
   gp: alphaNow().currency.gp,
-  pass: d.getElementById('f-hp-current').value === '23'        // 5 down stays 5 down
+  pass: d.getElementById('f-hp-current').value === '15'        // as it was, not raised to the new max
     && d.getElementById('f-notes').value === 'owes Brom 5gp'
     && alphaNow().inventory.length === 1 && alphaNow().inventory[0].item === 'Rope'
     && alphaNow().currency.gp === 37,

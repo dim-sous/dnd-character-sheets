@@ -919,9 +919,9 @@ describe('keepPlayState');
   is('kept: temp HP', r.hp.temp, 3);
   is('kept: death saves, conditions, exhaustion', [r.deathSaves, r.conditions, r.exhaustion], [{ successes: 1, failures: 2 }, ['poisoned'], 2]);
   is('kept: concentration and inspiration', [r.concentration, r.heroicInspiration], [true, true]);
-  is('HP: 5 down stays 5 down under the new max', r.hp.current, 23);
-  is('Hit Point Dice: 2 spent stays 2 spent out of the new total', r.hitDice[0], { size: 'd8', total: 4, remaining: 2 });
-  is('resource matched by name, case and spaces aside: 1 spent stays spent', r.resources[0].remaining, 2);
+  is('HP: current kept as it was, not raised with the new max', r.hp, { max: 28, current: 15, temp: 3 });
+  is('Hit Point Dice: remaining kept as it was under the new total', r.hitDice[0], { size: 'd8', total: 4, remaining: 1 });
+  is('resource matched by name, case and spaces aside: remaining kept as it was', r.resources[0], { name: 'channel divinity ', remaining: 1, total: 3 });
   is('resource only the file has comes in as the file has it', r.resources[1], { name: 'Brand New', remaining: 2, total: 2 });
   is('resource only the device had is gone', r.resources.length, 2);
   is('slots: used carries per level', [r.spellcasting.slots[1], r.spellcasting.slots[2]], [{ total: 4, used: 3 }, { total: 3, used: 1 }]);
@@ -932,10 +932,10 @@ describe('keepPlayState');
   is('nothing shared with the prior record', r.inventory !== prior.inventory && r.currency !== prior.currency, true);
 
   const hp = (old, next) => keepPlayState(normalizeCharacter({ hp: old }), normalizeCharacter({ hp: next })).hp.current;
-  is('HP untracked on the device (max 0) → current kept as typed', hp({ max: 0, current: 17 }, { max: 28, current: 28 }), 17);
-  is('HP untracked in the file (max 0) → current kept as typed', hp({ max: 20, current: 12 }, { max: 0, current: 0 }), 12);
-  is('HP: a lower max floors at 0, never negative', hp({ max: 28, current: 3 }, { max: 20, current: 20 }), 0);
-  is('HP: a hand-set current above max keeps its margin', hp({ max: 20, current: 25 }, { max: 28, current: 28 }), 33);
+  is('HP untracked on the device (max 0) → current kept', hp({ max: 0, current: 17 }, { max: 28, current: 28 }), 17);
+  is('HP untracked in the file (max 0) → current kept', hp({ max: 20, current: 12 }, { max: 0, current: 0 }), 12);
+  is('HP: a lower max does not pull current down to it', hp({ max: 28, current: 25 }, { max: 20, current: 20 }), 25);
+  is('HP: the file\'s own current never wins', hp({ max: 20, current: 1 }, { max: 20, current: 20 }), 1);
 
   const slot = keepPlayState(
     normalizeCharacter({ spellcasting: { slots: { 3: { total: 3, used: 3 } } } }),
@@ -947,13 +947,13 @@ describe('keepPlayState');
     normalizeCharacter({ hitDice: [{ size: 'd10', total: 2, remaining: 0 }, { size: 'd8', total: 1, remaining: 1 }] }),
     normalizeCharacter({ hitDice: [{ size: 'd8', total: 2, remaining: 2 }, { size: 'd10', total: 3, remaining: 3 }] }),
   ).hitDice;
-  is('Hit Point Dice matched by die size, not position', dice, [{ size: 'd8', total: 2, remaining: 2 }, { size: 'd10', total: 3, remaining: 1 }]);
+  is('Hit Point Dice matched by die size, not position', dice, [{ size: 'd8', total: 2, remaining: 1 }, { size: 'd10', total: 3, remaining: 0 }]);
 
   const res = keepPlayState(
     normalizeCharacter({ resources: [{ name: 'Rage', total: 0, remaining: 1 }] }),
     normalizeCharacter({ resources: [{ name: 'Rage', total: 3, remaining: 3 }] }),
   ).resources[0].remaining;
-  is('resource untracked on the device (total 0) → remaining kept as typed', res, 1);
+  is('resource untracked on the device (total 0) → remaining kept', res, 1);
 }
 
 /* --------------------------------------- parseStored (more shapes) */

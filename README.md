@@ -106,8 +106,9 @@ file is matched to this device's characters by its id, and by nothing else:
   spent Hit Point Dice, used spell slots, class resources remaining, and which spells are
   ticked Prepared.
 
-What was *spent* carries over, not what is left, so a level-up in the file shows up: 5 HP
-down stays 5 down under the new max, one Rage spent stays one spent out of the new total.
+This device's numbers are kept exactly as they were, even when the file raises a total:
+15 of 20 HP is 15 of 28 after a level-up, and you heal by hand if your table gives you the
+new HP straight away. Used spell slots are the one thing capped, at the file's new total.
 Resources and spells are matched by name, Hit Point Dice by die size; a row only the file
 has comes in as the file has it, and a row the file no longer has is gone.
 
