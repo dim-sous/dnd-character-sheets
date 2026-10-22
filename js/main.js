@@ -370,6 +370,12 @@ const ACTIONS = {
 
   'reload-app': () => window.location.reload(),
 
+  'import-undo': () => {
+    state.undoImport();
+    showNotice('Import undone.', { info: true });
+  },
+  'import-dismiss': () => clearNudge('import'),
+
   // Data-durability nudges (#32). Each handler dismisses only its OWN banner —
   // clearNudge is kind-guarded, so it can never wipe the update prompt (#33).
   'nudge-backup-export': () => {
@@ -854,24 +860,39 @@ fileInput.addEventListener('change', async () => {
       throw new Error('That is a layout export, not a character backup. Import it with "Layout backup" in this menu.');
     }
     const incoming = await readImportFile(file);
-    const choice = await askImport(incoming.length, state.getCharacters().length);
-    if (choice === 'replace') state.replaceAll(incoming);
-    else if (choice === 'merge') state.merge(incoming);
-    if (choice !== 'cancel') clearBanner('import');
+    // No question first: a character already here is updated, keeping its inventory, coins,
+    // notes and play state, and anything else is added. The notice says which, and its Undo
+    // is the safety net the old Replace/Merge dialog used to be.
+    const { updated, added } = state.importCharacters(incoming);
+    clearBanner('import');
+    showNotice(importSummary(updated, added), {
+      kind: 'import',
+      info: true,
+      actions: [
+        { action: 'import-undo', label: 'Undo' },
+        { action: 'import-dismiss', label: 'OK' },
+      ],
+    });
   } catch (err) {
     showBanner(err.message, 'import');
   }
 });
 
-function askImport(incomingCount, existingCount) {
-  const dialog = $('#import-dialog');
-  $('#import-summary').textContent =
-    `This file holds ${incomingCount} character${incomingCount === 1 ? '' : 's'}. `
-    + `You currently have ${existingCount}.`;
-  dialog.showModal();
-  return new Promise((resolve) => {
-    dialog.addEventListener('close', () => resolve(dialog.returnValue || 'cancel'), { once: true });
-  });
+// The Undo is only good until the next change (state.importCharacters), so the offer goes
+// with it rather than sitting on screen as a button that would do nothing.
+state.subscribe(() => { if (!state.canUndoImport()) clearNudge('import'); });
+
+function importSummary(updated, added) {
+  const named = (list) => (list.length === 1
+    ? `“${list[0].name || 'Unnamed'}”`
+    : `${list.length} characters`);
+  const parts = [];
+  if (updated.length) {
+    parts.push(`Updated ${named(updated)}, keeping this device’s inventory, coins, notes `
+      + 'and current HP, spell slots and resources.');
+  }
+  if (added.length) parts.push(`Added ${named(added)}.`);
+  return parts.join(' ');
 }
 
 

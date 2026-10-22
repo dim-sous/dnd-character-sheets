@@ -711,22 +711,6 @@
   </div>
 </dialog>
 
-<dialog class="dialog" id="import-dialog">
-  <form method="dialog">
-    <h2 class="dialog__title">Import backup</h2>
-    <p class="dialog__body" id="import-summary"></p>
-    <p class="dialog__body hint">
-      <strong>Replace</strong> discards what is on this device. <strong>Merge</strong> keeps
-      both and renumbers anything that collides.
-    </p>
-    <menu class="dialog__actions">
-      <button type="submit" class="btn" value="cancel">Cancel</button>
-      <button type="submit" class="btn" value="merge">Merge</button>
-      <button type="submit" class="btn btn--danger" value="replace">Replace all</button>
-    </menu>
-  </form>
-</dialog>
-
 <!-- The app's one "are you sure?" (#124), replacing native confirm(): that ignored the theme and
      dark mode, and in an installed PWA drew system chrome with the origin printed on it.
      js/confirm-dialog.js fills in the question and resolves the answer on the button's own click.

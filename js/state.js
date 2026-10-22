@@ -8,7 +8,7 @@
  */
 
 import { ROW_TEMPLATES, newId, blankCharacter } from './constants.js';
-import { load, save, mergeCharacters, canWrite } from './storage.js';
+import { load, save, importCharacters as mergeImport, canWrite } from './storage.js';
 import * as rules from './rules.js';
 
 const SAVE_DELAY_MS = 400;
@@ -31,6 +31,8 @@ let saveTimer = null;
 // interaction can't overwrite characters the user might still recover.
 let recoveryMode = false;
 let corruptRaw = null;
+// The roster as it was before the last import, while that import can still be undone.
+let importUndo = null;
 
 const listeners = new Set();
 const statusListeners = new Set();
@@ -88,6 +90,7 @@ function notify(type = 'derived') {
  * should keep travelling up to the window error handler, which puts a banner on screen.
  */
 function emit(type = 'derived') {
+  importUndo = null; // any change ends the last import's undo window (importCharacters)
   scheduleSave();
   notify(type);
 }
@@ -153,6 +156,7 @@ export function reloadFromStorage() {
   if (saveTimer !== null || recoveryMode) return;
   const result = load();
   if (result.corrupt || result.error) return;
+  importUndo = null;
   characters = result.characters;
   if (!characters.some((c) => c.id === activeId)) {
     activeId = characters.length > 0 ? characters[0].id : null;
@@ -319,15 +323,33 @@ export function longRest() {
   emit('derived');
 }
 
-export function replaceAll(incoming) {
-  characters = incoming;
-  activeId = characters.length > 0 ? characters[0].id : null;
+/**
+ * Import a file's characters: update the ones already here, add the rest (storage.js's
+ * importCharacters has the rules). An imported character becomes the open one — an updated one
+ * first — so the player lands on what the file just changed.
+ *
+ * There is no question before it, so there is an Undo after it: the roster as it was is kept
+ * until the next change of any kind, and undoImport() puts it back. Any later emit drops it,
+ * because restoring a snapshot over edits made since would throw those edits away.
+ */
+export function importCharacters(incoming) {
+  const before = { characters: structuredCloneish(characters), activeId };
+  const result = mergeImport(characters, incoming);
+  characters = result.characters;
+  const open = result.updated[0] ?? result.added[0];
+  if (open) activeId = open.id;
   emit('structural');
+  importUndo = before; // after emit, which clears it
+  return { updated: result.updated, added: result.added };
 }
 
-export function merge(incoming) {
-  characters = mergeCharacters(characters, incoming);
-  if (!activeId && characters.length > 0) activeId = characters[0].id;
+export function canUndoImport() {
+  return importUndo !== null;
+}
+
+export function undoImport() {
+  if (!importUndo) return;
+  ({ characters, activeId } = importUndo);
   emit('structural');
 }
 
