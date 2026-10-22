@@ -1070,10 +1070,14 @@ export function showRecovery() {
  * A low-stakes, one-shot notice (e.g. "nothing to export"). Non-sticky: it never
  * resurfaces once a warning has hidden it, and it refuses to overwrite a pending update
  * prompt (a sticky transient), so a trivial notice can't discard the reload offer.
+ *
+ * `kind` and `actions` are for a notice that offers something (an import's Undo): `kind` lets
+ * clearNudge take down exactly that notice once its offer has lapsed. `info` paints it in the
+ * accent rather than the banner's default red, for news that is not a failure.
  */
-export function showNotice(message) {
+export function showNotice(message, { kind, actions = [], info = false } = {}) {
   if (transient && transient.sticky) return;
-  transient = { info: false, sticky: false, message, actions: [] };
+  transient = { info, sticky: false, kind, message, actions };
   paintBanner();
 }
 

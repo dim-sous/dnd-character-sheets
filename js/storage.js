@@ -369,19 +369,113 @@ export function readImportFile(file) {
 }
 
 /**
- * Append imported characters, giving a fresh id to anything that collides.
- * Never silently overwrites a character the user is already using.
+ * Import: one path, no question. A character whose id is already on this device is UPDATED
+ * from the file (see keepPlayState for what survives); anything else is ADDED, and nothing
+ * else on the device is touched. The id alone decides — never the name, so two characters
+ * that happen to share one stay two characters.
+ *
+ * The id is the right key because it is the one thing every export carries unchanged: a
+ * character levelled up on a laptop and sent back to the phone arrives with the phone's id,
+ * while a Duplicate gets a fresh one and so is a different character on purpose.
+ *
+ * A file can only claim an id once. A second character in the same file with the same id
+ * (only a hand-edit makes one) is added under a fresh id rather than applied over the first,
+ * so no character in the file is silently dropped.
+ *
+ * Returns the new roster plus which characters were updated and added, in file order, so the
+ * caller can say what happened — there is no dialog before it any more.
  */
-export function mergeCharacters(existing, incoming) {
+export function importCharacters(existing, incoming) {
+  const characters = [...existing];
   const taken = new Set(existing.map((c) => c.id));
-  const added = incoming.map((char) => {
-    if (!taken.has(char.id)) {
-      taken.add(char.id);
-      return char;
+  const claimed = new Set();
+  const updated = [];
+  const added = [];
+  for (const char of incoming) {
+    const index = claimed.has(char.id) ? -1 : existing.findIndex((c) => c.id === char.id);
+    claimed.add(char.id);
+    if (index !== -1) {
+      characters[index] = keepPlayState(existing[index], char);
+      updated.push(characters[index]);
+      continue;
     }
-    const copy = { ...char, id: newId() };
+    const copy = taken.has(char.id) ? { ...char, id: newId() } : char;
     taken.add(copy.id);
-    return copy;
+    characters.push(copy);
+    added.push(copy);
+  }
+  return { characters, updated, added };
+}
+
+/**
+ * The file brings the BUILD, the device keeps the PLAY: `incoming` with this device's
+ * inventory, coins, notes and everything that moves at the table carried over from `prior`.
+ *
+ * Pools carry over what was SPENT, not what is left, so a level-up in the file shows up:
+ * 5 HP down stays 5 down under the new max, one Rage spent stays one spent out of the new
+ * total. A pool with no size on either side (a max or total of 0 — "not tracked", the Max HP
+ * contract) has no "spent" to speak of, so its current value is kept as typed. Spell slots are
+ * the exception only because they are already stored as `used`, clamped to the new total for
+ * the same reason normalizeCharacter clamps them: a pip that does not exist cannot be cleared.
+ *
+ * Rows are matched by name (resources, spells) or die size (Hit Point Dice), each prior row
+ * used once. A row only the file has comes in exactly as the file has it; a row only the
+ * device has is gone, because the list itself is part of the build.
+ *
+ * Pure: neither argument is mutated, and nothing returned shares an object with `prior`.
+ */
+export function keepPlayState(prior, incoming) {
+  const kept = JSON.parse(JSON.stringify(prior));
+  const char = JSON.parse(JSON.stringify(incoming));
+
+  char.inventory = kept.inventory;
+  char.currency = kept.currency;
+  char.notes = kept.notes;
+
+  char.hp = {
+    max: char.hp.max,
+    current: carrySpent(kept.hp.max, kept.hp.current, char.hp.max),
+    temp: kept.hp.temp,
+  };
+  char.deathSaves = kept.deathSaves;
+  char.conditions = kept.conditions;
+  char.exhaustion = kept.exhaustion;
+  char.concentration = kept.concentration;
+  char.heroicInspiration = kept.heroicInspiration;
+
+  const keepRemaining = (row, old) => ({
+    ...row, remaining: carrySpent(old.total, old.remaining, row.total),
   });
-  return [...existing, ...added];
+  char.hitDice = carryRows(char.hitDice, kept.hitDice, (row) => row.size, keepRemaining);
+  char.resources = carryRows(char.resources, kept.resources, (row) => row.name, keepRemaining);
+  char.spellcasting.spells = carryRows(
+    char.spellcasting.spells, kept.spellcasting.spells, (row) => row.name,
+    (row, old) => ({ ...row, prepared: old.prepared }),
+  );
+  for (const level of SPELL_LEVELS) {
+    const slot = char.spellcasting.slots[level];
+    slot.used = clamp(kept.spellcasting.slots[level].used, 0, slot.total);
+  }
+
+  return char;
+}
+
+/** Same amount spent out of the new size, floored at 0; as typed when either size is unset. */
+function carrySpent(oldSize, oldLeft, newSize) {
+  if (!(oldSize > 0) || !(newSize > 0)) return oldLeft;
+  return Math.max(0, newSize - (oldSize - oldLeft));
+}
+
+/** Each of `rows` that has a namesake in `priorRows` goes through `carry`; first come, first matched. */
+function carryRows(rows, priorRows, keyOf, carry) {
+  const key = (row) => String(keyOf(row)).trim().toLowerCase();
+  const pending = new Map();
+  for (const old of priorRows) {
+    if (!pending.has(key(old))) pending.set(key(old), []);
+    pending.get(key(old)).push(old);
+  }
+  return rows.map((row) => {
+    const old = pending.get(key(row))?.shift();
+    return old ? carry(row, old) : row;
+  });
 }

@@ -95,11 +95,24 @@ phone it lands in Files/Downloads and can be sent on via the share sheet.
 
 ### Import
 
-Sidebar → **Import**, pick a `.json`, then choose:
+Sidebar → **Import**, pick a `.json`. There is no question to answer — each character in the
+file is matched to this device's characters by its id, and by nothing else:
 
-- **Replace all** — discards what is on this device and uses the file.
-- **Merge** — keeps what you have and adds the file's characters. Anything whose id
-  collides gets a fresh one, so an import can never silently overwrite a live character.
+- **A character this device doesn't have** is added. Nothing else is touched.
+- **A character this device already has** is updated from the file — level, abilities,
+  proficiencies, max HP, the spell list, attacks, features, every total — while this device
+  **keeps** its inventory, coins and notes, and everything that moves at the table: current
+  and temporary HP, death saves, conditions, exhaustion, concentration, Heroic Inspiration,
+  spent Hit Point Dice, used spell slots, class resources remaining, and which spells are
+  ticked Prepared.
+
+What was *spent* carries over, not what is left, so a level-up in the file shows up: 5 HP
+down stays 5 down under the new max, one Rage spent stays one spent out of the new total.
+Resources and spells are matched by name, Hit Point Dice by die size; a row only the file
+has comes in as the file has it, and a row the file no longer has is gone.
+
+The banner afterwards says what was updated and added, and offers **Undo** until you next
+change anything. A Duplicate gets a fresh id, so it is a different character to an import.
 
 Imported files are normalised against the canonical character shape, so a backup from an
 older version — or one you hand-edited — won't crash the app on a missing field.
@@ -197,7 +210,8 @@ per-attack to-hit in both its derived and its free-text modes, the HP damage/hea
 arithmetic, and the long-rest hit-dice recovery. It also covers the
 data-loss-critical load path — the `hitDice` migration, `parseStored`, and
 `normalizeCharacter`'s coercion and clamping — plus the dot-path `getByPath`/`setByPath`
-and the `mergeCharacters` id-collision handling the store is built on.
+and the import rules the store is built on — `importCharacters`' match-by-id and
+`keepPlayState`'s split between the file's build and the device's play.
 
 The assertions live in `tests.js`, imported by both the browser page and the Node runner.
 The identical suite running in either place — with no test framework — is only possible

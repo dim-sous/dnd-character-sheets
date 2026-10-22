@@ -1,0 +1,184 @@
+<!doctype html>
+<meta charset="utf-8"><title>Character import probe</title>
+<!--
+  The one-path character import: no Replace/Merge question, an id already on the device is
+  updated (keeping its inventory, coins, notes and play state), anything else is added, and the
+  banner afterwards carries an Undo that lapses on the next change.
+
+  The pure suite owns the arithmetic (importCharacters, keepPlayState). This holds what it cannot
+  reach: that the file input really goes through state.importCharacters with no dialog in the
+  way, that the sheet lands on the imported character, that Undo puts back the roster AND the
+  open character, and that the Undo button is taken down by the next edit rather than left on
+  screen as a button that would do nothing — the case that matters, because a snapshot restored
+  over edits made since would silently throw them away.
+
+  The file goes in through a DataTransfer on #file-import, the same `change` a real pick fires.
+  Reading it is FileReader, which settles in real time, so every wait here polls for its result
+  (with busy work in each tick, the `hold` reasoning below) instead of trusting a fixed delay.
+
+  Run: see CLAUDE.md -> "Measuring the running app", pointing --dump-dom at this file.
+  Expect: "verdict": "ALL PASS".
+-->
+<style>#fr{width:390px;height:900px;border:0}</style>
+<pre id="out">pending</pre><iframe id="fr"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+try {
+// Teardown first, or a reused profile measures the previous build (see probe-hp-commit.html).
+let spin = 0;
+const busy = () => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; };
+const hold = setInterval(busy, 10);
+if (navigator.serviceWorker) {
+  const regs = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(regs.map((r) => r.unregister()));
+}
+if (window.caches) {
+  const keys = await caches.keys();
+  await Promise.all(keys.map((k) => caches.delete(k)));
+}
+clearInterval(hold);
+
+const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter } = await import('../js/constants.js');
+const LAYOUT_KEYS = ['dnd-character-sheets:layout', 'dnd-character-sheets:layout-default'];
+LAYOUT_KEYS.forEach((k) => localStorage.removeItem(k));
+
+// Beta first, so Beta is the character open at boot and the import has somewhere to move FROM.
+const beta = blankCharacter();
+Object.assign(beta, { id: 'beta', name: 'Beta', notes: 'beta notes' });
+const alpha = blankCharacter();
+Object.assign(alpha, {
+  id: 'alpha', name: 'Alpha', level: 3, notes: 'owes Brom 5gp',
+  hp: { max: 20, current: 15, temp: 0 },
+  inventory: [{ item: 'Rope', qty: 1, notes: '' }],
+  currency: { cp: 0, sp: 0, ep: 0, gp: 37, pp: 0 },
+});
+localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters: [beta, alpha] }));
+
+const fr = document.getElementById('fr');
+await new Promise((r) => { fr.onload = r; fr.src = '../index.html'; });
+const w = fr.contentWindow;
+const d = fr.contentDocument;
+const s = (ms = 250) => new Promise((r) => setTimeout(r, ms));
+await s(500);
+
+async function until(cond, tries = 200) {
+  for (let i = 0; i < tries; i++) {
+    if (cond()) return true;
+    busy();
+    await s(20);
+  }
+  return false;
+}
+
+function pick(characters) {
+  const input = d.getElementById('file-import');
+  const dt = new w.DataTransfer();
+  const text = JSON.stringify({ schemaVersion: SCHEMA_VERSION, characters });
+  dt.items.add(new w.File([text], 'import.json', { type: 'application/json' }));
+  input.files = dt.files;
+  input.dispatchEvent(new w.Event('change', { bubbles: true }));
+}
+
+const banner = () => d.getElementById('banner');
+const bannerText = () => (banner().hidden ? '' : banner().textContent);
+const undoBtn = () => banner().querySelector('[data-action="import-undo"]');
+const okBtn = () => banner().querySelector('[data-action="import-dismiss"]');
+const nameField = () => d.getElementById('f-name');
+const roster = () => [...d.querySelectorAll('.roster__btn')].map((b) => b.textContent.trim());
+const stored = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters;
+const R = {};
+
+R.bootsOnBeta = { name: nameField().value, pass: nameField().value === 'Beta' };
+R.noQuestionInTheDom = {
+  importDialog: Boolean(d.getElementById('import-dialog')),
+  pass: !d.getElementById('import-dialog'),
+};
+
+// ---- 1. a file for a character already here: updated, play state kept ------
+const levelled = blankCharacter();
+Object.assign(levelled, {
+  id: 'alpha', name: 'Alpha', level: 4, notes: 'from the laptop',
+  hp: { max: 28, current: 28, temp: 0 },
+  inventory: [{ item: 'Laptop rope', qty: 9, notes: '' }],
+});
+pick([levelled]);
+await until(() => undoBtn());
+await s(600); // past the 400ms save debounce, so storage can be read
+const alphaNow = () => stored().find((c) => c.id === 'alpha');
+R.updateNoDialog = {
+  openDialogs: d.querySelectorAll('dialog[open]').length,
+  pass: d.querySelectorAll('dialog[open]').length === 0,
+};
+R.updateLandsOnIt = {
+  name: nameField().value, level: d.getElementById('f-level').value,
+  pass: nameField().value === 'Alpha' && d.getElementById('f-level').value === '4',
+};
+R.updateKeepsPlay = {
+  hp: d.getElementById('f-hp-current').value,
+  notes: d.getElementById('f-notes').value,
+  inventory: alphaNow().inventory.map((i) => i.item),
+  gp: alphaNow().currency.gp,
+  pass: d.getElementById('f-hp-current').value === '23'        // 5 down stays 5 down
+    && d.getElementById('f-notes').value === 'owes Brom 5gp'
+    && alphaNow().inventory.length === 1 && alphaNow().inventory[0].item === 'Rope'
+    && alphaNow().currency.gp === 37,
+};
+R.updateAddsNothing = {
+  roster: roster(), stored: stored().map((c) => c.id),
+  pass: stored().length === 2 && stored().find((c) => c.id === 'beta').notes === 'beta notes',
+};
+R.updateSays = {
+  banner: bannerText(),
+  pass: bannerText().includes('Updated “Alpha”') && Boolean(undoBtn()) && Boolean(okBtn()),
+};
+
+// ---- 2. Undo: the roster AND the open character come back ------------------
+undoBtn().click();
+await until(() => !undoBtn());
+await s(600);
+R.undoRestores = {
+  name: nameField().value,
+  level: alphaNow().level, hp: alphaNow().hp, notes: alphaNow().notes,
+  banner: bannerText(),
+  pass: nameField().value === 'Beta' && alphaNow().level === 3 && alphaNow().hp.max === 20
+    && alphaNow().hp.current === 15 && bannerText() === 'Import undone.',
+};
+
+// ---- 3. the Undo offer lapses on the next change ---------------------------
+pick([levelled]);
+await until(() => undoBtn());
+const hadUndo = Boolean(undoBtn());
+// Any change at all, through the app's own route: a death-save pip, as probe-hp-commit uses.
+// (Notes would be the obvious field to type in, but it is Edit-gated — read-only in play.)
+d.querySelector('#death-successes .pip').click();
+await s(600); // past the save debounce, so "before" below is what is really stored
+R.undoLapsesOnEdit = {
+  hadUndo, undoAfterEdit: Boolean(undoBtn()), banner: bannerText(),
+  successes: alphaNow().deathSaves.successes,
+  pass: hadUndo && alphaNow().deathSaves.successes === 1 && !undoBtn(),
+};
+
+// ---- 4. a file for a character NOT here: added, nothing else touched -------
+const gamma = blankCharacter();
+Object.assign(gamma, { id: 'gamma', name: 'Gamma', notes: 'new' });
+const before = JSON.stringify(stored());
+pick([gamma]);
+await until(() => undoBtn());
+await s(600);
+R.newIsAdded = {
+  roster: roster(), name: nameField().value, banner: bannerText(),
+  pass: stored().length === 3 && nameField().value === 'Gamma'
+    && bannerText().startsWith('Added “Gamma”')
+    && JSON.stringify(stored().slice(0, 2)) === before,
+};
+
+// ---- 5. OK takes the notice down -------------------------------------------
+okBtn().click();
+await s(100);
+R.okDismisses = { hidden: banner().hidden, pass: banner().hidden };
+
+R.verdict = Object.entries(R).filter(([, v]) => v && typeof v.pass === 'boolean')
+  .every(([, v]) => v.pass) ? 'ALL PASS' : 'FAILURE';
+out.textContent = JSON.stringify(R, null, 1);
+} catch (e) { out.textContent = 'ERR ' + (e && e.stack || e); }
+</script>

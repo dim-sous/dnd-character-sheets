@@ -12,7 +12,9 @@ import {
   SPELL_LEVELS, SPELL_LIST_LEVELS, spellLevelLabel,
 } from './js/constants.js';
 import * as rules from './js/rules.js';
-import { normalizeCharacter, parseStored, mergeCharacters, characterFilename } from './js/storage.js';
+import {
+  normalizeCharacter, parseStored, importCharacters, keepPlayState, characterFilename,
+} from './js/storage.js';
 // state.js is safe to import: its module scope has no side effects (it does not call
 // init/load/localStorage), and only its PURE exports getByPath/setByPath are used here.
 // DO NOT call state.js mutators from this suite — they end in a debounced save() that,
@@ -846,16 +848,113 @@ is('slot used clamps negative to 0', normalizeCharacter({ spellcasting: { slots:
 is('slot used equal to total passes', normalizeCharacter({ spellcasting: { slots: { 4: { total: 2, used: 2 } } } }).spellcasting.slots[4], { total: 2, used: 2 });
 is('slot used within range passes', normalizeCharacter({ spellcasting: { slots: { 5: { total: 4, used: 1 } } } }).spellcasting.slots[5], { total: 4, used: 1 });
 
-/* -------------------------------------------- mergeCharacters (storage) */
+/* ------------------------------------------- importCharacters (storage) */
 
-describe('mergeCharacters');
-is('no collision keeps both, order preserved', mergeCharacters([{ id: 'a' }], [{ id: 'b' }]).map((c) => c.id), ['a', 'b']);
-is('no collision length', mergeCharacters([{ id: 'a' }], [{ id: 'b' }]).length, 2);
-is('collision renumbers only the incoming dup', (() => { const r = mergeCharacters([{ id: 'a' }], [{ id: 'a', name: 'dup' }]); return r[0].id === 'a' && r[1].id !== 'a' && r[1].name === 'dup' && r.length === 2; })(), true);
-is('collision within the incoming batch', (() => { const r = mergeCharacters([], [{ id: 'x' }, { id: 'x' }]); return r.length === 2 && r[0].id === 'x' && r[1].id !== 'x' && r[0].id !== r[1].id; })(), true);
-is('empty incoming → existing unchanged', mergeCharacters([{ id: 'a' }], []).map((c) => c.id), ['a']);
-is('empty existing → incoming kept', mergeCharacters([], [{ id: 'a' }]).map((c) => c.id), ['a']);
-is('does not mutate the existing array', (() => { const ex = [{ id: 'a' }]; mergeCharacters(ex, [{ id: 'a' }]); return ex.length; })(), 1);
+// One import path, no question: an id already on the device is updated, anything else is added.
+describe('importCharacters');
+{
+  const ids = (r) => r.characters.map((c) => c.id);
+  const fresh = importCharacters([{ id: 'a' }], [{ id: 'b' }]);
+  is('new id → added after what is there', ids(fresh), ['a', 'b']);
+  is('new id → reported as added, nothing updated', [fresh.added.map((c) => c.id), fresh.updated.length], [['b'], 0]);
+  is('new id → the device character is the same object', fresh.characters[0], { id: 'a' });
+
+  const a = normalizeCharacter({ id: 'a', name: 'Old', level: 3 });
+  const b = normalizeCharacter({ id: 'b', name: 'Other' });
+  const up = importCharacters([a, b], [normalizeCharacter({ id: 'a', name: 'New', level: 4 })]);
+  is('matching id → updated in place, nothing added', [ids(up), up.added.length], [['a', 'b'], 0]);
+  is('matching id → the file\'s build wins', [up.characters[0].name, up.characters[0].level], ['New', 4]);
+  is('matching id → reported as updated', up.updated.map((c) => c.name), ['New']);
+  is('the other character is untouched', up.characters[1], b);
+  is('the existing array is not mutated', [a.name, a.level], ['Old', 3]);
+
+  const sameName = importCharacters([normalizeCharacter({ id: 'a', name: 'Vex' })], [normalizeCharacter({ id: 'z', name: 'Vex' })]);
+  is('a shared name alone does not match — two characters', [ids(sameName), sameName.updated.length], [['a', 'z'], 0]);
+
+  const twice = importCharacters([], [{ id: 'x' }, { id: 'x' }]);
+  is('one id twice in a file → both kept, second re-id\'d', twice.characters.length === 2 && twice.characters[0].id === 'x' && twice.characters[1].id !== 'x', true);
+  const twiceHere = importCharacters([normalizeCharacter({ id: 'x' })], [normalizeCharacter({ id: 'x', name: '1' }), normalizeCharacter({ id: 'x', name: '2' })]);
+  is('an id the device has, twice in a file → first updates, second is added', [twiceHere.updated.map((c) => c.name), twiceHere.added.map((c) => c.name), twiceHere.added[0].id !== 'x'], [['1'], ['2'], true]);
+
+  is('empty existing → everything added', ids(importCharacters([], [{ id: 'a' }, { id: 'b' }])), ['a', 'b']);
+}
+
+// What survives an update: the file brings the build, the device keeps the play.
+describe('keepPlayState');
+{
+  const prior = normalizeCharacter({
+    id: 'a', name: 'Thalia', level: 3, notes: 'owes Brom 5gp',
+    inventory: [{ item: 'Rope', qty: 1 }, { item: 'Potion of Healing', qty: 2 }],
+    currency: { gp: 37, sp: 4 },
+    hp: { max: 20, current: 15, temp: 3 },
+    deathSaves: { successes: 1, failures: 2 },
+    conditions: ['poisoned'], exhaustion: 2, concentration: true, heroicInspiration: true,
+    hitDice: [{ size: 'd8', total: 3, remaining: 1 }],
+    resources: [{ name: 'Channel Divinity', total: 2, remaining: 1 }, { name: 'Gone', total: 1, remaining: 0 }],
+    spellcasting: {
+      slots: { 1: { total: 4, used: 3 }, 2: { total: 2, used: 1 } },
+      spells: [{ name: 'Bless', level: 1, prepared: true }, { name: 'Shield of Faith', level: 1, prepared: false }],
+    },
+  });
+  const file = normalizeCharacter({
+    id: 'a', name: 'Thalia', level: 4, notes: 'from the laptop',
+    inventory: [{ item: 'Laptop rope', qty: 9 }], currency: { gp: 999 },
+    abilities: { wis: 18 },
+    hp: { max: 28, current: 28, temp: 0 },
+    hitDice: [{ size: 'd8', total: 4, remaining: 4 }],
+    resources: [{ name: 'channel divinity ', total: 3, remaining: 3 }, { name: 'Brand New', total: 2, remaining: 2 }],
+    spellcasting: {
+      slots: { 1: { total: 4, used: 0 }, 2: { total: 3, used: 0 } },
+      spells: [{ name: 'Bless', level: 1, prepared: false }, { name: 'Spiritual Weapon', level: 2, prepared: true }],
+    },
+  });
+  const r = keepPlayState(prior, file);
+
+  is('build from the file: level', r.level, 4);
+  is('build from the file: abilities', r.abilities.wis, 18);
+  is('build from the file: max HP', r.hp.max, 28);
+  is('kept: notes', r.notes, 'owes Brom 5gp');
+  is('kept: inventory', r.inventory.map((i) => i.item), ['Rope', 'Potion of Healing']);
+  is('kept: coins', r.currency, { cp: 0, sp: 4, ep: 0, gp: 37, pp: 0 });
+  is('kept: temp HP', r.hp.temp, 3);
+  is('kept: death saves, conditions, exhaustion', [r.deathSaves, r.conditions, r.exhaustion], [{ successes: 1, failures: 2 }, ['poisoned'], 2]);
+  is('kept: concentration and inspiration', [r.concentration, r.heroicInspiration], [true, true]);
+  is('HP: 5 down stays 5 down under the new max', r.hp.current, 23);
+  is('Hit Point Dice: 2 spent stays 2 spent out of the new total', r.hitDice[0], { size: 'd8', total: 4, remaining: 2 });
+  is('resource matched by name, case and spaces aside: 1 spent stays spent', r.resources[0].remaining, 2);
+  is('resource only the file has comes in as the file has it', r.resources[1], { name: 'Brand New', remaining: 2, total: 2 });
+  is('resource only the device had is gone', r.resources.length, 2);
+  is('slots: used carries per level', [r.spellcasting.slots[1], r.spellcasting.slots[2]], [{ total: 4, used: 3 }, { total: 3, used: 1 }]);
+  is('prepared tick carried by spell name', r.spellcasting.spells[0].prepared, true);
+  is('a spell only the file has keeps the file\'s tick', r.spellcasting.spells[1].prepared, true);
+  is('the spell list is the file\'s', r.spellcasting.spells.map((sp) => sp.name), ['Bless', 'Spiritual Weapon']);
+  is('neither argument is mutated', [prior.level, prior.hp.current, file.inventory[0].item, file.hp.current], [3, 15, 'Laptop rope', 28]);
+  is('nothing shared with the prior record', r.inventory !== prior.inventory && r.currency !== prior.currency, true);
+
+  const hp = (old, next) => keepPlayState(normalizeCharacter({ hp: old }), normalizeCharacter({ hp: next })).hp.current;
+  is('HP untracked on the device (max 0) → current kept as typed', hp({ max: 0, current: 17 }, { max: 28, current: 28 }), 17);
+  is('HP untracked in the file (max 0) → current kept as typed', hp({ max: 20, current: 12 }, { max: 0, current: 0 }), 12);
+  is('HP: a lower max floors at 0, never negative', hp({ max: 28, current: 3 }, { max: 20, current: 20 }), 0);
+  is('HP: a hand-set current above max keeps its margin', hp({ max: 20, current: 25 }, { max: 28, current: 28 }), 33);
+
+  const slot = keepPlayState(
+    normalizeCharacter({ spellcasting: { slots: { 3: { total: 3, used: 3 } } } }),
+    normalizeCharacter({ spellcasting: { slots: { 3: { total: 2, used: 0 } } } }),
+  ).spellcasting.slots[3];
+  is('slots: used clamps to a lower total', slot, { total: 2, used: 2 });
+
+  const dice = keepPlayState(
+    normalizeCharacter({ hitDice: [{ size: 'd10', total: 2, remaining: 0 }, { size: 'd8', total: 1, remaining: 1 }] }),
+    normalizeCharacter({ hitDice: [{ size: 'd8', total: 2, remaining: 2 }, { size: 'd10', total: 3, remaining: 3 }] }),
+  ).hitDice;
+  is('Hit Point Dice matched by die size, not position', dice, [{ size: 'd8', total: 2, remaining: 2 }, { size: 'd10', total: 3, remaining: 1 }]);
+
+  const res = keepPlayState(
+    normalizeCharacter({ resources: [{ name: 'Rage', total: 0, remaining: 1 }] }),
+    normalizeCharacter({ resources: [{ name: 'Rage', total: 3, remaining: 3 }] }),
+  ).resources[0].remaining;
+  is('resource untracked on the device (total 0) → remaining kept as typed', res, 1);
+}
 
 /* --------------------------------------- parseStored (more shapes) */
 

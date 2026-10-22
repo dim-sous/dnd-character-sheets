@@ -2003,8 +2003,8 @@ select:disabled { appearance: none; -webkit-appearance: none; }
 }
 
 /* ---- the spell picker (#149) ----------------------------------------------------
-   A near-full-screen sheet on a phone, a wide panel on a laptop. The import dialog above is a
-   question with three answers and sizes to its text; this one is a search over 339 spells with
+   A near-full-screen sheet on a phone, a wide panel on a laptop. The confirm dialog above is a
+   question with two answers and sizes to its text; this one is a search over 339 spells with
    three filter axes and a description to read, so it takes the screen. Capped at 92vh rather
    than 100 so it still reads as a layer over the sheet rather than a new page. */
 .dialog--picker {
