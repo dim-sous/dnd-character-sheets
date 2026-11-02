@@ -277,6 +277,172 @@ The picker tags each with the book it is from ("PHB 2024"). Add one there, never
 level, range, components, duration, the numbers of any stat block — with any prose short and in
 your own words: the SRD is licensed for sharing and the books are not, and this site is public.
 
+### Adding a spell to the library
+
+One spell is one block of JavaScript pasted into `js/extra-spells.js`, checked by the test suite,
+and shipped through a pull request like any other change. Several spells can go in one PR.
+
+**1. Check it isn't already there.** The SRD drops the wizard's name from eponymous spells, so
+*Tasha's Hideous Laughter* is in the library as **Hideous Laughter** and must not be added again.
+Search by a distinctive word rather than the full name:
+
+```bash
+grep -io '"name":"[^"]*laughter[^"]*"' js/spell-data.js
+grep -in "name: .*laughter" js/extra-spells.js
+```
+
+No output from either means it is not in the library. (The 17 renamed spells: Acid Arrow, Arcane
+Hand, Arcane Sword, Arcanist's Magic Aura, Black Tentacles, Faithful Hound, Floating Disk, Freezing
+Sphere, Hideous Laughter, Instant Summons, Irresistible Dance, Magnificent Mansion, Private Sanctum,
+Resilient Sphere, Secret Chest, Telepathic Bond, Tiny Hut.)
+
+**2. Start a branch.**
+
+```bash
+git checkout main
+git pull
+git checkout -b feat/spell-toll-the-dead
+```
+
+**3. Paste this block** into `js/extra-spells.js`, after the last entry's `},` and before the `];`
+that closes the list, then fill it in. The order of entries in the file does not matter: the picker
+sorts by level, then name.
+
+```js
+  {
+    name: 'Spell Name',
+    level: 1,
+    school: 'Evocation',
+    classes: ['Sorcerer', 'Wizard'],
+    castingTime: 'Action',
+    range: '60 feet',
+    components: 'V, S, M (a pinch of salt)',
+    duration: 'Instantaneous',
+    concentration: false,
+    ritual: false,
+    source: 'PHB 2024',
+    text: [
+      'First paragraph: what the spell does, in your own words.',
+      'Using a Higher-Level Spell Slot. What changes for each slot level above this one.',
+    ].join('\n\n'),
+  },
+```
+
+Every field must be present, even the ones that are `false`, and there must be no others. ✓ marks
+a rule the test suite enforces.
+
+| Field | What to write | Rules |
+| --- | --- | --- |
+| `name` | `'Toll the Dead'` | ✓ Not already in the library (case and `'`/`’` are ignored when comparing). |
+| `level` | `0` for a cantrip, `1`–`9` | ✓ A number, **no quotes**. |
+| `school` | `'Necromancy'` | ✓ Exactly one of `Abjuration` `Conjuration` `Divination` `Enchantment` `Evocation` `Illusion` `Necromancy` `Transmutation`. |
+| `classes` | `['Cleric', 'Wizard']` | ✓ At least one, each exactly one of `Bard` `Cleric` `Druid` `Paladin` `Ranger` `Sorcerer` `Warlock` `Wizard`. Base class lists only: no subclass extras, no Artificer. |
+| `castingTime` | `'Action'` | ✓ Not empty. The SRD's wording: `Action`, `Bonus Action`, `1 minute`, `Action or Ritual`, `Reaction, which you take when …`. |
+| `range` | `'60 feet'` | ✓ Not empty. `Self`, `Touch`, `30 feet`, `1 mile`, `Sight`. A cone or radius goes in `text`; the SRD writes the range as plain `Self`. |
+| `components` | `'V, S, M (a sprig of mistletoe)'` | ✓ Not empty. |
+| `duration` | `'Concentration, up to 1 minute'` | ✓ Not empty. `Instantaneous`, `1 hour`, `Concentration, up to 10 minutes`, `Until dispelled`. |
+| `concentration` | `true` or `false`, no quotes | ✓ `true` exactly when `duration` starts with `Concentration`. |
+| `ritual` | `true` or `false`, no quotes | ✓ `true` exactly when `castingTime` contains `Ritual`. |
+| `source` | `'PHB 2024'` | ✓ Not empty, and must not say SRD. It is shown on the search result. |
+| `text` | see below | ✓ Not empty. No `*`, no `_`, no HTML tags. |
+
+**Writing the strings.** Any text goes between single quotes: `'Action'`. Watch out for three things:
+
+- **Apostrophes.** An apostrophe ends a single-quoted string, so `'can't'` is a syntax error. Wrap
+  that string in double quotes instead: `"The target can't take Reactions."`
+- **Paragraphs.** Each string in the `text: [ … ]` list is one paragraph, and `.join('\n\n')` puts
+  a blank line between them. Inside a paragraph, `\n` starts a new line, which is how a stat block
+  lists `AC`, `HP` and `Speed` on lines of their own. Look at Summon Beast in the same file for a
+  worked example, including a long paragraph split across lines with `+`.
+- **Commas.** Every field line ends with a comma, and every entry ends with `},`.
+
+A short `text` can be a single string instead of a list: `text: 'One paragraph.',`
+
+Paragraph lead-ins follow the SRD's wording, so imported spells read like library ones:
+`Cantrip Upgrade.` for a cantrip that scales with character level, and
+`Using a Higher-Level Spell Slot.` for a levelled spell that scales with its slot.
+
+**4. Run the tests.**
+
+```bash
+node tools/run-tests.mjs
+```
+
+`All … assertions passed.` means the entry is valid. If `node` is not found in a VS Code + WSL
+setup, use the copy VS Code ships with:
+
+```bash
+"$(ls -d ~/.vscode-server/bin/*/node | head -1)" tools/run-tests.mjs
+```
+
+Or serve the folder and open `tests.html` in the browser, which runs the same checks.
+
+A failure looks like one of the following. Each `✗` line ends with the name of the spell it is
+about.
+
+| You see | Cause |
+| --- | --- |
+| `SyntaxError` with a file, a line number and a `^` under the problem | The file is not valid JavaScript. **This one matters most: in the app it stops the picker loading any spell at all, SRD ones included.** Usually an apostrophe inside `'…'`, a missing comma after a field or after `}`, or an unclosed quote or bracket. Check that line and the one above it. |
+| `✗ … exactly the SRD entry's keys, plus its source` | A field name is misspelled, missing or extra. Compare it with the template. |
+| `✗ … carries every field the picker shows` | A text field is empty. |
+| `✗ … filed at a level the sheet has` | `level` is outside 0–9, or is in quotes. |
+| `✗ … under a school the picker offers` | `school` is misspelled. |
+| `✗ … for classes the picker offers` | `classes` is empty, or has a misspelled name or one outside the eight. |
+| `✗ … names the book it is from` | `source` is missing or empty, or says SRD. |
+| `✗ no extra spell repeats an SRD name` or `✗ ...or another extra spell` | The spell is already in the library. See step 1. |
+| `✗ the flags agree with the duration and casting time` | `concentration` or `ritual` disagrees with `duration` or `castingTime`. |
+| `✗ no markdown in the descriptions either` | `text` contains `*`, `_` or an HTML tag. Write emphasis as plain words. |
+
+**5. Look at it in the app.**
+
+```bash
+python3 -m http.server 8000
+```
+
+Open <http://localhost:8000>, pick a caster, go to the **Spells** card, press **Edit**, then
+**Search** on any level and type the spell's name. The result should read like
+`Level 1 Evocation · Sorcerer, Wizard · PHB 2024`. Tap it to read the text, and **Add** it to
+check that the row's fields came through. The service worker is off on localhost, so a plain reload
+picks up each edit.
+
+**6. Commit, push and open a pull request.**
+
+```bash
+git add js/extra-spells.js
+git commit -m "feat: Toll the Dead in the spell library"
+git push -u origin feat/spell-toll-the-dead
+gh pr create --fill
+```
+
+CI runs the same tests on the PR. Once they pass, merge it with a merge commit, either on GitHub
+or with:
+
+```bash
+gh pr merge --merge --delete-branch
+```
+
+The merge deploys on its own. A phone with the app installed picks the new library up after it
+reopens the app.
+
+<details>
+<summary>The 51 spells in the 2024 Player's Handbook that the SRD 5.2.1 leaves out</summary>
+
+These are the candidates for this file. The list was taken from a fan-maintained index of the
+2024 book in November 2026 and checked against every name in `spell-data.js`. It records what
+the SRD omits, not what has been added here since, so check step 1 before adding any of them.
+
+- **Cantrips:** Blade Ward, Friends, Mind Sliver, Thorn Whip, Thunderclap, Toll the Dead, Word of Radiance
+- **Level 1:** Armor of Agathys, Arms of Hadar, Compelled Duel, Hail of Thorns, Thunderous Smite, Witch Bolt, Wrathful Smite
+- **Level 2:** Arcane Vigor, Beast Sense, Cloud of Daggers, Cordon of Arrows, Crown of Madness (Summon Beast is already here)
+- **Level 3:** Aura of Vitality, Blinding Smite, Conjure Barrage, Crusader's Mantle, Elemental Weapon, Feign Death, Hunger of Hadar, Lightning Arrow, Summon Fey, Summon Undead
+- **Level 4:** Aura of Purity, Fount of Moonlight, Grasping Vine, Staggering Smite, Summon Aberration, Summon Construct, Summon Elemental
+- **Level 5:** Banishing Smite, Circle of Power, Conjure Volley, Destructive Wave, Jallarzi's Storm of Radiance, Steel Wind Strike, Summon Celestial, Swift Quiver, Synaptic Static, Yolande's Regal Presence
+- **Level 6:** Arcane Gate, Summon Fiend, Tasha's Bubbling Cauldron
+- **Level 7:** Power Word Fortify
+- **Level 8:** Telepathy
+
+</details>
+
 > This work includes material from the System Reference Document 5.2.1 (“SRD 5.2.1”) by Wizards
 > of the Coast LLC, available at <https://www.dndbeyond.com/srd>. The SRD 5.2.1 is licensed under
 > the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/legalcode).

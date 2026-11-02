@@ -1,6 +1,9 @@
 /**
  * Spells the table uses that the SRD 5.2.1 does not contain — hand-written, unlike its neighbour.
  *
+ * TO ADD ONE: README.md → "Adding a spell to the library" has a block to paste, what each field
+ * accepts, the test command, and what each failure means. Then run `node tools/run-tests.mjs`.
+ *
  * spell-data.js is GENERATED from the SRD, and a regeneration rewrites it from scratch, so a spell
  * patched into it by hand would vanish on the next run. These live here instead, in the same shape,
  * and the picker loads both on first open and searches them as one list.
