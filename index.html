@@ -428,6 +428,22 @@
             </div>
 
             <div id="spell-body" hidden>
+              <!-- Hand-typed extras on the two numbers below: a Rod of the Pact Keeper, a Wand of
+                   the War Mage, an Amulet of the Devout. Edit-only, exactly like an attack row's
+                   misc bonus and the Abilities card's All-saves bonus — in play there is nothing to
+                   tap, and the tiles already show the totals these feed. Inside #spell-body so a
+                   non-caster, who has neither number, never sees them. "Spell" stays on both labels
+                   for the reason the tiles keep it: an "Attack bonus" field is one tab away from
+                   the Attacks card. Signed fields: no inputmode="numeric" (see Init bonus on the
+                   Abilities card) — iOS's numeric keypad has no minus key. -->
+              <div class="inline-fields spell-bonuses">
+                <p class="field"><label for="f-spell-dc-bonus">Spell DC bonus</label>
+                  <input id="f-spell-dc-bonus" type="number"
+                         data-bind="spellcasting.dcBonus" data-type="number"></p>
+                <p class="field"><label for="f-spell-atk-bonus">Spell attack bonus</label>
+                  <input id="f-spell-atk-bonus" type="number"
+                         data-bind="spellcasting.attackBonus" data-type="number"></p>
+              </div>
               <div class="tiles spell-stats">
                 <div class="tile">
                   <span class="tile__label">Spell save DC</span>

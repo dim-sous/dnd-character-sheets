@@ -1067,9 +1067,11 @@ body.is-arranging [data-action="add-row"] { display: none; }
 .is-editing .skill__marker { display: none; }
 
 /* Init bonus / All-skills bonus are edit-only too — nothing to tap when the row
-   below is just a name, a marker and a total. */
-#panel-abilities .inline-fields { display: none; }
-#panel-abilities .is-editing .inline-fields { display: flex; }
+   below is just a name, a marker and a total. Keyed off the CARD, not #panel-abilities: arrange
+   mode moves cards between panels, so a panel selector hid the Spellcasting card's Ability field
+   in play once that card sat on the Abilities tab, and showed these three once this card left it. */
+[data-editcard="abilities"] .inline-fields { display: none; }
+[data-editcard="abilities"].is-editing .inline-fields { display: flex; }
 
 .skill__prof, .skill__exp, .skill__bonus { justify-self: center; }
 
@@ -1223,6 +1225,11 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 /* ---------------------------------------------------------- spellcasting */
 
 .spell-stats { margin-bottom: var(--space-2); }
+
+/* Spell DC / attack bonus: edit-only, the Abilities card's idiom for its All-saves bonus. Keyed off
+   the card rather than a panel for the reason given there — arrange mode moves cards. */
+.spell-bonuses { display: none; margin-bottom: var(--space-2); }
+[data-editcard="spellcasting"].is-editing .spell-bonuses { display: flex; }
 
 /* Prepared spells: "4 / 6", a derived count over an Edit-gated limit. One line, never wrapped —
    a tile a third of a phone wide has ~100px, and "12 / 15" needs about 90 of it. The limit is the

@@ -135,6 +135,13 @@ export function blankCharacter() {
       // spells tile shows a bare count until a number is set. Not clamped against anything:
       // ticking more than this is allowed, and the tile only says so.
       preparedMax: 0,
+      // Hand-typed extras on the two caster numbers, the twin of an attack row's miscBonus and
+      // of saveBonusAll: a Rod of the Pact Keeper, a Wand of the War Mage, an Amulet of the
+      // Devout. Plain signed numbers the player retypes when the item changes — the app knows
+      // no items, so nothing here is recomputed from a formula. Separate rather than one shared
+      // bonus because the items are not uniform: a Wand of the War Mage raises only the attack.
+      attackBonus: 0,
+      dcBonus: 0,
       // Derived from SPELL_LEVELS so the range lives in exactly one place.
       slots: Object.fromEntries(SPELL_LEVELS.map((l) => [l, { total: 0, used: 0 }])),
       spells: [],
