@@ -194,10 +194,15 @@ export const ROW_TEMPLATES = {
    * number you may prepare. A separate flag rather than a third value of `prepared`, so the two
    * stay independent — ticking it off returns the row to whatever its daily tick was, and an
    * old save backfills to false through the same free ride.
+   *
+   * `school` is free text too, for the same reason as the rest — the picker's eight schools are
+   * a FILTER, not a rule about what a row may say. A spell saved before it existed backfills to
+   * '' through the same free ride and stays blank: nothing looks it up, because nothing in the
+   * app ever looks a spell back up (see spellToRow).
    */
   spells: () => ({
     name: '', level: 0, prepared: false, alwaysPrepared: false,
-    castingTime: '', range: '', duration: '', components: '', notes: '',
+    school: '', castingTime: '', range: '', duration: '', components: '', notes: '',
   }),
   // #67: source (Species / Background / Class / Other) and level stay FREE TEXT — the sheet
   // records where a feature came from, it doesn't model class progression. Old rows carry only

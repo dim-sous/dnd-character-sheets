@@ -1957,7 +1957,7 @@ describe('spell list (#141)');
   is('blank character starts with no spells', blankCharacter().spellcasting.spells, []);
   is('row template', ROW_TEMPLATES.spells(), {
     name: '', level: 0, prepared: false, alwaysPrepared: false,
-    castingTime: '', range: '', duration: '', components: '', notes: '',
+    school: '', castingTime: '', range: '', duration: '', components: '', notes: '',
   });
 
   // The free ride: every spell saved before #141 has only name/level/prepared, and normalizeRow
@@ -1973,8 +1973,12 @@ describe('spell list (#141)');
   is('garbage row → template', normalizeCharacter({ spellcasting: { spells: ['nope'] } }).spellcasting.spells[0],
     ROW_TEMPLATES.spells());
   is('unknown row keys are dropped',
-    Object.keys(normalizeCharacter({ spellcasting: { spells: [{ name: 'X', school: 'evocation' }] } }).spellcasting.spells[0]),
-    ['name', 'level', 'prepared', 'alwaysPrepared', 'castingTime', 'range', 'duration', 'components', 'notes']);
+    Object.keys(normalizeCharacter({ spellcasting: { spells: [{ name: 'X', classes: ['Wizard'] }] } }).spellcasting.spells[0]),
+    ['name', 'level', 'prepared', 'alwaysPrepared', 'school', 'castingTime', 'range', 'duration', 'components', 'notes']);
+  // A spell saved before the row had a school comes back blank, not missing: the detail field
+  // binds to it, and nothing guesses one from the name.
+  is('a spell saved before `school` existed backfills it blank',
+    normalizeCharacter({ spellcasting: { spells: [{ name: 'Shield', level: 1 }] } }).spellcasting.spells[0].school, '');
 
   // --- grouping ------------------------------------------------------------------------
   // The array stays FLAT and is grouped at render time, so what spellsAtLevel returns is the
@@ -2246,6 +2250,7 @@ describe('always-prepared spells and the prepare limit');
   is('the name comes across', row.name, 'Fireball');
   is('the level comes across as a number', row.level, 3);
   is('the description lands in the free-text note', row.notes, lib[1].text);
+  is('the school comes across', row.school, 'Evocation');
   is('casting time, range, duration and components come with it',
     [row.castingTime, row.range, row.duration, row.components],
     ['Action', '150 feet', 'Instantaneous', 'V, S, M']);

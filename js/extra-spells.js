@@ -68,4 +68,42 @@ export const EXTRA_SPELLS = [
         + "Hit: 1d8 + 4 + the spell's level Piercing damage.",
     ].join('\n\n'),
   },
+  {
+    name: 'Shadow Blade',
+    level: 2,
+    school: 'Illusion',
+    classes: ['Sorcerer', 'Wizard', 'Warlock'],
+    castingTime: 'Bonus Action',
+    range: 'Self',
+    components: 'V, S',
+    duration: 'Concentration, up to 1 minute',
+    concentration: true,
+    ritual: false,
+    source: 'XGtE',
+    text: [
+      'A sword of shadow appears in your hand for the duration. It is a Simple Melee weapon you are '
+        + 'proficient with, with the Finesse, Light and Thrown (range 20/60) properties, and a hit '
+        + 'deals 2d8 Psychic damage. Your attack rolls with it have Advantage against a target in '
+        + 'Dim Light or Darkness.',
+      'A dropped or thrown sword vanishes at the end of the turn. While the spell lasts, a Bonus '
+        + 'Action brings it back to your hand.',
+      'Using a Higher-Level Spell Slot. The damage is 3d8 with a level 3 or 4 slot, 4d8 with a '
+        + 'level 5 or 6 slot, and 5d8 with a slot of level 7 or higher.',
+    ].join('\n\n'),
+  },
+  {
+    name: 'Far Step',
+    level: 5,
+    school: 'Conjuration',
+    classes: ['Sorcerer', 'Wizard', 'Warlock'],
+    castingTime: 'Bonus Action',
+    range: 'Self',
+    components: 'V',
+    duration: 'Concentration, up to 1 minute',
+    concentration: true,
+    ritual: false,
+    source: 'XGtE',
+    text: 'You teleport up to 60 feet to an unoccupied space you can see. Until the spell ends, '
+      + 'you can do it again as a Bonus Action on each of your later turns.',
+  },
 ];

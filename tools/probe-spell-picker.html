@@ -199,8 +199,8 @@ try {
   is('...with the name', added.name, 'Fireball');
   is('...at its own level', added.level, 3);
   eq('...carrying every field the library had',
-    [added.castingTime, added.range, added.duration, added.components.includes('guano')],
-    ['Action', '150 feet', 'Instantaneous', true]);
+    [added.school, added.castingTime, added.range, added.duration, added.components.includes('guano')],
+    ['Evocation', 'Action', '150 feet', 'Instantaneous', true]);
   ok('...and the description as the free-text note', /Fire damage/.test(added.notes));
   is('...but NOT pre-prepared', added.prepared, false);
   ok('the picker stays open, so a spellbook can be stocked in one visit', dialog().open === true);
