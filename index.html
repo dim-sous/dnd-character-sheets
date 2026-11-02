@@ -947,6 +947,10 @@
         <span class="visually-hidden">Spell level</span>
         <select class="row__levelselect" data-bind-suffix="level" data-type="number" data-structural="true"></select>
       </label>
+      <!-- School sits beside the level so the detail opens on "3rd level · Evocation", the way a
+           spell is named in the book. Detail-only, like everything here: it is looked up, not
+           scanned for, and the primary line has no width to spare (#154). -->
+      <input type="text" data-bind-suffix="school" placeholder="School" aria-label="School">
       <!-- Edit-gated (no data-live), and shown outside Edit only on a row that HAS the flag, where
            it is the explanation of the ★ — on every other row it would be a disabled box per
            spell saying nothing. Hidden on cantrips, which are always available anyway (#158). -->

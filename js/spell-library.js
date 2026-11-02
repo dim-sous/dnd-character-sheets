@@ -148,6 +148,7 @@ export function spellToRow(spell) {
     level: Number.isFinite(Number(spell?.level)) ? Number(spell.level) : 0,
     prepared: false,
     alwaysPrepared: false,
+    school: String(spell?.school ?? ''),
     castingTime: String(spell?.castingTime ?? ''),
     range: String(spell?.range ?? ''),
     duration: String(spell?.duration ?? ''),
