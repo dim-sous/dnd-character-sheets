@@ -252,6 +252,50 @@ describe('spellcasting');
   is('attack = 3 + 4 → +7', rules.spellAttackBonus(caster), 7);
 }
 
+describe('spellcasting misc bonuses');
+{
+  const caster = char({ level: 5, abilities: { ...blankCharacter().abilities, cha: 18 } });
+  caster.spellcasting.ability = 'cha';
+  const withBonus = (dcBonus, attackBonus) => ({
+    ...caster, spellcasting: { ...caster.spellcasting, dcBonus, attackBonus },
+  });
+
+  is('a new character carries no bonus', [blankCharacter().spellcasting.dcBonus, blankCharacter().spellcasting.attackBonus], [0, 0]);
+  is('DC bonus +1 → 16', rules.spellSaveDC(withBonus(1, 0)), 16);
+  is('...and leaves the attack alone', rules.spellAttackBonus(withBonus(1, 0)), 7);
+  is('attack bonus +2 → +9', rules.spellAttackBonus(withBonus(0, 2)), 9);
+  is('...and leaves the DC alone', rules.spellSaveDC(withBonus(0, 2)), 15);
+  is('both at once (Rod of the Pact Keeper +1)', [rules.spellSaveDC(withBonus(1, 1)), rules.spellAttackBonus(withBonus(1, 1))], [16, 8]);
+  is('a negative bonus subtracts', [rules.spellSaveDC(withBonus(-1, -2)), rules.spellAttackBonus(withBonus(-1, -2))], [14, 5]);
+  is('garbage in a bonus reads as 0, not NaN', [rules.spellSaveDC(withBonus('x', 'y')), rules.spellAttackBonus(withBonus('x', 'y'))], [15, 7]);
+  is('a missing bonus (unnormalized record) reads as 0', rules.spellSaveDC({ ...caster, spellcasting: { ability: 'cha' } }), 15);
+  // The bonus is a component, Exhaustion still lands on the attack total and still not on the DC.
+  is('exhaustion 2 still takes 4 off a bonused attack', rules.spellAttackBonus({ ...withBonus(1, 2), exhaustion: 2 }), 5);
+  is('exhaustion still leaves a bonused DC alone', rules.spellSaveDC({ ...withBonus(1, 2), exhaustion: 2 }), 16);
+  const martial = char({ level: 5 });
+  martial.spellcasting = { ...martial.spellcasting, dcBonus: 2, attackBonus: 2 };
+  is('a non-caster with a bonus is still not a caster', [rules.spellSaveDC(martial), rules.spellAttackBonus(martial)], [null, null]);
+
+  // Loading: absent in every file saved before these existed.
+  is('an old save backfills both to 0',
+    [normalizeCharacter({ spellcasting: { ability: 'cha' } }).spellcasting.dcBonus,
+      normalizeCharacter({ spellcasting: { ability: 'cha' } }).spellcasting.attackBonus], [0, 0]);
+  is('stored bonuses survive a load',
+    [normalizeCharacter({ spellcasting: { dcBonus: 1, attackBonus: -2 } }).spellcasting.dcBonus,
+      normalizeCharacter({ spellcasting: { dcBonus: 1, attackBonus: -2 } }).spellcasting.attackBonus], [1, -2]);
+  is('a hand-edited numeric string reads as its number',
+    normalizeCharacter({ spellcasting: { attackBonus: '3' } }).spellcasting.attackBonus, 3);
+  is('garbage falls back to 0',
+    normalizeCharacter({ spellcasting: { dcBonus: 'lots' } }).spellcasting.dcBonus, 0);
+
+  // Import: the bonuses are BUILD (an attuned item), so the file's own values win over the device's.
+  const kept = keepPlayState(
+    normalizeCharacter({ spellcasting: { ability: 'cha', dcBonus: 0, attackBonus: 0 } }),
+    normalizeCharacter({ spellcasting: { ability: 'cha', dcBonus: 1, attackBonus: 2 } }),
+  ).spellcasting;
+  is('an import brings the file\'s bonuses', [kept.dcBonus, kept.attackBonus], [1, 2]);
+}
+
 /* ---------------------------------------------------------- attack to-hit */
 
 describe('attack to-hit (#84)');

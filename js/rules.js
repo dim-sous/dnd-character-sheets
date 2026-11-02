@@ -142,15 +142,24 @@ export function isSpellcaster(char) {
   return Boolean(char.spellcasting && char.spellcasting.ability);
 }
 
-/** No Exhaustion penalty here on purpose — a DC is not a roll. See exhaustionPenalty. */
+/**
+ * No Exhaustion penalty here on purpose — a DC is not a roll. See exhaustionPenalty.
+ *
+ * `dcBonus` (and `attackBonus` below) is the player's hand-typed extra — a magic item, mostly —
+ * the same contract as saveBonusAll and an attack row's miscBonus. A non-caster still gets null:
+ * a bonus to a number that does not exist is not a number either.
+ */
 export function spellSaveDC(char) {
   if (!isSpellcaster(char)) return null;
-  return 8 + characterPB(char) + modFor(char, char.spellcasting.ability);
+  return 8 + characterPB(char) + modFor(char, char.spellcasting.ability)
+    + num(char.spellcasting.dcBonus);
 }
 
 export function spellAttackBonus(char) {
   if (!isSpellcaster(char)) return null;
-  return characterPB(char) + modFor(char, char.spellcasting.ability) + exhaustionPenalty(char);
+  return characterPB(char) + modFor(char, char.spellcasting.ability)
+    + num(char.spellcasting.attackBonus)
+    + exhaustionPenalty(char);
 }
 
 /* ------------------------------------------------------------------ spell list (#141) */
