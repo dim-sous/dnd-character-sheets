@@ -809,6 +809,72 @@ try {
   ok('...and the slots card too', slotsCard().hidden === false);
   is('and the spells survived the round trip', stored().length, before + 1);
 
+  /*
+   * --- removing a spell hands focus to its neighbour ON SCREEN --------------------------
+   *
+   * A structural render rebuilds the list, so focus is put back by hand: to the ✕ that slid into
+   * the removed one's place. It used to pick that ✕ by the removed spell's `data-index` — its
+   * position in the FLAT array — counted across the on-screen buttons, which are grouped by
+   * level. Where the two orders differ, focus landed on some other spell, and focus() scrolled
+   * the page to it: removing Shield (stored 2nd, shown 3rd) focused the second cantrip, and on a
+   * long list a spell added early threw the player up to the first cantrip. That is this probe's flat-index
+   * trap again, and the fixture's interleaved levels are what make it visible.
+   *
+   * The tap is focus() then click() because that is what a tap does in Chrome — the button takes
+   * focus first — and a scripted click() alone moves no focus, so it would test nothing here.
+   *
+   * State going in: Edit is on (the non-caster check left it there), and storage holds
+   * Fire Bolt, Shield, Minor Illusion (Mage Hand, renamed by the flat-index check above), Misty
+   * Step, Magic Missile, Otiluke's, PfEG and the blank 8th-level row added above, in that order. Each step removes one, so the order matters.
+   */
+  d.getElementById('tab-spells').click();
+  if (editBtn().getAttribute('aria-pressed') !== 'true') { editBtn().click(); await wait(400); }
+  await setOpen(1, true);
+  await setOpen(2, true);
+  const spellNamed = (name) => [...d.querySelectorAll('#spells .row--spell')]
+    .find((r) => nameField(r).value === name);
+  const tapRemove = async (name) => {
+    const btn = spellNamed(name).querySelector('.row__remove');
+    btn.focus();
+    btn.click();
+    await wait(600);                                  // past the 400ms storage debounce
+  };
+  const focusNow = () => {
+    const a = d.activeElement;
+    const level = a.closest('.spelllevel')?.dataset.level;
+    if (a.classList.contains('row__remove')) return `✕ of "${nameField(a.closest('.row--spell')).value}" (level ${level})`;
+    if (a.classList.contains('spelllevel__add')) return `Search (level ${level})`;
+    if (a.classList.contains('spelllevel__summary')) return `heading (level ${level})`;
+    return a === d.body ? '<body>' : `${a.tagName.toLowerCase()}.${a.className}`;
+  };
+  const PFEG = 'Protection from Evil and Good';
+
+  await tapRemove('Shield');
+  is('removing a spell focuses the one that slid into its place, not the spell at its storage number',
+    focusNow(), '✕ of "Magic Missile" (level 1)');
+  eq('...and Shield is the spell that went', stored().map((s) => s.name),
+    ['Fire Bolt', 'Minor Illusion', 'Misty Step', 'Magic Missile', 'Otiluke’s Irresistible Dance', PFEG, '']);
+
+  // The last row of its level: the row above, never the next stocked level further down.
+  await tapRemove(PFEG);
+  is('removing a level\'s last row focuses the row above it in the same level',
+    focusNow(), '✕ of "Magic Missile" (level 1)');
+
+  // The level's only row: its Search button, where the next spell would come from.
+  await tapRemove('Magic Missile');
+  is('emptying a level focuses that level\'s Search', focusNow(), 'Search (level 1)');
+
+  /*
+   * A COLLAPSED level shows only its prepared rows (#155): Misty Step is on screen, Otiluke's is
+   * not, and neither is Search. The ✕ that slides into Misty Step's place is Otiluke's — a button
+   * that exists and cannot take focus — so the heading is the nearest thing left.
+   */
+  await setOpen(2, false);
+  ok('(Otiluke’s is hidden in the collapsed level, which is the point of this check)',
+    !spellNamed('Otiluke’s Irresistible Dance').checkVisibility());
+  await tapRemove('Misty Step');
+  is('in a collapsed level, a hidden ✕ is skipped for the level heading', focusNow(), 'heading (level 2)');
+
   // --- no sideways scroll at 390px, which a list of fields is the likeliest thing to cause
   ok('the document does not scroll sideways at 390px',
     d.documentElement.scrollWidth <= 390,

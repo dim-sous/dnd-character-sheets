@@ -622,6 +622,30 @@ function syncActiveTab(char) {
 
 /* ------------------------------------------------------ focus across rebuilds */
 
+const isRendered = (el) => el.getClientRects().length > 0;
+
+/**
+ * The run of rows a ✕ belongs to, for handing focus to its neighbour once its row is gone: a
+ * spell's LEVEL SECTION, otherwise the list's own host.
+ *
+ * Its place in that run is counted on screen, never read off `data-index`. For a flat list the
+ * two are the same number, which is how they came to be treated as one — but the spell array is
+ * stored flat, in the order the spells were added, and dealt into level sections only when drawn
+ * (rules.spellsAtLevel), so a spell's `data-index` is a STORAGE position. Indexing the on-screen
+ * ✕s with it focused whichever spell sat at that number, and focus() scrolled the page to it:
+ * removing a 3rd-level spell that was added before the cantrips threw the player up to the first
+ * cantrip at the top of the list. It is the same confusion the binding path guards against
+ * (#141, probe-spells.html), in the one place that still made it.
+ *
+ * Only RENDERED ✕s are counted, because a collapsed level in Edit still hides its unprepared rows
+ * (#155): their buttons exist, but focus() on one does nothing and drops focus to <body>.
+ */
+function removeGroup(list, level) {
+  return level === null
+    ? document.getElementById(list)
+    : $(`#${list} .spelllevel[data-level="${level}"]`);
+}
+
 /**
  * A structural render replaceChildren()s whole sections, so if focus was inside one it
  * drops to <body> — stranding a keyboard or screen-reader user at the top of the page
@@ -632,7 +656,10 @@ function captureFocus() {
   const el = document.activeElement;
   if (!el || el === document.body) return null;
   if (el.dataset?.action === 'remove-row') {
-    return { by: 'remove', list: el.dataset.list, index: Number(el.dataset.index) };
+    const level = el.closest('.spelllevel')?.dataset.level ?? null;
+    const group = removeGroup(el.dataset.list, level);
+    const shown = group ? $$('.row__remove', group).filter(isRendered) : [];
+    return { by: 'remove', list: el.dataset.list, level, position: Math.max(0, shown.indexOf(el)) };
   }
   if (el.id) return { by: 'id', id: el.id };
   if (el.dataset?.bind) return { by: 'bind', bind: el.dataset.bind };
@@ -650,12 +677,19 @@ function restoreFocus(token) {
     case 'bind': next = $(`[data-bind="${token.bind}"]`); break;
     case 'toggle': next = $(`[data-toggle="${token.toggle}"][data-value="${token.value}"]`); break;
     case 'remove': {
-      // The removed row is gone; fall to the one that slid into its place (or the last),
-      // and to that list's "+ Add" button when the list is now empty.
-      const host = document.getElementById(token.list);
-      const buttons = host ? $$('.row__remove', host) : [];
-      next = buttons[Math.min(token.index, buttons.length - 1)]
-        || (host && $(`[data-action="add-row"][data-list="${token.list}"]`));
+      // The removed row is gone; fall to the one that slid into its place (or the new last
+      // one) in the same group. When the group has no ✕ left, fall to its own add control: a
+      // flat list's "+ Add", a spell level's Search — or, in a collapsed level, where Search is
+      // hidden, that level's heading, which is the nearest thing still on screen.
+      const group = removeGroup(token.list, token.level);
+      if (!group) break;
+      const shown = $$('.row__remove', group).filter(isRendered);
+      const fallbacks = token.level === null
+        ? [$(`[data-action="add-row"][data-list="${token.list}"]`)]
+        : [$('.spelllevel__add', group), $('.spelllevel__summary', group)];
+      next = shown[Math.min(token.position, shown.length - 1)]
+        || fallbacks.find((b) => b && isRendered(b))
+        || null;
       break;
     }
     default: break;
