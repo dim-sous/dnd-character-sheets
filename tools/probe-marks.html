@@ -175,6 +175,22 @@ try {
       && cs.borderTopStyle === 'solid' && parseFloat(cs.borderTopWidth) > 0,
       `${rect(mark).width.toFixed(1)}x${rect(mark).height.toFixed(1)} radius ${cs.borderRadius}`);
     is(`${word}: the ring is the letter's own colour`, cs.borderTopColor, cs.color);
+    // Centred on the INK. Box-centring alone is always "centred" and left the capital ~1.1px high
+    // (the line box keeps descender room a capital never uses), so the check is that the letter's
+    // box has been trimmed to its cap height — shorter than its own font size, which an untrimmed
+    // line-height:1 box never is — AND that the trimmed box sits in the middle of the ring.
+    const letter = mark.querySelector('[aria-hidden="true"]');
+    const lb = rect(letter), mb = rect(mark);
+    const fontPx = parseFloat(getComputedStyle(letter).fontSize);
+    ok(`${word}: the letter's box is trimmed to its cap height`, lb.height < fontPx * 0.85,
+      `${lb.height.toFixed(2)}px tall at ${fontPx}px`);
+    ok(`${word}: ...and centred in the ring`,
+      Math.abs((lb.top + lb.bottom) / 2 - (mb.top + mb.bottom) / 2) < 0.5
+        && Math.abs((lb.left + lb.right) / 2 - (mb.left + mb.right) / 2) < 0.5,
+      `dy ${((lb.top + lb.bottom) / 2 - (mb.top + mb.bottom) / 2).toFixed(2)} dx ${((lb.left + lb.right) / 2 - (mb.left + mb.right) / 2).toFixed(2)}`);
+    // The ring rides up to the tag's centre (style.css); the rule must survive a comment edit.
+    ok(`${word}: the ring is lifted onto the tag's centre line`, cs.translate !== 'none' && cs.translate !== '',
+      `translate ${cs.translate}`);
   }
   // "The app's colour theme": the accent token, resolved the same way the marks resolve it, so the
   // check follows the theme the run is in rather than pinning a hex.

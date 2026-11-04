@@ -1461,6 +1461,16 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 }
 .row--spell.is-concentration .row__conc,
 .row--spell.is-ritual .row__ritual { display: inline-flex; }
+/* Centre the INK, not the line box. Flex centring centres the letter's line box, which keeps
+   room below the baseline for descenders a capital never has, so the C and R sat ~1.1px high in
+   their 15px ring (measured from pixels at 8x). Trimming the box to cap height and baseline makes
+   the box the glyph, from the font's own metrics, so it holds in any face. A browser without
+   `text-box` keeps the untrimmed box: a pixel off, never broken. */
+.row__mark > [aria-hidden] { text-box: trim-both cap alphabetic; }
+/* And centre the RING on the tag beside it. The ring's letter shares the tag's baseline, but at
+   10px against the tag's 12px its centre sits half a cap-height difference lower: (1.2cap - 1cap)
+   / 2 in the ring's own font. A translate, so it moves the paint and not the layout. */
+.row__mark { translate: 0 -0.1cap; }
 .row__cast { display: inline-block; font-weight: 600; letter-spacing: .02em; }
 .is-editing .row__meta { display: none; }
 /* The level select sits first in the detail block and stays narrow — it is a closed set of ten
