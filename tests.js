@@ -43,6 +43,8 @@ import {
 // regeneration that drops a field or half the library looks identical in a diff.
 import {
   searchSpells, spellToRow, spellSummary, normalizeText, SPELL_CLASSES, SPELL_SCHOOLS,
+  spellStats, formatCastingTime, formatRange, formatComponents, formatDuration,
+  CASTING_UNITS, RANGE_UNITS, DURATION_UNITS, MEASURED_UNITS,
 } from './js/spell-library.js';
 import { SRD_SPELLS, SRD_ATTRIBUTION } from './js/spell-data.js';
 // The table's hand-written additions — not generated, so nothing but this suite checks them.
@@ -2207,12 +2209,12 @@ describe('rituals and casting times on the spell row');
   is('"spiritual" is not "ritual"', ritual('Bonus action (spiritual)'), false);
   is('empty', ritual(''), false);
   is('undefined', ritual(undefined), false);
-  // The rule must agree with the library's own flag, or a picked spell's R would contradict the
-  // data it was picked from — and it is what puts the R on every spell picked before the R existed.
-  is('it agrees with every SRD spell\'s own ritual flag',
-    SRD_SPELLS.filter((s) => ritual(s.castingTime) !== s.ritual).map((s) => s.name), []);
+  // The rule must agree with the library's own value, or a picked spell's R would contradict the
+  // data it was picked from: the casting time a pick WRITES says Ritual exactly when the value is.
+  is('it agrees with every SRD spell\'s own ritual value',
+    SRD_SPELLS.filter((s) => ritual(spellToRow(s).castingTime) !== Boolean(s.castingTime.ritual)).map((s) => s.name), []);
   is('...and with every extra spell\'s',
-    EXTRA_SPELLS.filter((s) => ritual(s.castingTime) !== s.ritual).map((s) => s.name), []);
+    EXTRA_SPELLS.filter((s) => ritual(spellToRow(s).castingTime) !== Boolean(s.castingTime.ritual)).map((s) => s.name), []);
 
   // Retiring the old tick. `ritual` is no longer a key on the row, so the load path drops it —
   // but a TICK on a spell whose casting time does not say "Ritual" is moved into the text first,
@@ -2293,13 +2295,137 @@ describe('rituals and casting times on the spell row');
   // The rule must agree with the library's own flag, or a picked spell's C would contradict the
   // data it was picked from. This is also what makes the C reach every spell picked before it
   // existed: those rows carry the SRD duration, so the mark needs nothing stored.
-  is('it agrees with every SRD spell\'s own concentration flag',
-    SRD_SPELLS.filter((s) => conc(s.duration) !== s.concentration).map((s) => s.name), []);
+  is('it agrees with every SRD spell\'s own concentration value',
+    SRD_SPELLS.filter((s) => conc(spellToRow(s).duration) !== Boolean(s.duration.concentration)).map((s) => s.name), []);
   is('...and with every extra spell\'s',
-    EXTRA_SPELLS.filter((s) => conc(s.duration) !== s.concentration).map((s) => s.name), []);
+    EXTRA_SPELLS.filter((s) => conc(spellToRow(s).duration) !== Boolean(s.duration.concentration)).map((s) => s.name), []);
   // Nothing on the row for either circle: both are computed from its text.
   is('the spell row stores no concentration key', 'concentration' in ROW_TEMPLATES.spells(), false);
   is('...and no ritual key', 'ritual' in ROW_TEMPLATES.spells(), false);
+}
+
+/* ------------------------------------------------- the spell library's value model */
+
+/**
+ * Everything wrong with one library entry's four header values, as "Spell: what" lines — empty
+ * when it fits the model documented at the top of js/spell-library.js. Held over every SRD spell
+ * AND every hand-written extra, so a typo in extra-spells.js is a named failure, not a blank line
+ * in the picker. README's "Adding a spell" lists what each message means.
+ */
+function spellModelProblems(spell) {
+  const problems = [];
+  const name = spell?.name || '(no name)';
+  const say = (what) => problems.push(`${name}: ${what}`);
+  const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const words = (v) => typeof v === 'string' && v.trim() !== '' && !/[*_]|<[a-z]/i.test(v);
+  const onlyKeys = (v, field, allowed) => {
+    for (const key of Object.keys(v)) if (!allowed.includes(key)) say(`${field} has an unknown key "${key}"`);
+  };
+  const unitAndAmount = (v, field, units) => {
+    if (!Object.hasOwn(units, v.unit)) { say(`${field}.unit "${v.unit}" is not one of ${Object.keys(units).join(', ')}`); return; }
+    if (MEASURED_UNITS.has(v.unit)) {
+      if (!(Number.isInteger(v.amount) && v.amount > 0)) say(`${field}.amount must be a whole number above 0 for "${v.unit}"`);
+    } else if ('amount' in v) say(`${field}.amount does not belong on "${v.unit}"`);
+  };
+  const flag = (v, field, key) => {
+    if (key in v && v[key] !== true) say(`${field}.${key} is true or left out, never ${JSON.stringify(v[key])}`);
+  };
+
+  const castingTime = (v, field, nested) => {
+    if (!isObject(v)) { say(`${field} is not a value`); return; }
+    onlyKeys(v, field, nested ? ['unit', 'amount', 'mode', 'trigger'] : ['unit', 'amount', 'mode', 'trigger', 'alternative', 'ritual']);
+    unitAndAmount(v, field, CASTING_UNITS);
+    if ('trigger' in v && (!['bonusAction', 'reaction'].includes(v.unit) || !words(v.trigger))) {
+      say(`${field}.trigger is plain words, on a bonusAction or reaction only`);
+    }
+    if ('mode' in v && !words(v.mode)) say(`${field}.mode is plain words`);
+    flag(v, field, 'ritual');
+    if ('alternative' in v) castingTime(v.alternative, `${field}.alternative`, true);
+  };
+  castingTime(spell?.castingTime, 'castingTime', false);
+
+  if (!isObject(spell?.range)) say('range is not a value');
+  else { onlyKeys(spell.range, 'range', ['unit', 'amount']); unitAndAmount(spell.range, 'range', RANGE_UNITS); }
+
+  const c = spell?.components;
+  if (!isObject(c)) say('components is not a value');
+  else {
+    onlyKeys(c, 'components', ['verbal', 'somatic', 'material']);
+    flag(c, 'components', 'verbal');
+    flag(c, 'components', 'somatic');
+    if ('material' in c && !words(c.material)) say('components.material is plain words, or left out');
+    if (!Object.keys(c).length) say('components names none of V, S or M');
+  }
+
+  const d = spell?.duration;
+  if (!isObject(d)) say('duration is not a value');
+  else {
+    onlyKeys(d, 'duration', ['unit', 'amount', 'concentration', 'upTo', 'orTriggered']);
+    unitAndAmount(d, 'duration', DURATION_UNITS);
+    for (const key of ['concentration', 'upTo', 'orTriggered']) flag(d, 'duration', key);
+    if ((d.concentration || d.upTo) && !MEASURED_UNITS.has(d.unit)) say('duration "up to" needs a length: round, minute, hour or day');
+    if (d.concentration && d.upTo) say('duration.upTo is already said by concentration');
+    if (d.orTriggered && d.unit !== 'untilDispelled') say('duration.orTriggered belongs on untilDispelled');
+  }
+  return problems;
+}
+
+{
+  describe('spell library — the value model');
+
+  // Every unit, as the book writes it. These are the sentences a pick puts on a character's row.
+  is('casting times', [
+    { unit: 'action' }, { unit: 'bonusAction' }, { unit: 'reaction' },
+    { unit: 'minute', amount: 1 }, { unit: 'minute', amount: 10 }, { unit: 'hour', amount: 24 },
+  ].map(formatCastingTime), ['Action', 'Bonus Action', 'Reaction', '1 minute', '10 minutes', '24 hours']);
+  is('a ritual', formatCastingTime({ unit: 'minute', amount: 1, ritual: true }), '1 minute or Ritual');
+  is('a reaction with its trigger', formatCastingTime({ unit: 'reaction', trigger: 'when you fall' }),
+    'Reaction, which you take when you fall');
+  is('two ways to cast it', formatCastingTime({ unit: 'action', mode: 'Quick', alternative: { unit: 'hour', amount: 8, mode: 'Slow' } }),
+    'Action (Quick) or 8 hours (Slow)');
+  is('ranges', [
+    { unit: 'self' }, { unit: 'touch' }, { unit: 'sight' }, { unit: 'unlimited' }, { unit: 'special' },
+    { unit: 'foot', amount: 5 }, { unit: 'foot', amount: 1 }, { unit: 'foot', amount: 1000 },
+    { unit: 'mile', amount: 1 }, { unit: 'mile', amount: 500 },
+  ].map(formatRange), ['Self', 'Touch', 'Sight', 'Unlimited', 'Special', '5 feet', '1 foot', '1,000 feet', '1 mile', '500 miles']);
+  is('components', [
+    { verbal: true }, { somatic: true }, { verbal: true, somatic: true },
+    { verbal: true, somatic: true, material: 'a pinch of soot' }, { somatic: true, material: 'ink' },
+  ].map(formatComponents), ['V', 'S', 'V, S', 'V, S, M (a pinch of soot)', 'S, M (ink)']);
+  is('durations', [
+    { unit: 'instantaneous' }, { unit: 'round', amount: 1 }, { unit: 'day', amount: 10 },
+    { unit: 'minute', amount: 1, concentration: true }, { unit: 'hour', amount: 8, upTo: true },
+    { unit: 'untilDispelled' }, { unit: 'untilDispelled', orTriggered: true }, { unit: 'special' },
+  ].map(formatDuration), ['Instantaneous', '1 round', '10 days', 'Concentration, up to 1 minute',
+    'Up to 8 hours', 'Until dispelled', 'Until dispelled or triggered', 'Special']);
+  // A value outside the model formats to nothing rather than to "undefined minutes".
+  is('garbage formats to empty, not to a guess',
+    [formatCastingTime(undefined), formatRange({ unit: 'parsec', amount: 3 }), formatComponents(null), formatDuration('1 hour')],
+    ['', '', '', '']);
+  is('spellStats gives all four at once', spellStats({
+    castingTime: { unit: 'action' }, range: { unit: 'touch' }, components: { verbal: true }, duration: { unit: 'instantaneous' },
+  }), { castingTime: 'Action', range: 'Touch', components: 'V', duration: 'Instantaneous' });
+
+  // The validator is the extra-spells author's safety net, so it must actually catch things.
+  const ok = { name: 'X', castingTime: { unit: 'action' }, range: { unit: 'self' }, components: { verbal: true }, duration: { unit: 'instantaneous' } };
+  is('a well-formed entry has no problems', spellModelProblems(ok), []);
+  const problemsWith = (over) => spellModelProblems({ ...ok, ...over }).length > 0;
+  is('the validator catches each kind of mistake', [
+    problemsWith({ castingTime: 'Action' }),                                  // the old sentence form
+    problemsWith({ castingTime: { unit: 'Action' } }),                       // a book word, not a unit
+    problemsWith({ castingTime: { unit: 'minute' } }),                       // a measure with no amount
+    problemsWith({ castingTime: { unit: 'action', amount: 1 } }),            // an amount on a word
+    problemsWith({ castingTime: { unit: 'action', ritual: false } }),        // false is left out
+    problemsWith({ castingTime: { unit: 'action', trigger: 'when hit' } }),  // a trigger on an action
+    problemsWith({ range: { unit: 'feet', amount: 30 } }),                   // the plural, not the unit
+    problemsWith({ range: { unit: 'foot', amount: '30' } }),                 // a string amount
+    problemsWith({ components: { verbal: true, material: '' } }),            // an empty material
+    problemsWith({ components: {} }),                                        // no components at all
+    problemsWith({ duration: { unit: 'instantaneous', concentration: true } }),
+    problemsWith({ duration: { unit: 'minute', amount: 1, concentration: true, upTo: true } }),
+    problemsWith({ duration: { unit: 'hour', amount: 1, orTriggered: true } }),
+    problemsWith({ duration: { unit: 'hour', amount: 1, conc: true } }),     // a misspelled key
+  ], Array(14).fill(true));
 }
 
 /* ------------------------------------------------- the spell library (#149) */
@@ -2309,13 +2435,15 @@ describe('rituals and casting times on the spell row');
 
   // A fixture, not the real library: these assert the RANKING and the filter algebra, and both
   // have to be readable from the expectation. The real data gets its own integrity block below.
+  const action = { unit: 'action' };
+  const vsm = (material) => ({ verbal: true, somatic: true, material });
   const lib = [
-    { name: 'Fire Bolt', level: 0, school: 'Evocation', classes: ['Sorcerer', 'Wizard'], castingTime: 'Action', range: '120 feet', components: 'V, S', duration: 'Instantaneous', concentration: false, ritual: false, text: 'Hurl a mote of fire.' },
-    { name: 'Fireball', level: 3, school: 'Evocation', classes: ['Sorcerer', 'Wizard'], castingTime: 'Action', range: '150 feet', components: 'V, S, M', duration: 'Instantaneous', concentration: false, ritual: false, text: 'A bright streak flashes, dealing Fire damage.' },
-    { name: 'Cure Wounds', level: 1, school: 'Abjuration', classes: ['Cleric', 'Druid'], castingTime: 'Action', range: 'Touch', components: 'V, S', duration: 'Instantaneous', concentration: false, ritual: false, text: 'Restore Hit Points.' },
-    { name: 'Alarm', level: 1, school: 'Abjuration', classes: ['Ranger', 'Wizard'], castingTime: '1 minute or Ritual', range: '30 feet', components: 'V, S, M', duration: '8 hours', concentration: false, ritual: true, text: 'Set an alarm against intrusion.' },
-    { name: 'Bless', level: 1, school: 'Enchantment', classes: ['Cleric', 'Paladin'], castingTime: 'Action', range: '30 feet', components: 'V, S, M', duration: 'Concentration, up to 1 minute', concentration: true, ritual: false, text: 'Bless up to three creatures.' },
-    { name: "Otiluke's Resilient Sphere", level: 4, school: 'Abjuration', classes: ['Wizard'], castingTime: 'Action', range: '30 feet', components: 'V, S, M', duration: 'Concentration, up to 1 minute', concentration: true, ritual: false, text: 'A sphere encloses a creature.' },
+    { name: 'Fire Bolt', level: 0, school: 'Evocation', classes: ['Sorcerer', 'Wizard'], castingTime: action, range: { unit: 'foot', amount: 120 }, components: { verbal: true, somatic: true }, duration: { unit: 'instantaneous' }, text: 'Hurl a mote of fire.' },
+    { name: 'Fireball', level: 3, school: 'Evocation', classes: ['Sorcerer', 'Wizard'], castingTime: action, range: { unit: 'foot', amount: 150 }, components: vsm('a ball of bat guano'), duration: { unit: 'instantaneous' }, text: 'A bright streak flashes, dealing Fire damage.' },
+    { name: 'Cure Wounds', level: 1, school: 'Abjuration', classes: ['Cleric', 'Druid'], castingTime: action, range: { unit: 'touch' }, components: { verbal: true, somatic: true }, duration: { unit: 'instantaneous' }, text: 'Restore Hit Points.' },
+    { name: 'Alarm', level: 1, school: 'Abjuration', classes: ['Ranger', 'Wizard'], castingTime: { unit: 'minute', amount: 1, ritual: true }, range: { unit: 'foot', amount: 30 }, components: vsm('a bell'), duration: { unit: 'hour', amount: 8 }, text: 'Set an alarm against intrusion.' },
+    { name: 'Bless', level: 1, school: 'Enchantment', classes: ['Cleric', 'Paladin'], castingTime: action, range: { unit: 'foot', amount: 30 }, components: vsm('a Holy Symbol'), duration: { unit: 'minute', amount: 1, concentration: true }, text: 'Bless up to three creatures.' },
+    { name: "Otiluke's Resilient Sphere", level: 4, school: 'Abjuration', classes: ['Wizard'], castingTime: action, range: { unit: 'foot', amount: 30 }, components: vsm('a glass sphere'), duration: { unit: 'minute', amount: 1, concentration: true }, text: 'A sphere encloses a creature.' },
   ];
   const names = (options) => searchSpells(lib, options).map((s) => s.name);
 
@@ -2366,9 +2494,13 @@ describe('rituals and casting times on the spell row');
   is('the level comes across as a number', row.level, 3);
   is('the description lands in the free-text note', row.notes, lib[1].text);
   is('the school comes across', row.school, 'Evocation');
-  is('casting time, range, duration and components come with it',
+  // The library holds values; the row holds the sentence the book prints, which is what a player
+  // reads and can retype. The pick is where one becomes the other.
+  is('casting time, range, duration and components arrive as the book\'s wording',
     [row.castingTime, row.range, row.duration, row.components],
-    ['Action', '150 feet', 'Instantaneous', 'V, S, M']);
+    ['Action', '150 feet', 'Instantaneous', 'V, S, M (a ball of bat guano)']);
+  is('...every one of them a plain string on the row',
+    [row.castingTime, row.range, row.duration, row.components].every((v) => typeof v === 'string'), true);
   // Adding a spell is not preparing it. The tick is the one thing on this card a player touches
   // every long rest, and pre-ticking it would claim they had already made that call.
   is('it is not prepared', row.prepared, false);
@@ -2400,9 +2532,12 @@ describe('rituals and casting times on the spell row');
    * spells" either way — so the shape is asserted here rather than trusted.
    */
   is('the library is the size of the SRD spell list', SRD_SPELLS.length > 300, true);
-  is('every spell carries every field the picker shows',
-    SRD_SPELLS.filter((s) => !s.name || !s.school || !s.castingTime || !s.range
-      || !s.components || !s.duration || !s.text).map((s) => s.name), []);
+  // Every value from a closed set, every amount where a unit is a measure and nowhere else, every
+  // qualifier on the unit it belongs to. One list of "Spell: what is wrong", empty when the
+  // whole library fits (spellModelProblems, below this block).
+  is('every SRD spell fits the value model', SRD_SPELLS.flatMap(spellModelProblems), []);
+  is('every spell carries a name, school and description',
+    SRD_SPELLS.filter((s) => !s.name || !s.school || !s.text).map((s) => s.name), []);
   is('every level is one the sheet has a section for',
     [...new Set(SRD_SPELLS.map((s) => s.level))].sort((a, b) => a - b)
       .every((level) => SPELL_LIST_LEVELS.includes(level)), true);
@@ -2419,14 +2554,32 @@ describe('rituals and casting times on the spell row');
   // One spell end to end, so a regeneration that shifts the field mapping by one is caught.
   const fireball = SRD_SPELLS.find((s) => s.name === 'Fireball');
   is('Fireball is a level 3 Evocation', [fireball.level, fireball.school], [3, 'Evocation']);
-  is('...cast at 150 feet with a bat guano component',
-    [fireball.range, /guano/.test(fireball.components)], ['150 feet', true]);
+  is('...as values: an action, 150 feet, V S M, instantaneous',
+    [fireball.castingTime, fireball.range, fireball.duration],
+    [{ unit: 'action' }, { unit: 'foot', amount: 150 }, { unit: 'instantaneous' }]);
+  is('...its material named', /guano/.test(fireball.components.material), true);
   is('...and it is neither concentration nor a ritual',
-    [fireball.concentration, fireball.ritual], [false, false]);
+    [Boolean(fireball.duration.concentration), Boolean(fireball.castingTime.ritual)], [false, false]);
   const alarm = SRD_SPELLS.find((s) => s.name === 'Alarm');
-  is('a "1 minute or Ritual" casting time is flagged as a ritual', alarm.ritual, true);
-  const bless = SRD_SPELLS.find((s) => s.name === 'Bless');
-  is('a "Concentration, up to…" duration is flagged as concentration', bless.concentration, true);
+  is('Alarm is a 1-minute ritual', alarm.castingTime, { unit: 'minute', amount: 1, ritual: true });
+  is('Bless is concentration, up to 1 minute', SRD_SPELLS.find((s) => s.name === 'Bless').duration,
+    { unit: 'minute', amount: 1, concentration: true });
+  // The shapes only one or two spells have, each of which a model could quietly flatten.
+  const srd = (name) => SRD_SPELLS.find((s) => s.name === name);
+  is('Plant Growth has two ways to cast it', formatCastingTime(srd('Plant Growth').castingTime),
+    'Action (Overgrowth) or 8 hours (Enrichment)');
+  is('Shield keeps its trigger, with the markdown gone from it', formatCastingTime(srd('Shield').castingTime),
+    'Reaction, which you take when you are hit by an attack roll or targeted by the Magic Missile spell');
+  is('Glyph of Warding lasts until dispelled or triggered', formatDuration(srd('Glyph of Warding').duration),
+    'Until dispelled or triggered');
+  is('Etherealness lasts "up to" 8 hours without concentration', srd('Etherealness').duration,
+    { unit: 'hour', amount: 8, upTo: true });
+  is('Project Image reaches 500 miles', formatRange(srd('Project Image').range), '500 miles');
+  is('Sending is Unlimited, Mirage Arcane is Sight, Dream is Special',
+    ['Sending', 'Mirage Arcane', 'Dream'].map((name) => formatRange(srd(name).range)), ['Unlimited', 'Sight', 'Special']);
+  is('Tsunami counts its concentration in rounds', formatDuration(srd('Tsunami').duration), 'Concentration, up to 6 rounds');
+  is('no short field carries markdown either',
+    SRD_SPELLS.filter((s) => Object.values(spellStats(s)).some((v) => /[*_]|<[a-z]/i.test(v))).map((s) => s.name), []);
 
   describe('spell library — the table\'s extra spells');
 
@@ -2440,9 +2593,9 @@ describe('rituals and casting times on the spell row');
   is('every extra spell has exactly the SRD entry\'s keys, plus its source',
     EXTRA_SPELLS.filter((s) => JSON.stringify(Object.keys(s).sort())
       !== JSON.stringify([...srdKeys, 'source'].sort())).map((s) => s.name), []);
-  is('every extra spell carries every field the picker shows',
-    EXTRA_SPELLS.filter((s) => !s.name || !s.school || !s.castingTime || !s.range
-      || !s.components || !s.duration || !s.text).map((s) => s.name), []);
+  is('every extra spell fits the value model', EXTRA_SPELLS.flatMap(spellModelProblems), []);
+  is('every extra spell carries a name, school and description',
+    EXTRA_SPELLS.filter((s) => !s.name || !s.school || !s.text).map((s) => s.name), []);
   is('every extra spell is filed at a level the sheet has',
     EXTRA_SPELLS.filter((s) => !SPELL_LIST_LEVELS.includes(s.level)).map((s) => s.name), []);
   is('...under a school the picker offers',
@@ -2463,9 +2616,6 @@ describe('rituals and casting times on the spell row');
     const seen = EXTRA_SPELLS.map((s) => normalizeText(s.name));
     is('...or another extra spell', seen.filter((n, i) => seen.indexOf(n) !== i), []);
   }
-  is('the flags agree with the duration and casting time, as the generator derives them',
-    EXTRA_SPELLS.filter((s) => s.concentration !== /^Concentration/.test(s.duration)
-      || s.ritual !== /Ritual/.test(s.castingTime)).map((s) => s.name), []);
   is('no markdown in the descriptions either',
     EXTRA_SPELLS.filter((s) => /[*_]/.test(s.text) || /<[a-z]/i.test(s.text)).map((s) => s.name), []);
 
@@ -2474,7 +2624,8 @@ describe('rituals and casting times on the spell row');
   is('Summon Beast is a level 2 Conjuration for Druids and Rangers',
     [beast.level, beast.school, beast.classes], [2, 'Conjuration', ['Druid', 'Ranger']]);
   is('...at 90 feet, concentration, not a ritual',
-    [beast.range, beast.concentration, beast.ritual], ['90 feet', true, false]);
+    [formatRange(beast.range), Boolean(beast.duration.concentration), Boolean(beast.castingTime.ritual)],
+    ['90 feet', true, false]);
   const beastRow = spellToRow(beast);
   is('...and becomes exactly a template row — its source does not ride along',
     Object.keys(beastRow).sort(), Object.keys(ROW_TEMPLATES.spells()).sort());

@@ -319,12 +319,10 @@ sorts by level, then name.
     level: 1,
     school: 'Evocation',
     classes: ['Sorcerer', 'Wizard'],
-    castingTime: 'Action',
-    range: '60 feet',
-    components: 'V, S, M (a pinch of salt)',
-    duration: 'Instantaneous',
-    concentration: false,
-    ritual: false,
+    castingTime: { unit: 'action' },
+    range: { unit: 'foot', amount: 60 },
+    components: { verbal: true, somatic: true, material: 'a pinch of salt' },
+    duration: { unit: 'instantaneous' },
     source: 'PHB 2024',
     text: [
       'First paragraph: what the spell does, in your own words.',
@@ -333,8 +331,10 @@ sorts by level, then name.
   },
 ```
 
-Every field must be present, even the ones that are `false`, and there must be no others. ✓ marks
-a rule the test suite enforces.
+Every field must be present, and there must be no others. Casting time, range, components and
+duration are **values, not sentences**: you write what the spell is, and the app writes the book's
+wording from it ("1 minute or Ritual", "150 feet", "Concentration, up to 1 hour") when a player
+picks the spell. ✓ marks a rule the test suite enforces.
 
 | Field | What to write | Rules |
 | --- | --- | --- |
@@ -342,16 +342,29 @@ a rule the test suite enforces.
 | `level` | `0` for a cantrip, `1`–`9` | ✓ A number, **no quotes**. |
 | `school` | `'Necromancy'` | ✓ Exactly one of `Abjuration` `Conjuration` `Divination` `Enchantment` `Evocation` `Illusion` `Necromancy` `Transmutation`. |
 | `classes` | `['Cleric', 'Wizard']` | ✓ At least one, each exactly one of `Bard` `Cleric` `Druid` `Paladin` `Ranger` `Sorcerer` `Warlock` `Wizard`. Base class lists only: no subclass extras, no Artificer. |
-| `castingTime` | `'Action'` | ✓ Not empty. The SRD's wording: `Action`, `Bonus Action`, `1 minute`, `Action or Ritual`, `Reaction, which you take when …`. |
-| `range` | `'60 feet'` | ✓ Not empty. `Self`, `Touch`, `30 feet`, `1 mile`, `Sight`. A cone or radius goes in `text`; the SRD writes the range as plain `Self`. |
-| `components` | `'V, S, M (a sprig of mistletoe)'` | ✓ Not empty. |
-| `duration` | `'Concentration, up to 1 minute'` | ✓ Not empty. `Instantaneous`, `1 hour`, `Concentration, up to 10 minutes`, `Until dispelled`. |
-| `concentration` | `true` or `false`, no quotes | ✓ `true` exactly when `duration` starts with `Concentration`. |
-| `ritual` | `true` or `false`, no quotes | ✓ `true` exactly when `castingTime` contains `Ritual`. |
+| `castingTime` | `{ unit: 'action' }` | ✓ See **The four values** below. |
+| `range` | `{ unit: 'foot', amount: 60 }` | ✓ See below. A cone or radius goes in `text`; the SRD writes the range as plain `Self`. |
+| `components` | `{ verbal: true, somatic: true, material: 'a sprig of mistletoe' }` | ✓ See below. |
+| `duration` | `{ unit: 'minute', amount: 1, concentration: true }` | ✓ See below. |
 | `source` | `'PHB 2024'` | ✓ Not empty, and must not say SRD. It is shown on the search result. |
 | `text` | see below | ✓ Not empty. No `*`, no `_`, no HTML tags. |
 
-**Writing the strings.** Any text goes between single quotes: `'Action'`. Watch out for three things:
+**The four values.** Each has a `unit` from a fixed list. A unit that is a measure (minute, hour,
+round, day, foot, mile) also takes an `amount`, a whole number with no quotes; any other unit must
+not have one. Write the unit in the singular: `amount: 10, unit: 'minute'` becomes "10 minutes".
+A yes/no extra is written `true` when it applies and **left out** when it does not; never `false`.
+
+| Value | Units | Extras | You write → the book says |
+| --- | --- | --- | --- |
+| `castingTime` | `action` `bonusAction` `reaction` `minute` `hour` | `ritual: true`; `trigger: '…'` (bonusAction or reaction only) | `{ unit: 'action', ritual: true }` → Action or Ritual<br>`{ unit: 'minute', amount: 10 }` → 10 minutes<br>`{ unit: 'reaction', trigger: 'when you fall' }` → Reaction, which you take when you fall |
+| `range` | `self` `touch` `sight` `unlimited` `special` `foot` `mile` | — | `{ unit: 'self' }` → Self<br>`{ unit: 'foot', amount: 120 }` → 120 feet<br>`{ unit: 'mile', amount: 1 }` → 1 mile |
+| `components` | — | `verbal: true`, `somatic: true`, `material: '…'` (what the M is) | `{ verbal: true, somatic: true }` → V, S<br>`{ verbal: true, material: 'a bit of fleece' }` → V, M (a bit of fleece) |
+| `duration` | `instantaneous` `round` `minute` `hour` `day` `untilDispelled` `special` | `concentration: true`; `upTo: true` ("Up to" without concentration); `orTriggered: true` (untilDispelled only) | `{ unit: 'instantaneous' }` → Instantaneous<br>`{ unit: 'minute', amount: 1, concentration: true }` → Concentration, up to 1 minute<br>`{ unit: 'untilDispelled' }` → Until dispelled |
+
+Concentration and ritual are not fields of their own any more: they are `duration.concentration` and
+`castingTime.ritual`, where the book writes them, so they cannot disagree with the rest of the entry.
+
+**Writing the strings.** Any text goes between single quotes: `'Necromancy'`. Watch out for three things:
 
 - **Apostrophes.** An apostrophe ends a single-quoted string, so `'can't'` is a syntax error. Wrap
   that string in double quotes instead: `"The target can't take Reactions."`
@@ -389,13 +402,13 @@ about.
 | --- | --- |
 | `SyntaxError` with a file, a line number and a `^` under the problem | The file is not valid JavaScript. **This one matters most: in the app it stops the picker loading any spell at all, SRD ones included.** Usually an apostrophe inside `'…'`, a missing comma after a field or after `}`, or an unclosed quote or bracket. Check that line and the one above it. |
 | `✗ … exactly the SRD entry's keys, plus its source` | A field name is misspelled, missing or extra. Compare it with the template. |
-| `✗ … carries every field the picker shows` | A text field is empty. |
+| `✗ every extra spell fits the value model` | One of the four values is wrong. The message lists each problem as `Spell Name: what is wrong` — for example `range.unit "feet" is not one of self, touch, …` (write the singular `foot`), `duration is not a value` (a sentence where a `{ … }` belongs), or `castingTime.ritual is true or left out, never false`. |
+| `✗ … carries a name, school and description` | `name`, `school` or `text` is empty. |
 | `✗ … filed at a level the sheet has` | `level` is outside 0–9, or is in quotes. |
 | `✗ … under a school the picker offers` | `school` is misspelled. |
 | `✗ … for classes the picker offers` | `classes` is empty, or has a misspelled name or one outside the eight. |
 | `✗ … names the book it is from` | `source` is missing or empty, or says SRD. |
 | `✗ no extra spell repeats an SRD name` or `✗ ...or another extra spell` | The spell is already in the library. See step 1. |
-| `✗ the flags agree with the duration and casting time` | `concentration` or `ritual` disagrees with `duration` or `castingTime`. |
 | `✗ no markdown in the descriptions either` | `text` contains `*`, `_` or an HTML tag. Write emphasis as plain words. |
 
 **5. Look at it in the app.**

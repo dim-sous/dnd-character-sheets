@@ -42,6 +42,13 @@ Two irregularities in the source, both real and both silently lossy if unhandled
 Both are why this script asserts a spell COUNT and a set of required fields at the end,
 rather than writing whatever it happened to find: a parser that silently produces 320
 spells instead of 340 is indistinguishable from a good one by eye.
+
+The four header fields are written as VALUES, not as the source's sentences — the model is
+documented at the top of js/spell-library.js, whose format* functions turn them back into
+the book's wording. Parsing a sentence into values is exactly where a fact can quietly fall
+on the floor (a rider, a "Ritual", an "or triggered"), so every field is ROUND-TRIPPED here:
+formatted back with this file's twin of those functions and compared with the source,
+character for character. Any mismatch stops the run and names the spell; nothing is written.
 """
 
 import argparse
@@ -132,6 +139,186 @@ def to_plain_text(md: str) -> str:
     return '\n'.join(out).strip()
 
 
+#                        the header values
+#
+# Each parse_* turns one source sentence into the value js/spell-library.js documents, or
+# returns None for a sentence it does not recognise. Each format_* is the Python twin of the JS
+# function of the same name; they exist only so every parse can be checked by formatting it
+# back. Keep the pairs in step: the round-trip check fails loudly if this side drifts, and the
+# JS side is held to the same sentences by tests.js.
+
+CASTING_WORDS = {'Action': 'action', 'Bonus Action': 'bonusAction', 'Reaction': 'reaction'}
+RANGE_WORDS = {'Self': 'self', 'Touch': 'touch', 'Sight': 'sight', 'Unlimited': 'unlimited',
+               'Special': 'special'}
+DURATION_WORDS = {'Instantaneous': 'instantaneous', 'Until dispelled': 'untilDispelled',
+                  'Special': 'special'}
+PLURALS = {'foot': 'feet'}
+
+
+def unit_of(word: str) -> str:
+    """'minutes' → 'minute', 'feet' → 'foot': the singular is the stored unit."""
+    word = word.lower()
+    return 'foot' if word in ('feet', 'foot') else word.rstrip('s')
+
+
+def measure(amount: int, unit: str) -> str:
+    word = unit if amount == 1 else PLURALS.get(unit, unit + 's')
+    return f'{amount:,} {word}'
+
+
+def parse_casting_one(text: str):
+    found = re.fullmatch(
+        r'(?:(?P<word>Action|Bonus Action|Reaction)|(?P<amount>\d+) (?P<unit>minutes?|hours?))'
+        r'(?: \((?P<mode>[^()]+)\))?(?:, which you take (?P<trigger>.+))?',
+        text,
+    )
+    if not found:
+        return None
+    value = ({'unit': CASTING_WORDS[found['word']]} if found['word']
+             else {'unit': unit_of(found['unit']), 'amount': int(found['amount'])})
+    if found['mode']:
+        value['mode'] = found['mode']
+    if found['trigger']:
+        value['trigger'] = found['trigger']
+    return value
+
+
+def parse_casting_time(text: str):
+    ritual = text.endswith(' or Ritual')
+    if ritual:
+        text = text[:-len(' or Ritual')]
+    value = parse_casting_one(text)
+    if value is None:
+        # Two ways to cast it ("Action (Overgrowth) or 8 hours (Enrichment)"). Tried only after
+        # the single form fails, because a rider can itself contain " or " ("hit by an attack
+        # roll or targeted by…"), and splitting that would invent an alternative.
+        for split in re.finditer(r' or ', text):
+            first = parse_casting_one(text[:split.start()])
+            second = parse_casting_one(text[split.end():])
+            if first and second and 'trigger' not in first:
+                value = {**first, 'alternative': second}
+                break
+    if value is not None and ritual:
+        value['ritual'] = True
+    return value
+
+
+def format_casting_time(value: dict) -> str:
+    unit = value['unit']
+    text = measure(value['amount'], unit) if 'amount' in value else next(
+        word for word, key in CASTING_WORDS.items() if key == unit)
+    if value.get('mode'):
+        text += f' ({value["mode"]})'
+    if value.get('trigger'):
+        text += f', which you take {value["trigger"]}'
+    if value.get('alternative'):
+        text += f' or {format_casting_time(value["alternative"])}'
+    if value.get('ritual'):
+        text += ' or Ritual'
+    return text
+
+
+def parse_range(text: str):
+    if text in RANGE_WORDS:
+        return {'unit': RANGE_WORDS[text]}
+    found = re.fullmatch(r'(?P<amount>\d[\d,]*) (?P<unit>feet|foot|miles?)', text)
+    if not found:
+        return None
+    return {'unit': unit_of(found['unit']), 'amount': int(found['amount'].replace(',', ''))}
+
+
+def format_range(value: dict) -> str:
+    if 'amount' in value:
+        return measure(value['amount'], value['unit'])
+    return next(word for word, key in RANGE_WORDS.items() if key == value['unit'])
+
+
+def parse_components(text: str):
+    found = re.fullmatch(r'(?P<v>V)?(?:, )?(?P<s>S)?(?:, )?(?:M \((?P<m>.+)\))?', text)
+    if not found or not text:
+        return None
+    value = {}
+    if found['v']:
+        value['verbal'] = True
+    if found['s']:
+        value['somatic'] = True
+    if found['m']:
+        value['material'] = found['m']
+    return value
+
+
+def format_components(value: dict) -> str:
+    parts = []
+    if value.get('verbal'):
+        parts.append('V')
+    if value.get('somatic'):
+        parts.append('S')
+    if value.get('material'):
+        parts.append(f'M ({value["material"]})')
+    return ', '.join(parts)
+
+
+def parse_duration(text: str):
+    if text in DURATION_WORDS:
+        return {'unit': DURATION_WORDS[text]}
+    if text == 'Until dispelled or triggered':
+        return {'unit': 'untilDispelled', 'orTriggered': True}
+    found = re.fullmatch(
+        r'(?P<prefix>Concentration, up to |Up to )?(?P<amount>\d+) (?P<unit>rounds?|minutes?|hours?|days?)',
+        text,
+    )
+    if not found:
+        return None
+    value = {'unit': unit_of(found['unit']), 'amount': int(found['amount'])}
+    if found['prefix'] == 'Concentration, up to ':
+        value['concentration'] = True
+    elif found['prefix'] == 'Up to ':
+        value['upTo'] = True
+    return value
+
+
+def format_duration(value: dict) -> str:
+    unit = value['unit']
+    text = measure(value['amount'], unit) if 'amount' in value else next(
+        word for word, key in DURATION_WORDS.items() if key == unit)
+    if value.get('concentration'):
+        return f'Concentration, up to {text}'
+    if value.get('upTo'):
+        return f'Up to {text}'
+    if value.get('orTriggered'):
+        return f'{text} or triggered'
+    return text
+
+
+HEADER_VALUES = {
+    'castingTime': (parse_casting_time, format_casting_time),
+    'range': (parse_range, format_range),
+    'components': (parse_components, format_components),
+    'duration': (parse_duration, format_duration),
+}
+
+
+def header_values(name: str, fields: dict, problems: list[str]) -> dict:
+    """The four header sentences as values, each proven lossless by formatting it back.
+
+    The source's sentence is cleaned of markdown first (Shield's rider names "_Magic Missile_"
+    in italics, which would otherwise reach a player's row as literal underscores), so the
+    round trip compares the values against what a player should actually read.
+    """
+    values = {}
+    for key, (parse_one, format_one) in HEADER_VALUES.items():
+        source = to_plain_text(fields[key])
+        value = parse_one(source)
+        if value is None:
+            problems.append(f'{name}: {key} {source!r} is not a shape the model knows')
+            continue
+        back = format_one(value)
+        if back != source:
+            problems.append(f'{name}: {key} {source!r} came back as {back!r}')
+        values[key] = value
+    return values
+
+
 def parse(markdown: str) -> list[dict]:
     body = markdown.split('## Spell Descriptions', 1)
     if len(body) != 2:
@@ -139,6 +326,7 @@ def parse(markdown: str) -> list[dict]:
     blocks = re.split(r'^#### ', body[1], flags=re.M)[1:]
 
     spells: list[dict] = []
+    problems: list[str] = []
     for block in blocks:
         name, _, rest = block.partition('\n')
         name = name.strip()
@@ -167,18 +355,15 @@ def parse(markdown: str) -> list[dict]:
             'level': int(subtitle.group('level')) if subtitle.group('level') else 0,
             'school': subtitle.group('school1') or subtitle.group('school2'),
             'classes': classes,
-            'castingTime': fields['castingTime'],
-            'range': fields['range'],
-            'components': fields['components'],
-            'duration': fields['duration'],
-            # Precomputed rather than re-derived in the app on every keystroke of a search:
-            # these are the two filters a player actually asks for ("what can I cast as a
-            # ritual", "what needs concentration") and both are a substring test on a string
-            # the picker also has to display.
-            'concentration': fields['duration'].lower().startswith('concentration'),
-            'ritual': 'ritual' in fields['castingTime'].lower(),
+            # Concentration and ritual live INSIDE these values (duration.concentration,
+            # castingTime.ritual), where the book writes them, rather than as flags beside them
+            # that could disagree with the sentence they were derived from.
+            **header_values(name, fields, problems),
             'text': text,
         })
+    if problems:
+        sys.exit('error: header fields that do not round-trip, nothing written:\n  '
+                 + '\n  '.join(problems))
     return spells
 
 
@@ -189,12 +374,14 @@ def report(spells: list[dict]) -> None:
     print(f'{len(spells)} spells; levels {levels}')
     print(f'schools: {", ".join(schools)}')
     print(f'classes: {", ".join(classes)}')
-    print(f'{sum(s["concentration"] for s in spells)} concentration, {sum(s["ritual"] for s in spells)} ritual')
+    concentration = sum(bool(s['duration'].get('concentration')) for s in spells)
+    ritual = sum(bool(s['castingTime'].get('ritual')) for s in spells)
+    print(f'{concentration} concentration, {ritual} ritual')
     missing = [
         f'{s["name"]}: {key}'
         for s in spells
         for key in ('castingTime', 'range', 'components', 'duration', 'text')
-        if not s[key]
+        if not s.get(key)
     ]
     if missing:
         print(f'WARNING: {len(missing)} empty field(s): {missing[:12]}')
@@ -222,6 +409,8 @@ def write(spells: list[dict], out_path: pathlib.Path) -> None:
         '/**\n'
         ' * One entry per SRD spell. `level` 0 is a cantrip, matching the app\'s own\n'
         ' * SPELL_LIST_LEVELS; `classes` is the SRD\'s parenthetical class list verbatim.\n'
+        ' * castingTime, range, components and duration are VALUES — the model is documented\n'
+        ' * at the top of js/spell-library.js, which formats them back into the book\'s wording.\n'
         ' */\n'
         f'export const SRD_SPELLS = [\n{rows},\n];\n',
         encoding='utf-8',
