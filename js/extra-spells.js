@@ -117,13 +117,16 @@ export const EXTRA_SPELLS = [
     duration: 'Instantaneous',
     concentration: false,
     ritual: false,
-    source: 'PHB 2024',
+    source: 'XGtE',
     text: [
       'You teleport to an unoccupied space you can see within range, leaving a thunderclap behind. '
         + 'Each creature within 10 feet of the space you left makes a Constitution saving throw, '
-        + 'taking 3d10 Thunder damage on a failed save or half as much on a success.',
-      'You can bring one willing creature within 5 feet of you along. It arrives in an unoccupied '
-        + 'space of your choice within 5 feet of where you land.',
+        + 'taking 3d10 Thunder damage on a failed save or half as much on a success. The boom is '
+        + 'audible up to 300 feet away.',
+      'Objects you could carry come with you. So can one willing creature your size or smaller, with '
+        + 'gear up to its own carrying capacity, if it is within 5 feet of you when you cast the spell. '
+        + 'It arrives in an unoccupied space within 5 feet of where you land; with no such space, it '
+        + 'stays behind.',
       'Using a Higher-Level Spell Slot. The damage increases by 1d10 for each spell slot level above 3.',
     ].join('\n\n'),
   },
@@ -140,7 +143,7 @@ export const EXTRA_SPELLS = [
     ritual: false,
     source: 'PHB 2024',
     text: [
-      'You call forth a celestial spirit. It manifests in an unoccupied space that you can see within '
+      'You call forth a celestial spirit. It manifests in angelic form in an unoccupied space that you can see within '
         + 'range and uses the Celestial Spirit stat block. When you cast the spell, choose Avenger or '
         + 'Defender: the choice sets the lines of the stat block marked with it. The creature '
         + 'disappears when it drops to 0 Hit Points or when the spell ends.',
