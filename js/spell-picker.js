@@ -19,7 +19,7 @@
  */
 
 import {
-  searchSpells, spellToRow, spellSummary, SPELL_CLASSES, SPELL_SCHOOLS,
+  searchSpells, spellToRow, spellSummary, spellStats, SPELL_CLASSES, SPELL_SCHOOLS,
 } from './spell-library.js';
 import { SPELL_LIST_LEVELS, spellLevelLabel } from './constants.js';
 
@@ -159,8 +159,9 @@ function resultNode(spell) {
    * generated data rather than player input, but this app has no HTML sink anywhere and is not
    * about to grow its first one for a convenience.
    */
+  const stats = spellStats(spell);
   $('.result__stats', node).textContent =
-    [spell.castingTime, spell.range, spell.components, spell.duration].filter(Boolean).join(' · ');
+    [stats.castingTime, stats.range, stats.components, stats.duration].filter(Boolean).join(' · ');
   $('.result__text', node).textContent = spell.text;
 
   const add = $('.result__add', node);

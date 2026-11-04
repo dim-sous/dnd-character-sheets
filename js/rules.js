@@ -296,9 +296,9 @@ export function isOverPrepared(char) {
  * Never stored: the field stays the player's free text, and this is recomputed on every render,
  * so a casting time typed as "1 bonus action" or pasted from the book reads the same.
  *
- * "R" is Reaction, not Ritual, and that only works because a ritual is shown as the WORD on the
- * row (`.row__ritual`) — the 2024 book's spell lists use R for ritual, so a single letter for it
- * would be ambiguous on exactly the row type where both can appear.
+ * "R" is Reaction, not Ritual. A ritual is an R too — the 2024 book's spell lists use it — but
+ * the row draws that one in a CIRCLE, in the accent colour (`.row__ritual`), beside this bare
+ * soft-ink tag; the circle is the whole distinction, so this one must never grow one.
  */
 export function castingTimeTag(text) {
   const clause = String(text ?? '').toLowerCase().split(/[,(]/)[0].trim();
@@ -314,6 +314,39 @@ export function castingTimeTag(text) {
     short: `${count} ${minutes ? 'min' : 'hr'}`,
     long: `${count} ${minutes ? 'minute' : 'hour'}${count === 1 ? '' : 's'}`,
   };
+}
+
+/**
+ * Whether a spell's duration says it needs Concentration — the circled C on its row.
+ *
+ * Read out of the free-text duration and never stored, like the casting-time tag above, because
+ * the duration already IS the fact: "Concentration, up to 1 minute" is how the SRD and the book
+ * write every concentration spell (all 133 in the library, and every extra), so you cannot type a
+ * concentration spell's duration correctly without saying so. That is also why it needs no
+ * backfill: every spell already on a sheet, picked or typed, carries the C the moment its
+ * duration says "Concentration", with nothing to migrate.
+ *
+ * Anywhere in the text, as a whole word, so a hand-typed "1 min (conc.)" counts and
+ * "concentrated" does not.
+ */
+export function isConcentration(text) {
+  return /\bconc(?:entration)?\b/i.test(String(text ?? ''));
+}
+
+/**
+ * Whether a spell's casting time says it can be cast as a ritual — the circled R on its row.
+ *
+ * The twin of isConcentration, off the casting time instead of the duration: the SRD and the 2024
+ * book write a ritual into its casting time ("Action or Ritual", "1 minute or Ritual"), all 29 in
+ * the library, so being a ritual is a fact about the spell the row already carries, not a choice
+ * for the player to tick (the owner's call, 2026-11-04 — it was a stored flag until then; see
+ * normalizeSpells in storage.js for what happened to the ticks).
+ *
+ * A whole word anywhere, so a hand-typed "1 action (ritual)" counts and "spiritual" does not.
+ * castingTimeTag reads only the first clause, so "Action or Ritual" is still tagged A.
+ */
+export function isRitual(text) {
+  return /\britual\b/i.test(String(text ?? ''));
 }
 
 /* ------------------------------------------------------------ attack to-hit (#84) */

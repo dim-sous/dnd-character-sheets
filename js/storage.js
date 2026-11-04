@@ -8,6 +8,7 @@ import {
   STORAGE_KEY, SCHEMA_VERSION, SPELL_LEVELS, ROW_TEMPLATES, MAX_EXHAUSTION,
   blankCharacter, newId,
 } from './constants.js';
+import { isRitual } from './rules.js';
 
 function num(value, fallback) {
   const n = Number(value);
@@ -51,21 +52,26 @@ function normalizeRows(listName, raw) {
 }
 
 /**
- * Spell rows, plus the one backfill the template's free ride cannot do on its own: `ritual`.
+ * Spell rows, plus the one thing the template's free ride cannot do on its own: retire `ritual`.
  *
- * Every spell the picker added before the flag existed already SAYS it is a ritual — the SRD
- * writes it into the casting time ("Action or Ritual", "1 minute or Ritual") the way the 2024
- * book does — so a missing key is read off that text rather than defaulting every one of them to
- * false and leaving the player to find and tick each ritual by hand. Only when the key is ABSENT:
- * a stored `ritual: false` is the player's answer, and a casting time that still says "Ritual"
- * does not overrule it. Old exports take the same path on import, for the same reason.
+ * Being a ritual is read off the casting time now (rules.isRitual), and the row stores no flag, so
+ * normalizeRow drops the key. Dropped alone, it would lose a ritual a player TICKED on a spell
+ * whose casting time does not say so — a homebrew "1 action" — and the R would silently vanish.
+ * So a stored `ritual: true` the text does not already state is moved INTO the text first: " or
+ * Ritual" on the end, the SRD's own wording, or "Ritual" for an empty casting time. The player
+ * sees the casting time change and keeps the R; after the next save the key is gone and this never
+ * fires again. Old exports take the same path on import.
+ *
+ * A stored `ritual: false` against a casting time that says "Ritual" is not kept: the spell says
+ * it is one, and that is the point of reading it from the spell.
  */
 function normalizeSpells(raw) {
   if (!Array.isArray(raw)) return [];
   return raw.map((item) => {
     const row = normalizeRow('spells', item);
-    if (!item || typeof item !== 'object' || item.ritual === undefined) {
-      row.ritual = /\britual\b/i.test(row.castingTime);
+    if (item && typeof item === 'object' && item.ritual === true && !isRitual(row.castingTime)) {
+      const time = row.castingTime.trim();
+      row.castingTime = time ? `${time} or Ritual` : 'Ritual';
     }
     return row;
   });

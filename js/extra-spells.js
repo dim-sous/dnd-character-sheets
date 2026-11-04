@@ -18,9 +18,11 @@
  * `source` names the book a spell comes from. The picker shows it on the result, so nobody takes
  * an entry for SRD text, and tests.js refuses an entry without one.
  *
- * Same keys as an SRD entry plus `source`; spellToRow copies the eight row fields and ignores the
- * rest, so `source` never reaches a character. tests.js holds every entry to the SRD entries'
- * shape, and refuses a name the SRD already has — the picker would list it twice.
+ * Same keys as an SRD entry plus `source`, and the same VALUE model for casting time, range,
+ * components and duration — written once as values, never as the book's sentence; the model is
+ * documented at the top of js/spell-library.js, and spellToRow formats it into the sentence a
+ * character's row carries. `source` never reaches a character. tests.js holds every entry to the
+ * model, and refuses a name the SRD already has — the picker would list it twice.
  *
  * Small, but loaded on demand like the SRD file, so the boot path stays the same.
  */
@@ -30,12 +32,13 @@ export const EXTRA_SPELLS = [
     level: 2,
     school: 'Conjuration',
     classes: ['Druid', 'Ranger'],
-    castingTime: 'Action',
-    range: '90 feet',
-    components: 'V, S, M (a feather, tuft of fur, and fish tail inside a gilded acorn worth 200+ GP)',
-    duration: 'Concentration, up to 1 hour',
-    concentration: true,
-    ritual: false,
+    castingTime: { unit: 'action' },
+    range: { unit: 'foot', amount: 90 },
+    components: {
+      verbal: true, somatic: true,
+      material: 'a feather, tuft of fur, and fish tail inside a gilded acorn worth 200+ GP',
+    },
+    duration: { unit: 'hour', amount: 1, concentration: true },
     source: 'PHB 2024',
     text: [
       'You call forth a bestial spirit. It manifests in an unoccupied space that you can see within '
@@ -73,12 +76,10 @@ export const EXTRA_SPELLS = [
     level: 2,
     school: 'Illusion',
     classes: ['Sorcerer', 'Wizard', 'Warlock'],
-    castingTime: 'Bonus Action',
-    range: 'Self',
-    components: 'V, S',
-    duration: 'Concentration, up to 1 minute',
-    concentration: true,
-    ritual: false,
+    castingTime: { unit: 'bonusAction' },
+    range: { unit: 'self' },
+    components: { verbal: true, somatic: true },
+    duration: { unit: 'minute', amount: 1, concentration: true },
     source: 'XGtE',
     text: [
       'A sword of shadow appears in your hand for the duration. It is a Simple Melee weapon you are '
@@ -96,12 +97,10 @@ export const EXTRA_SPELLS = [
     level: 5,
     school: 'Conjuration',
     classes: ['Sorcerer', 'Wizard', 'Warlock'],
-    castingTime: 'Bonus Action',
-    range: 'Self',
-    components: 'V',
-    duration: 'Concentration, up to 1 minute',
-    concentration: true,
-    ritual: false,
+    castingTime: { unit: 'bonusAction' },
+    range: { unit: 'self' },
+    components: { verbal: true },
+    duration: { unit: 'minute', amount: 1, concentration: true },
     source: 'XGtE',
     text: 'You teleport up to 60 feet to an unoccupied space you can see. Until the spell ends, '
       + 'you can do it again as a Bonus Action on each of your later turns.',
@@ -111,12 +110,10 @@ export const EXTRA_SPELLS = [
     level: 3,
     school: 'Conjuration',
     classes: ['Sorcerer', 'Warlock', 'Wizard'],
-    castingTime: 'Action',
-    range: '90 feet',
-    components: 'V',
-    duration: 'Instantaneous',
-    concentration: false,
-    ritual: false,
+    castingTime: { unit: 'action' },
+    range: { unit: 'foot', amount: 90 },
+    components: { verbal: true },
+    duration: { unit: 'instantaneous' },
     source: 'XGtE',
     text: [
       'You teleport to an unoccupied space you can see within range, leaving a thunderclap behind. '
@@ -135,12 +132,10 @@ export const EXTRA_SPELLS = [
     level: 5,
     school: 'Conjuration',
     classes: ['Cleric', 'Paladin'],
-    castingTime: 'Action',
-    range: '90 feet',
-    components: 'V, S, M (a reliquary worth 500+ GP)',
-    duration: 'Concentration, up to 1 hour',
-    concentration: true,
-    ritual: false,
+    castingTime: { unit: 'action' },
+    range: { unit: 'foot', amount: 90 },
+    components: { verbal: true, somatic: true, material: 'a reliquary worth 500+ GP' },
+    duration: { unit: 'hour', amount: 1, concentration: true },
     source: 'PHB 2024',
     text: [
       'You call forth a celestial spirit. It manifests in angelic form in an unoccupied space that you can see within '
@@ -179,12 +174,10 @@ export const EXTRA_SPELLS = [
     level: 2,
     school: 'Abjuration',
     classes: ['Sorcerer', 'Wizard'],
-    castingTime: 'Bonus Action',
-    range: 'Self',
-    components: 'V, S',
-    duration: 'Instantaneous',
-    concentration: false,
-    ritual: false,
+    castingTime: { unit: 'bonusAction' },
+    range: { unit: 'self' },
+    components: { verbal: true, somatic: true },
+    duration: { unit: 'instantaneous' },
     source: 'PHB 2024',
     text: [
       'You heal yourself by drawing on your own stamina. Roll one or two of your unspent Hit Point '
@@ -199,12 +192,10 @@ export const EXTRA_SPELLS = [
     level: 2,
     school: 'Abjuration',
     classes: ['Bard', 'Sorcerer', 'Wizard'],
-    castingTime: 'Action',
-    range: '120 feet',
-    components: 'V, S',
-    duration: 'Concentration, up to 1 minute',
-    concentration: true,
-    ritual: false,
+    castingTime: { unit: 'action' },
+    range: { unit: 'foot', amount: 120 },
+    components: { verbal: true, somatic: true },
+    duration: { unit: 'minute', amount: 1, concentration: true },
     source: 'AU',
     text: 'A jarring melody fills a 20-foot-radius Sphere centered on a point you choose within range. '
       + 'Each creature in it makes a Constitution saving throw. On a failed save, the creature loses '
@@ -216,12 +207,10 @@ export const EXTRA_SPELLS = [
     level: 5,
     school: 'Abjuration',
     classes: ['Cleric', 'Paladin', 'Wizard'],
-    castingTime: 'Action',
-    range: 'Self',
-    components: 'V',
-    duration: 'Concentration, up to 10 minutes',
-    concentration: true,
-    ritual: false,
+    castingTime: { unit: 'action' },
+    range: { unit: 'self' },
+    components: { verbal: true },
+    duration: { unit: 'minute', amount: 10, concentration: true },
     source: 'PHB 2024',
     text: 'For the duration, an aura surrounds you in a 30-foot Emanation. You and your allies in it '
       + 'have Advantage on saving throws against spells and other magical effects, and an affected '

@@ -31,6 +31,107 @@ export const SPELL_SCHOOLS = [
   'Evocation', 'Illusion', 'Necromancy', 'Transmutation',
 ];
 
+/*
+ * THE LIBRARY MODEL. A spell's four header facts are VALUES, not the book's sentences: each is a
+ * `unit` from a closed set, an `amount` where the unit is a measure, and a few named qualifiers.
+ * The sentence the book prints is computed from them (the format* functions below), so a fact
+ * is written once, cannot disagree with itself, and a value outside the model is a failing test
+ * rather than a casting time nobody can read. Only the description stays prose.
+ *
+ *   castingTime  { unit, amount?, mode?, trigger?, alternative?, ritual? }
+ *                unit: action | bonusAction | reaction | minute | hour   (amount: minute/hour only)
+ *                trigger: the rider after "which you take" — bonusAction/reaction only
+ *                mode + alternative: Plant Growth's "Action (Overgrowth) or 8 hours (Enrichment)"
+ *                ritual: true when it can also be cast as a ritual ("… or Ritual")
+ *   range        { unit, amount? }
+ *                unit: self | touch | sight | unlimited | special | foot | mile   (amount: foot/mile)
+ *   components   { verbal?, somatic?, material? }   material: what the M is, in the book's words
+ *   duration     { unit, amount?, concentration?, upTo?, orTriggered? }
+ *                unit: instantaneous | round | minute | hour | day | untilDispelled | special
+ *                concentration: "Concentration, up to 1 minute"; upTo: "Up to 8 hours" without it
+ *
+ * A qualifier is present only when it says something: no `ritual: false`, no `material: ''`.
+ *
+ * The boundary is spellToRow. A spell on a CHARACTER is still free text — the sheet is a tracker,
+ * and a row the player can retype must hold whatever they type — so a pick formats the values
+ * into the same sentences the row has always carried, and nothing saved changes shape.
+ */
+
+/** The units each fact may use, with how the book writes each. A closed set per fact. */
+export const CASTING_UNITS = {
+  action: 'Action', bonusAction: 'Bonus Action', reaction: 'Reaction', minute: 'minute', hour: 'hour',
+};
+export const RANGE_UNITS = {
+  self: 'Self', touch: 'Touch', sight: 'Sight', unlimited: 'Unlimited', special: 'Special',
+  foot: 'foot', mile: 'mile',
+};
+export const DURATION_UNITS = {
+  instantaneous: 'Instantaneous', round: 'round', minute: 'minute', hour: 'hour', day: 'day',
+  untilDispelled: 'Until dispelled', special: 'Special',
+};
+/** The units that are measures, and so take an `amount`; every other unit is a word on its own. */
+export const MEASURED_UNITS = new Set(['minute', 'hour', 'round', 'day', 'foot', 'mile']);
+
+const PLURALS = { foot: 'feet' };
+
+/** "1 minute", "10 minutes", "5 feet", "1,000 feet" — the book's way with a quantity. */
+function measure(amount, unit) {
+  const n = Number(amount);
+  const word = n === 1 ? unit : (PLURALS[unit] ?? `${unit}s`);
+  return `${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} ${word}`;
+}
+
+function unitText(table, value) {
+  if (!value || !Object.hasOwn(table, value.unit)) return '';
+  return MEASURED_UNITS.has(value.unit) ? measure(value.amount, value.unit) : table[value.unit];
+}
+
+/** `{ unit: 'minute', amount: 1, ritual: true }` → "1 minute or Ritual". */
+export function formatCastingTime(time) {
+  let text = unitText(CASTING_UNITS, time);
+  if (!text) return '';
+  if (time.mode) text += ` (${time.mode})`;
+  if (time.trigger) text += `, which you take ${time.trigger}`;
+  if (time.alternative) text += ` or ${formatCastingTime(time.alternative)}`;
+  if (time.ritual) text += ' or Ritual';
+  return text;
+}
+
+/** `{ unit: 'foot', amount: 150 }` → "150 feet"; `{ unit: 'self' }` → "Self". */
+export function formatRange(range) {
+  return unitText(RANGE_UNITS, range);
+}
+
+/** `{ verbal: true, material: 'a bit of fleece' }` → "V, M (a bit of fleece)". */
+export function formatComponents(components) {
+  if (!components) return '';
+  return [
+    components.verbal && 'V',
+    components.somatic && 'S',
+    components.material && `M (${components.material})`,
+  ].filter(Boolean).join(', ');
+}
+
+/** `{ unit: 'minute', amount: 1, concentration: true }` → "Concentration, up to 1 minute". */
+export function formatDuration(duration) {
+  const text = unitText(DURATION_UNITS, duration);
+  if (!text) return '';
+  if (duration.concentration) return `Concentration, up to ${text}`;
+  if (duration.upTo) return `Up to ${text}`;
+  if (duration.orTriggered) return `${text} or triggered`;
+  return text;
+}
+
+/** The four header facts as the book prints them — what a pick writes and the picker shows. */
+export function spellStats(spell) {
+  return {
+    castingTime: formatCastingTime(spell?.castingTime),
+    range: formatRange(spell?.range),
+    components: formatComponents(spell?.components),
+    duration: formatDuration(spell?.duration),
+  };
+}
+
 /**
  * Fold the differences a player should not have to type: case, and the curly apostrophe the SRD
  * uses in "Otiluke's Resilient Sphere". A phone keyboard produces a straight one, so without
@@ -108,8 +209,8 @@ export function searchSpells(spells, options = {}) {
     if (wantSchools.size && !wantSchools.has(normalizeText(spell.school))) continue;
     if (wantClasses.size
       && !(spell.classes || []).some((c) => wantClasses.has(normalizeText(c)))) continue;
-    if (concentration !== null && Boolean(spell.concentration) !== concentration) continue;
-    if (ritual !== null && Boolean(spell.ritual) !== ritual) continue;
+    if (concentration !== null && Boolean(spell.duration?.concentration) !== concentration) continue;
+    if (ritual !== null && Boolean(spell.castingTime?.ritual) !== ritual) continue;
 
     const rank = query ? score(entry, query) : 1;
     if (rank === 0) continue;
@@ -143,19 +244,20 @@ export function searchSpells(spells, options = {}) {
  * knows a spell, not which feature handed it to this character.
  */
 export function spellToRow(spell) {
+  // The library's values become the book's sentences here, and only here: the row is free text
+  // the player owns from now on. Its circled C and R are read back off these sentences
+  // (rules.isConcentration, rules.isRitual), so formatting the values is all it takes to carry them.
+  const stats = spellStats(spell);
   return {
     name: String(spell?.name ?? ''),
     level: Number.isFinite(Number(spell?.level)) ? Number(spell.level) : 0,
     prepared: false,
     alwaysPrepared: false,
-    // Unlike the two ticks above this IS a fact about the spell, so it comes across. Every SRD
-    // ritual also says so in its casting time ("Action or Ritual"); the flag is what the row shows.
-    ritual: Boolean(spell?.ritual),
     school: String(spell?.school ?? ''),
-    castingTime: String(spell?.castingTime ?? ''),
-    range: String(spell?.range ?? ''),
-    duration: String(spell?.duration ?? ''),
-    components: String(spell?.components ?? ''),
+    castingTime: stats.castingTime,
+    range: stats.range,
+    duration: stats.duration,
+    components: stats.components,
     notes: String(spell?.text ?? ''),
   };
 }
@@ -172,8 +274,8 @@ export function spellSummary(spell) {
   const level = Number(spell?.level) === 0 ? 'Cantrip' : `Level ${Number(spell?.level)}`;
   const parts = [`${level} ${spell?.school ?? ''}`.trim()];
   if (spell?.classes?.length) parts.push(spell.classes.join(', '));
-  if (spell?.concentration) parts.push('Concentration');
-  if (spell?.ritual) parts.push('Ritual');
+  if (spell?.duration?.concentration) parts.push('Concentration');
+  if (spell?.castingTime?.ritual) parts.push('Ritual');
   if (spell?.source) parts.push(spell.source);
   return parts.join(' · ');
 }

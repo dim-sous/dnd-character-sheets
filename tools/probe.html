@@ -185,14 +185,20 @@ try {
     { name: 'Shield', level: 1, prepared: true, school: 'Abjuration', castingTime: '1 reaction', range: 'Self', duration: '1 round', components: 'V, S', notes: '' },
     { name: 'Magic Missile', level: 1, prepared: false, school: 'Evocation', castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
     /*
-     * A RITUAL, the only row that shows the word "ritual" on its line beside the casting-time tag
-     * — the widest that slot gets, so a long name, which is the pairing that crops. Unticked, so
-     * the prepared counts the tile seed below relies on are unchanged; it is measured in the
-     * "levels open" scene and in Edit.
+     * A RITUAL, showing the circled R on its line beside the casting-time tag (read off the
+     * casting time's "or Ritual" — there is no flag), and then one with the circled C as well — C, R and a tag is the widest that slot gets, so both carry long
+     * names, which is the pairing that crops. Each circle is an accent-coloured glyph, so a
+     * contrast pairing of its own. Unticked, so the prepared counts the tile seed below relies on
+     * are unchanged; they are measured in the "levels open" scene and in Edit.
      */
     {
-      name: 'Comprehend Languages', level: 1, prepared: false, ritual: true, school: 'Divination',
+      name: 'Comprehend Languages', level: 1, prepared: false, school: 'Divination',
       castingTime: 'Action or Ritual', range: 'Self', duration: '1 hour', components: 'V, S, M (a pinch of soot and salt)', notes: '',
+    },
+    {
+      name: 'Detect Poison and Disease', level: 1, prepared: false, school: 'Divination',
+      castingTime: 'Action or Ritual', range: 'Self', duration: 'Concentration, up to 10 minutes',
+      components: 'V, S, M (a yew leaf)', notes: '',
     },
     /*
      * ALWAYS prepared — a subclass, species, feat or item gave it. Two things only this row

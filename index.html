@@ -939,16 +939,27 @@
         <span class="visually-hidden">Always prepared</span>
       </span>
       <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
-      <!-- What you need to know before you cast, without opening the row: is it a ritual, and
-           what does it cost — an action, a bonus action, a reaction, or ten minutes. Both are
-           written by renderDerived (.is-ritual, and the tag's text from rules.castingTimeTag),
-           because both change with a field in the detail and neither may rebuild the section.
+      <!-- What you need to know before you cast, without opening the row: does it need
+           Concentration, is it a ritual, and what does it cost — an action, a bonus action, a
+           reaction, or ten minutes. All three are read off the spell's own text by renderDerived
+           (.is-concentration from the duration, .is-ritual and the tag from the casting time),
+           because each changes with a field in the detail and none may rebuild the section.
+           Nothing here is ticked: the spell says it, the way the SRD and the book write it.
 
-           "ritual" is a WORD, not a letter: R is the casting-time tag for a reaction, and the
-           book's own spell lists use R for ritual, so one letter could not say both. Hidden in
-           Edit, where the ✕ needs the room and the detail block holds the same two facts. -->
+           C and R are letters in a CIRCLE, in the accent colour, in the book's own order (the
+           2024 spell lists' C and R). The circle is what keeps a ritual's R apart from the bare
+           soft-ink R the casting-time tag uses for a reaction. The letter is for the eye; a
+           screen reader and a hover title get the word. Hidden in Edit, where the ✕ needs the
+           room and the detail block holds the same facts. -->
       <span class="row__meta">
-        <span class="row__ritual">ritual</span>
+        <span class="row__mark row__conc" title="Concentration">
+          <span aria-hidden="true">C</span>
+          <span class="visually-hidden">Concentration</span>
+        </span>
+        <span class="row__mark row__ritual" title="Ritual">
+          <span aria-hidden="true">R</span>
+          <span class="visually-hidden">Ritual</span>
+        </span>
         <span class="row__cast" hidden>
           <span class="row__castshort" aria-hidden="true"></span>
           <span class="row__castlong visually-hidden"></span>
@@ -972,11 +983,6 @@
       <label class="row__alwayspick">
         <input type="checkbox" data-bind-suffix="alwaysPrepared" data-type="checkbox">
         <span>Always prepared</span>
-      </label>
-      <!-- Edit-only: outside Edit the word "ritual" on the row's line already says it. -->
-      <label class="row__ritualpick">
-        <input type="checkbox" data-bind-suffix="ritual" data-type="checkbox">
-        <span>Ritual</span>
       </label>
       <!-- Casting time and Range hold words ("1 action", "120 ft") and pair on one line.
            Duration holds a phrase — "Concentration, up to 1 minute" — so `.row__wide` gives it

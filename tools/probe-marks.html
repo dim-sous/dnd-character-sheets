@@ -1,21 +1,30 @@
 <!doctype html>
 <!--
-  The row marks: a spell's casting time and ritual flag, and an inventory item's attunement.
+  The row marks: a spell's casting time, concentration and ritual, and an inventory item's
+  attunement.
 
-  tests.js covers the pure half — rules.castingTimeTag, the template backfills, the load-path rule
-  that reads `ritual` off "Action or Ritual" only when the key is absent, and spellToRow carrying
-  the flag across. This covers what only a browser can answer:
+  tests.js covers the pure half — rules.castingTimeTag, rules.isConcentration and rules.isRitual
+  (and that both agree with the library's own flags on every spell), the template backfills, the
+  load-path rule that retires the old `ritual` tick by writing it into the casting time, and
+  spellToRow storing no flag. This covers what only a browser can answer:
 
-    - the tag and the word actually REACH the spell row, from a seeded casting time and from a
-      pre-flag row with no `ritual` key at all — the load path every existing player takes;
+    - the tag, the circled C and the circled R actually REACH the spell row, all three read off
+      the spell's own text: from seeded fields, from a row saved before `ritual` or `school`
+      existed, and from rows saved WITH the old tick — a tick the casting time did not state is
+      written into it and keeps its R, an untick against "or Ritual" does not hide the R, and the
+      key is gone from storage after the next save. There is no Ritual tick, in play or in Edit;
+    - C and R are circles in the accent colour, in the book's order (C, R, then the tag), and the
+      casting-time R for a reaction is NOT a circle — the circle is the only thing telling a
+      ritual's R from a reaction's;
     - the tags form a column (one right edge), and an EMPTY slot costs the name nothing: the
       margin trick in style.css is the whole reason a spell with no casting time keeps its width;
-    - #154's promise survives the tag: "Otiluke's Irresistible Dance" still reads in full in
-      play mode at 390px, and every row is still one 44px line, the widest slot included;
-    - ticking Ritual and retyping a casting time are DERIVED changes — the word and the tag move
-      without rebuilding the section they happen in (#146), and both are stored;
-    - a stored `ritual: false` survives a reload against a casting time that still says
-      "Ritual" — the key-present half of the backfill rule, end to end;
+    - what a mark costs the name is exactly its own box and margin, and a long name ellipsizes
+      rather than pushing the marks off a one-44px line — the widest slot (C, R and a tag)
+      included. #154's 28-character name, a concentration spell, no longer reads in full at
+      390px; the probe prints by how much as a NOTE, rather than asserting a promise the C broke;
+    - retyping a duration or a casting time is a DERIVED change — the C, the R and the tag move
+      without rebuilding the section they happen in (#146), and only the text is stored; typing
+      "1 reaction or Ritual" shows BOTH Rs, the bare tag and the ring, side by side;
     - on the inventory, the attuned A shows only on attuned rows (with "Attuned" for a screen
       reader) and the quantities stay in ONE column whether a row carries the A or not, with no
       row wrapping — the fixed slot
@@ -42,7 +51,8 @@
 const out = document.getElementById('out');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
-const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+const notes = [];   // printed under the verdict, never counted (see the #154 note in the spells half)
+const ok =(name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
 // Equality form — see probe-spells.html for why a three-argument ok() is not an assertion.
 const is = (name, actual, expected) => {
   const pass = Object.is(actual, expected);
@@ -75,16 +85,28 @@ try {
   c.abilities.int = 16;
   c.spellcasting.ability = 'int';
   // Everything above cantrips is ticked, so it all shows in play mode's collapsed levels.
-  const identify = spell({ name: 'Identify', level: 1, castingTime: '1 minute or Ritual' });
-  delete identify.ritual;   // a spell saved before the flag existed — the load path must mark it
+  // Saved with the OLD tick unticked: the spell still says "or Ritual", and the spell wins.
+  const identify = { ...spell({ name: 'Identify', level: 1, castingTime: '1 minute or Ritual', duration: 'Instantaneous' }), ritual: false };
+  // Durations are the SRD's own, so the C lands exactly where it would on a picked spell.
   c.spellcasting.spells = [
-    spell({ name: 'Fire Bolt', level: 0, prepared: false, castingTime: 'Action' }),                     // 0
-    spell({ name: 'Shield', level: 1, castingTime: 'Reaction, which you take when you are hit by an attack roll' }), // 1
-    spell({ name: 'Healing Word', level: 1, castingTime: 'Bonus Action' }),                             // 2
-    spell({ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', ritual: true }),           // 3
+    spell({ name: 'Fire Bolt', level: 0, prepared: false, castingTime: 'Action', duration: 'Instantaneous' }), // 0
+    spell({ name: 'Shield', level: 1, castingTime: 'Reaction, which you take when you are hit by an attack roll', duration: '1 round' }), // 1
+    spell({ name: 'Healing Word', level: 1, castingTime: 'Bonus Action', duration: 'Instantaneous' }), // 2
+    // Saved with the OLD tick, on a casting time that already says so: the text is left alone.
+    { ...spell({ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', duration: 'Concentration, up to 10 minutes' }), ritual: true }, // 3
     identify,                                                                                           // 4
     spell({ name: 'Homebrew Hex', level: 1, castingTime: '' }),                                         // 5
-    spell({ name: 'Otiluke’s Irresistible Dance', level: 2, castingTime: 'Action' }),              // 6
+    spell({ name: 'Otiluke’s Irresistible Dance', level: 2, castingTime: 'Action', duration: 'Concentration, up to 1 minute' }), // 6
+    // A row exactly as a save from before `ritual` and `school` stored it — none of the newer keys
+    // at all. Both circles must come from the load path: R off the casting time, C off the
+    // duration. C AND R AND a tag is also the widest slot a spell row has.
+    { name: 'Detect Poison and Disease', level: 1, prepared: true, castingTime: 'Action or Ritual',
+      range: 'Self', duration: 'Concentration, up to 10 minutes', components: 'V, S, M (a yew leaf)', notes: '' }, // 7
+    // Hand-typed: the C is a whole word anywhere in the duration, not only the SRD's wording.
+    spell({ name: 'Bless', level: 1, castingTime: '1 action', duration: 'conc. 1 min' }),             // 8
+    // A homebrew ritual marked with the OLD tick on a casting time that never said it. The load
+    // path must write it into the text ("1 action or Ritual"), or the player's R silently vanishes.
+    { ...spell({ name: 'Hearthward', level: 1, castingTime: '1 action' }), ritual: true },           // 9
   ];
   c.inventory = [
     { item: 'Longsword', qty: 1, notes: '' },
@@ -119,28 +141,96 @@ try {
   const castOf = (row) => row.querySelector('.row__cast');
   const tagOf = (row) => (castOf(row).hidden ? '' : row.querySelector('.row__castshort').textContent);
   const ritualShown = (row) => row.querySelector('.row__ritual').checkVisibility();
+  const concShown = (row) => row.querySelector('.row__conc').checkVisibility();
   const rect = (el) => el.getBoundingClientRect();
+  const ALL = ['Fire Bolt', 'Shield', 'Healing Word', 'Detect Magic', 'Identify', 'Homebrew Hex',
+    'Otiluke’s Irresistible Dance', 'Detect Poison and Disease', 'Bless', 'Hearthward'];
+  const timeOf = (n) => rowNamed(n).querySelector('[data-bind$=".castingTime"]').value;
 
   d.getElementById('tab-spells').click();
   await wait(300);
 
   eq('the casting-time tags reach the rows',
-    ['Fire Bolt', 'Shield', 'Healing Word', 'Detect Magic', 'Identify', 'Otiluke’s Irresistible Dance'].map((n) => tagOf(rowNamed(n))),
-    ['A', 'R', 'BA', 'A', '1 min', 'A']);
+    ['Fire Bolt', 'Shield', 'Healing Word', 'Detect Magic', 'Identify', 'Otiluke’s Irresistible Dance', 'Detect Poison and Disease', 'Bless'].map((n) => tagOf(rowNamed(n))),
+    ['A', 'R', 'BA', 'A', '1 min', 'A', 'A', 'A']);
   is('a screen reader hears the long form, not "R"', rowNamed('Shield').querySelector('.row__castlong').textContent, 'Reaction');
   is('...and the abbreviation is hidden from it', rowNamed('Shield').querySelector('.row__castshort').getAttribute('aria-hidden'), 'true');
   is('...and a hover title says it too', castOf(rowNamed('Healing Word')).title, 'Bonus action');
   ok('no casting time, no tag', castOf(rowNamed('Homebrew Hex')).hidden && !castOf(rowNamed('Homebrew Hex')).checkVisibility());
 
-  ok('a flagged ritual shows the word', ritualShown(rowNamed('Detect Magic')));
-  ok('a spell saved before the flag existed is marked from its casting time', ritualShown(rowNamed('Identify')));
-  ok('a non-ritual does not', !ritualShown(rowNamed('Shield')) && !ritualShown(rowNamed('Homebrew Hex')));
+  eq('the circled R shows exactly where the casting time says Ritual', ALL.map((n) => ritualShown(rowNamed(n))),
+    [false, false, false, true, true, false, false, true, false, true]);
+  ok('there is no Ritual tick on any row, and nothing binds a ritual flag',
+    !d.querySelector('.row__ritualpick') && !d.querySelector('[data-bind$=".ritual"]'));
+  is('an old tick the casting time did not state is written into it', timeOf('Hearthward'), '1 action or Ritual');
+  ok('...so its R survives', ritualShown(rowNamed('Hearthward')));
+  is('an old tick the casting time already stated leaves the text alone', timeOf('Detect Magic'), 'Action or Ritual');
+  ok('an old UNtick against "or Ritual" does not hide the R — the spell says it', ritualShown(rowNamed('Identify')));
+  // The C is read off the duration on every render, so there is nothing to migrate: the row saved
+  // before ANY of the newer keys gets it the same as a freshly picked spell.
+  eq('the circled C shows exactly where the duration says Concentration', ALL.map((n) => concShown(rowNamed(n))),
+    [false, false, false, true, false, false, true, true, true, false]);
+  ok('a row saved before the newer keys existed shows both circles from the load path',
+    concShown(rowNamed('Detect Poison and Disease')) && ritualShown(rowNamed('Detect Poison and Disease')));
+  ok('...and nothing about the C is stored', !('concentration' in stored().spellcasting.spells[7]),
+    JSON.stringify(Object.keys(stored().spellcasting.spells[7])));
+
+  // What each circle says, and to whom.
+  for (const [cls, word] of [['.row__conc', 'Concentration'], ['.row__ritual', 'Ritual']]) {
+    const mark = rowNamed('Detect Magic').querySelector(cls);
+    is(`${word}: the eye reads one capital`, mark.querySelector('[aria-hidden="true"]').textContent, word[0]);
+    is(`${word}: a screen reader hears the word`, mark.querySelector('.visually-hidden').textContent, word);
+    is(`${word}: so does a hover title`, mark.title, word);
+    const cs = getComputedStyle(mark);
+    ok(`${word}: drawn as a circle`, cs.borderRadius === '50%' && Math.abs(rect(mark).width - rect(mark).height) < 0.5
+      && cs.borderTopStyle === 'solid' && parseFloat(cs.borderTopWidth) > 0,
+      `${rect(mark).width.toFixed(1)}x${rect(mark).height.toFixed(1)} radius ${cs.borderRadius}`);
+    is(`${word}: the ring is the letter's own colour`, cs.borderTopColor, cs.color);
+    // Centred on the INK. Box-centring alone is always "centred" and left the capital ~1.1px high
+    // (the line box keeps descender room a capital never uses), so the check is that the letter's
+    // box has been trimmed to its cap height — shorter than its own font size, which an untrimmed
+    // line-height:1 box never is — AND that the trimmed box sits in the middle of the ring.
+    const letter = mark.querySelector('[aria-hidden="true"]');
+    const lb = rect(letter), mb = rect(mark);
+    const fontPx = parseFloat(getComputedStyle(letter).fontSize);
+    ok(`${word}: the letter's box is trimmed to its cap height`, lb.height < fontPx * 0.85,
+      `${lb.height.toFixed(2)}px tall at ${fontPx}px`);
+    ok(`${word}: ...and centred in the ring`,
+      Math.abs((lb.top + lb.bottom) / 2 - (mb.top + mb.bottom) / 2) < 0.5
+        && Math.abs((lb.left + lb.right) / 2 - (mb.left + mb.right) / 2) < 0.5,
+      `dy ${((lb.top + lb.bottom) / 2 - (mb.top + mb.bottom) / 2).toFixed(2)} dx ${((lb.left + lb.right) / 2 - (mb.left + mb.right) / 2).toFixed(2)}`);
+    // The ring rides up to the tag's centre (style.css); the rule must survive a comment edit.
+    ok(`${word}: the ring is lifted onto the tag's centre line`, cs.translate !== 'none' && cs.translate !== '',
+      `translate ${cs.translate}`);
+  }
+  // "The app's colour theme": the accent token, resolved the same way the marks resolve it, so the
+  // check follows the theme the run is in rather than pinning a hex.
+  {
+    const probe = d.createElement('span');
+    probe.style.color = 'var(--accent)';
+    d.body.append(probe);
+    const accent = getComputedStyle(probe).color;
+    probe.remove();
+    eq('both circles are in the accent colour',
+      ['.row__conc', '.row__ritual'].map((cls) => getComputedStyle(rowNamed('Detect Magic').querySelector(cls)).color),
+      [accent, accent]);
+  }
+  ok('the casting-time R for a reaction is NOT a circle — that is the whole difference',
+    getComputedStyle(castOf(rowNamed('Shield'))).borderTopStyle === 'none'
+      && getComputedStyle(castOf(rowNamed('Shield'))).color !== getComputedStyle(rowNamed('Detect Magic').querySelector('.row__ritual')).color);
+  {
+    const row = rowNamed('Detect Poison and Disease');
+    const xs = [row.querySelector('.row__conc'), row.querySelector('.row__ritual'), castOf(row)].map((el) => rect(el).left);
+    ok('the book\'s order: C, then R, then the casting time', xs[0] < xs[1] && xs[1] < xs[2], JSON.stringify(xs.map(Math.round)));
+  }
 
   const visibleSpells = () => [...d.querySelectorAll('#spells .row--spell')].filter((r) => r.checkVisibility());
   const rights = visibleSpells().map((r) => castOf(r)).filter((el) => el.checkVisibility()).map((el) => Math.round(rect(el).right));
-  ok('the tags share one right edge, so they read as a column', rights.length >= 6 && new Set(rights).size === 1, JSON.stringify(rights));
+  ok('the tags share one right edge, so they read as a column', rights.length >= 8 && new Set(rights).size === 1, JSON.stringify(rights));
   const heights = visibleSpells().map((r) => r.querySelector('.row__primary').offsetHeight);
-  ok('every spell is still one 44px line, the widest slot included', heights.every((h) => h === 44), JSON.stringify(heights));
+  ok('every spell is still one 44px line, the widest slot included', heights.length >= 9 && heights.every((h) => h === 44), JSON.stringify(heights));
+  ok('no line runs past its own row, however wide its slot',
+    visibleSpells().every((r) => rect(r.querySelector('.row__primary')).right <= rect(r).right + 0.5));
 
   // The empty slot: the name must get every pixel the tick, the caret and the two gaps leave.
   {
@@ -154,19 +244,29 @@ try {
     ok('an empty slot costs the name nothing', Math.abs(rect(name).width - expected) < 1,
       `name ${rect(name).width.toFixed(1)} of ${expected.toFixed(1)}`);
   }
+  // What a circle costs the name: exactly its own box plus its margin, and nothing more. Measured
+  // between two rows whose slots differ by the C alone (Fire Bolt's A, Bless's C + A), so the
+  // comparison is the mark and not a guess at the font.
+  const nameOf = (n) => rowNamed(n).querySelector('[data-bind$=".name"]');
   {
-    const name = rowNamed('Otiluke’s Irresistible Dance').querySelector('[data-bind$=".name"]');
-    ok('#154 holds: a 28-character name reads in full in play mode beside its tag',
-      name.scrollWidth <= name.clientWidth, `needs ${name.scrollWidth} in ${name.clientWidth}`);
+    const c = rowNamed('Bless').querySelector('.row__conc');
+    const cost = rect(c).width + parseFloat(getComputedStyle(c).marginLeft);
+    const lost = rect(nameOf('Fire Bolt')).width - rect(nameOf('Bless')).width;
+    ok('a circle costs the name exactly its own box and margin', Math.abs(lost - cost) < 1,
+      `lost ${lost.toFixed(1)}, circle + margin ${cost.toFixed(1)}`);
   }
-
-  // Play mode never shows the Ritual tick — the word is the answer there.
-  rowNamed('Detect Magic').querySelector('.row__expand').click();
-  await wait(200);
-  ok('play mode shows no Ritual tick, even on a ritual\'s open details',
-    rowNamed('Detect Magic').classList.contains('is-expanded')
-      && !rowNamed('Detect Magic').querySelector('.row__ritualpick').checkVisibility());
-  rowNamed('Detect Magic').querySelector('.row__expand').click();
+  {
+    // #154's 28-character fixture is a concentration spell, and at 390px the C is what it can no
+    // longer afford: it ellipsizes by about two letters in play mode. Recorded, not asserted —
+    // that is the trade the owner asked for, and an assertion that the name fits would be false.
+    // What IS asserted is that it gives way by ellipsis and not by wrapping (the heights above).
+    const name = nameOf('Otiluke’s Irresistible Dance');
+    notes.push(`NOTE  "Otiluke's Irresistible Dance" (C + A) needs ${name.scrollWidth} in ${name.clientWidth} at ${frame.clientWidth}px`);
+    const dp = nameOf('Detect Poison and Disease');
+    notes.push(`NOTE  "Detect Poison and Disease" (C + R + A) needs ${dp.scrollWidth} in ${dp.clientWidth}`);
+    ok('a cropped name ellipsizes rather than clipping mid-letter',
+      getComputedStyle(name).textOverflow === 'ellipsis', getComputedStyle(name).textOverflow);
+  }
 
   /* ------------------------------------------------------------------ spells, Edit */
 
@@ -174,23 +274,16 @@ try {
   await wait(400);
   d.querySelector('#spells .spelllevel[data-level="1"] .spelllevel__summary').click();
   await wait(200);
-  ok('Edit hides the slot, where the ✕ needs the room',
+  ok('Edit hides the slot, circles and all, where the ✕ needs the room',
     !rowNamed('Detect Magic').querySelector('.row__meta').checkVisibility()
+      && !rowNamed('Detect Magic').querySelector('.row__conc').checkVisibility()
+      && !rowNamed('Detect Magic').querySelector('.row__ritual').checkVisibility()
       && !rowNamed('Shield').querySelector('.row__meta').checkVisibility());
 
-  rowNamed('Shield').querySelector('.row__expand').click();
+  rowNamed('Detect Magic').querySelector('.row__expand').click();
   await wait(200);
-  const pick = () => rowNamed('Shield').querySelector('.row__ritualpick');
-  const box = () => pick().querySelector('input');
-  ok('Edit offers the Ritual tick', pick().checkVisibility());
-  ok('...unlocked', box().disabled === false);
-  ok('...on a 44px target', rect(pick()).height >= 44, `${Math.round(rect(pick()).width)}x${Math.round(rect(pick()).height)}`);
-  const shieldNode = rowNamed('Shield');
-  box().click();
-  await wait(600);   // past the 400ms storage debounce
-  is('ticking it stores the flag', stored().spellcasting.spells[1].ritual, true);
-  ok('...without rebuilding the section it was ticked in (a derived change, #146)',
-    rowNamed('Shield') === shieldNode && shieldNode.classList.contains('is-expanded'));
+  ok('Edit offers no Ritual tick either, even on a ritual\'s open details',
+    rowNamed('Detect Magic').classList.contains('is-expanded') && !d.querySelector('.row__ritualpick'));
 
   // Retype a casting time: the tag follows on the same pass.
   const hwNode = rowNamed('Healing Word');
@@ -204,26 +297,66 @@ try {
   is('retyping the casting time stores it', stored().spellcasting.spells[2].castingTime, '1 reaction');
   is('...and the tag follows as you type', tagOf(hwNode), 'R');
   ok('...without rebuilding the row', rowNamed('Healing Word') === hwNode);
+  ok('a reaction\'s R is the bare tag, with no ring beside it', !hwNode.classList.contains('is-ritual'));
 
-  // Untick the backfilled one: a stored false must outlive "or Ritual" in its casting time.
-  rowNamed('Identify').querySelector('.row__expand').click();
-  await wait(200);
-  rowNamed('Identify').querySelector('.row__ritualpick input').click();
+  // Make it a ritual by saying so in the casting time — the only way there is now.
+  hwTime.focus();
+  d.execCommand('selectAll');
+  d.execCommand('insertText', false, '1 reaction or Ritual');
   await wait(600);
-  is('unticking a backfilled ritual stores false', stored().spellcasting.spells[4].ritual, false);
+  ok('typing "or Ritual" puts the circled R on the row', hwNode.classList.contains('is-ritual'));
+  is('...beside the bare R the tag still reads', tagOf(hwNode), 'R');
+  ok('...without rebuilding it', rowNamed('Healing Word') === hwNode && hwNode.classList.contains('is-expanded'));
+  is('...storing the text and nothing else', stored().spellcasting.spells[2].castingTime, '1 reaction or Ritual');
+  // And take it back out of one that said so.
+  const dmNode = rowNamed('Detect Magic');
+  const dmTime = dmNode.querySelector('[data-bind$=".castingTime"]');
+  dmTime.focus();
+  d.execCommand('selectAll');
+  d.execCommand('insertText', false, 'Action');
+  await wait(600);
+  ok('taking "Ritual" out of a casting time takes the R off', !dmNode.classList.contains('is-ritual') && rowNamed('Detect Magic') === dmNode);
+
+  // Retype a duration both ways: the C comes and goes on the same pass, and only the text is stored.
+  const hwDur = hwNode.querySelector('[data-bind$=".duration"]');
+  hwDur.focus();
+  d.execCommand('selectAll');
+  d.execCommand('insertText', false, 'Concentration, up to 1 minute');
+  await wait(600);
+  ok('typing "Concentration" into a duration puts the C on the row', hwNode.classList.contains('is-concentration'));
+  ok('...without rebuilding it', rowNamed('Healing Word') === hwNode && hwNode.classList.contains('is-expanded'));
+  is('...storing the text and nothing else', stored().spellcasting.spells[2].duration, 'Concentration, up to 1 minute');
+  ok('...no concentration key', !('concentration' in stored().spellcasting.spells[2]));
+  const blessNode = rowNamed('Bless');
+  blessNode.querySelector('.row__expand').click();
+  await wait(200);
+  const blessDur = blessNode.querySelector('[data-bind$=".duration"]');
+  blessDur.focus();
+  d.execCommand('selectAll');
+  d.execCommand('insertText', false, '1 minute');
+  await wait(600);
+  ok('taking it out takes the C off', !blessNode.classList.contains('is-concentration') && rowNamed('Bless') === blessNode);
 
   editBtn().click();
   await wait(400);
-  ok('back in play, a newly ticked ritual shows the word', ritualShown(rowNamed('Shield')));
-  ok('...and an unticked one does not', !ritualShown(rowNamed('Identify')));
+  ok('back in play, a casting time retyped to say Ritual shows the circled R', ritualShown(rowNamed('Healing Word')));
+  ok('...and one with it taken out does not', !ritualShown(rowNamed('Detect Magic')));
+  ok('...a retyped duration shows its C', concShown(rowNamed('Healing Word')));
+  ok('...and one with it taken out does not', !concShown(rowNamed('Bless')));
 
   await load('../index.html?reload=1');
   d = frame.contentDocument;
   d.getElementById('tab-spells').click();
   await wait(300);
-  ok('after a reload, the stored false wins over a casting time that still says "Ritual"',
-    !ritualShown(rowNamed('Identify')) && stored().spellcasting.spells[4].castingTime === '1 minute or Ritual');
-  ok('...and the stored true is still true', ritualShown(rowNamed('Shield')));
+  ok('after a reload, every R is still read off its casting time',
+    ritualShown(rowNamed('Healing Word')) && !ritualShown(rowNamed('Detect Magic'))
+      && ritualShown(rowNamed('Identify')) && ritualShown(rowNamed('Hearthward')));
+  is('...the migrated casting time was saved, so the R no longer depends on the old key',
+    stored().spellcasting.spells[9].castingTime, '1 action or Ritual');
+  eq('...and no row in storage carries a ritual key any more',
+    stored().spellcasting.spells.filter((sp) => 'ritual' in sp).map((sp) => sp.name), []);
+  ok('...and every C is still read off its duration',
+    concShown(rowNamed('Healing Word')) && concShown(rowNamed('Detect Poison and Disease')) && !concShown(rowNamed('Bless')));
 
   /* ------------------------------------------------------------------ inventory */
 
@@ -283,9 +416,8 @@ try {
     .filter((rule) => rule.media && [...rule.media].includes('print'))
     .flatMap((rule) => [...rule.cssRules]);
   const findRule = (part) => printRules.find((rule) => rule.selectorText && rule.selectorText.includes(part));
-  const hideTicks = findRule('.row__ritualpick');
-  ok('a print rule hides both ticks', Boolean(hideTicks) && hideTicks.selectorText.includes('.row__attunepick'),
-    `${printRules.length} print rules parsed`);
+  const hideTicks = findRule('.row__attunepick');
+  ok('a print rule hides the Attuned tick', Boolean(hideTicks), `${printRules.length} print rules parsed`);
   is('...as display:none !important', hideTicks && `${hideTicks.style.display} ${hideTicks.style.getPropertyPriority('display')}`, 'none important');
   ok('a print rule keeps the spell marks from a card left in Edit', Boolean(findRule('.is-editing .row__meta')));
   ok('...and the attuned A', Boolean(findRule('.is-editing .row--inventory.is-attuned .row__attuned')));
@@ -294,7 +426,7 @@ try {
     d.documentElement.scrollWidth <= 390, `scrollWidth ${d.documentElement.scrollWidth}`);
 
   const failed = results.filter((r) => r.startsWith('FAIL')).length;
-  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n${notes.join('\n')}\n\n${results.join('\n')}`;
 } catch (err) {
   out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
 }
