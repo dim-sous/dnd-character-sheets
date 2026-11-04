@@ -783,6 +783,13 @@ is('attacks non-array → []', normalizeCharacter({ attacks: {} }).attacks, []);
 }
 is('inventory qty coercion', normalizeCharacter({ inventory: [{ item: 'Rope', qty: '3' }] }).inventory[0].qty, 3);
 is('inventory qty garbage → template 1', normalizeCharacter({ inventory: [{ item: 'Rope', qty: 'x' }] }).inventory[0].qty, 1);
+is('inventory row template', ROW_TEMPLATES.inventory(), { item: '', qty: 1, attuned: false, notes: '' });
+// Every item saved before the flag existed loads unattuned — the template's free ride, no bump.
+is('a pre-attunement item backfills attuned: false',
+  normalizeCharacter({ inventory: [{ item: 'Cloak of Protection', qty: 1 }] }).inventory[0].attuned, false);
+is('attuned survives a round trip',
+  normalizeCharacter({ inventory: [{ item: 'Cloak of Protection', attuned: true }] }).inventory[0].attuned, true);
+is('attuned → boolean', normalizeCharacter({ inventory: [{ attuned: 1 }] }).inventory[0].attuned, true);
 is('spell prepared → boolean', normalizeCharacter({ spellcasting: { spells: [{ name: 'X', prepared: 1 }] } }).spellcasting.spells[0].prepared, true);
 // A missing boolean takes its TEMPLATE default, not a blanket false (#84) — here that default
 // is false, so this pins the unchanged half of that rule alongside `proficient`'s true above.
@@ -1956,7 +1963,7 @@ describe('spell list (#141)');
   // everything new is free text — the app does not know that V/S/M is a closed set.
   is('blank character starts with no spells', blankCharacter().spellcasting.spells, []);
   is('row template', ROW_TEMPLATES.spells(), {
-    name: '', level: 0, prepared: false, alwaysPrepared: false,
+    name: '', level: 0, prepared: false, alwaysPrepared: false, ritual: false,
     school: '', castingTime: '', range: '', duration: '', components: '', notes: '',
   });
 
@@ -1974,7 +1981,7 @@ describe('spell list (#141)');
     ROW_TEMPLATES.spells());
   is('unknown row keys are dropped',
     Object.keys(normalizeCharacter({ spellcasting: { spells: [{ name: 'X', classes: ['Wizard'] }] } }).spellcasting.spells[0]),
-    ['name', 'level', 'prepared', 'alwaysPrepared', 'school', 'castingTime', 'range', 'duration', 'components', 'notes']);
+    ['name', 'level', 'prepared', 'alwaysPrepared', 'ritual', 'school', 'castingTime', 'range', 'duration', 'components', 'notes']);
   // A spell saved before the row had a school comes back blank, not missing: the detail field
   // binds to it, and nothing guesses one from the name.
   is('a spell saved before `school` existed backfills it blank',
@@ -2187,6 +2194,66 @@ describe('always-prepared spells and the prepare limit');
   }
 }
 
+describe('rituals and casting times on the spell row');
+{
+  const load = (spells) => normalizeCharacter({ spellcasting: { spells } }).spellcasting.spells;
+
+  // The backfill: a spell saved before `ritual` existed is read off its casting time, which is
+  // how the SRD (and so every spell the picker ever added) writes it. Only when the key is ABSENT.
+  is('a pre-flag "Action or Ritual" spell loads as a ritual',
+    load([{ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual' }])[0].ritual, true);
+  is('...and so does "1 minute or Ritual"',
+    load([{ name: 'Alarm', level: 1, castingTime: '1 minute or Ritual' }])[0].ritual, true);
+  is('...and a hand-typed "1 action (ritual)"',
+    load([{ name: 'Alarm', level: 1, castingTime: '1 action (ritual)' }])[0].ritual, true);
+  is('a pre-flag spell that does not say so is not one',
+    load([{ name: 'Shield', level: 1, castingTime: 'Reaction' }])[0].ritual, false);
+  is('a pre-flag spell with no casting time is not one', load([{ name: 'Shield', level: 1 }])[0].ritual, false);
+  is('"spiritual" is not "ritual"',
+    load([{ name: 'X', level: 2, castingTime: 'Bonus action (spiritual)' }])[0].ritual, false);
+  // Once the key exists it is the player's answer, and the text no longer gets a say.
+  is('a stored false is kept, whatever the casting time says',
+    load([{ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', ritual: false }])[0].ritual, false);
+  is('a stored true is kept with no casting time at all',
+    load([{ name: 'Homebrew', level: 1, castingTime: '', ritual: true }])[0].ritual, true);
+  is('a garbage row is still a template row', load(['nope'])[0], ROW_TEMPLATES.spells());
+  is('the other fields are untouched by the backfill',
+    load([{ name: 'Detect Magic', level: 1, prepared: true, castingTime: 'Action or Ritual' }])[0],
+    { ...ROW_TEMPLATES.spells(), name: 'Detect Magic', level: 1, prepared: true, ritual: true, castingTime: 'Action or Ritual' });
+
+  // castingTimeTag: what the row shows. The SRD's own wordings first, then hand-typed ones.
+  const tag = (text) => rules.castingTimeTag(text)?.short ?? null;
+  is('Action → A', tag('Action'), 'A');
+  is('Bonus Action → BA', tag('Bonus Action'), 'BA');
+  is('Reaction → R', tag('Reaction'), 'R');
+  is('a ritual is tagged by its casting time, not by "Ritual"', tag('Action or Ritual'), 'A');
+  is('1 minute or Ritual → 1 min', tag('1 minute or Ritual'), '1 min');
+  is('10 minutes → 10 min', tag('10 minutes'), '10 min');
+  is('1 hour → 1 hr', tag('1 hour'), '1 hr');
+  is('24 hours → 24 hr', tag('24 hours'), '24 hr');
+  // Riders come after a comma, and they can name a different kind of action.
+  is('a reaction with a rider is still R',
+    tag('Reaction, which you take when you see a creature within 60 feet of yourself casting a spell'), 'R');
+  is('a bonus action with a rider is still BA',
+    tag('Bonus Action, which you take immediately after hitting a target with a Melee weapon'), 'BA');
+  is('a rider that names an action does not change it',
+    tag('Reaction, which you take when a creature takes the Attack action'), 'R');
+  is('alternatives in parentheses read the first', tag('Action (Overgrowth) or 8 hours (Enrichment)'), 'A');
+  is('hand-typed "1 action"', tag('1 action'), 'A');
+  is('hand-typed "1 bonus action" is BA, not A', tag('1 bonus action'), 'BA');
+  is('hand-typed "1 reaction"', tag('1 reaction'), 'R');
+  is('hand-typed "10 min"', tag('10 min'), '10 min');
+  is('case does not matter', tag('BONUS ACTION'), 'BA');
+  is('empty → nothing', tag(''), null);
+  is('undefined → nothing', tag(undefined), null);
+  is('unrecognised text → nothing, not a guess', tag('Special'), null);
+  is('a bare "Ritual" → nothing', tag('Ritual'), null);
+  // The long form is for a screen reader and a hover title.
+  is('long forms', ['Action', 'Bonus Action', 'Reaction', '1 minute', '10 minutes', '1 hour', '8 hours']
+    .map((t) => rules.castingTimeTag(t).long),
+  ['Action', 'Bonus action', 'Reaction', '1 minute', '10 minutes', '1 hour', '8 hours']);
+}
+
 /* ------------------------------------------------- the spell library (#149) */
 
 {
@@ -2257,6 +2324,12 @@ describe('always-prepared spells and the prepare limit');
   // Adding a spell is not preparing it. The tick is the one thing on this card a player touches
   // every long rest, and pre-ticking it would claim they had already made that call.
   is('it is not prepared', row.prepared, false);
+  // Being a ritual, unlike being prepared, is a fact about the spell, so it comes across.
+  is('a ritual arrives flagged', spellToRow(lib[3]).ritual, true);
+  is('a non-ritual arrives unflagged', row.ritual, false);
+  is('the flag survives the load path as stored',
+    normalizeCharacter({ spellcasting: { spells: [spellToRow(lib[3]), row] } }).spellcasting.spells.map((s) => s.ritual),
+    [true, false]);
   is('a cantrip keeps level 0', spellToRow(lib[0]).level, 0);
   is('garbage in still produces a valid row', Object.keys(spellToRow(undefined)).sort(),
     Object.keys(ROW_TEMPLATES.spells()).sort());

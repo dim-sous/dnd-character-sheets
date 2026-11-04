@@ -1,0 +1,294 @@
+<!doctype html>
+<!--
+  The row marks: a spell's casting time and ritual flag, and an inventory item's attunement.
+
+  tests.js covers the pure half — rules.castingTimeTag, the template backfills, the load-path rule
+  that reads `ritual` off "Action or Ritual" only when the key is absent, and spellToRow carrying
+  the flag across. This covers what only a browser can answer:
+
+    - the tag and the word actually REACH the spell row, from a seeded casting time and from a
+      pre-flag row with no `ritual` key at all — the load path every existing player takes;
+    - the tags form a column (one right edge), and an EMPTY slot costs the name nothing: the
+      margin trick in style.css is the whole reason a spell with no casting time keeps its width;
+    - #154's promise survives the tag: "Otiluke's Irresistible Dance" still reads in full in
+      play mode at 390px, and every row is still one 44px line, the widest slot included;
+    - ticking Ritual and retyping a casting time are DERIVED changes — the word and the tag move
+      without rebuilding the section they happen in (#146), and both are stored;
+    - a stored `ritual: false` survives a reload against a casting time that still says
+      "Ritual" — the key-present half of the backfill rule, end to end;
+    - on the inventory, the attuned word shows only on attuned rows and the quantities stay in
+      ONE column whether a row carries the word or not, with no row wrapping — the fixed slot
+      and the item's matching give-back are exactly the knife edge #137 measured. A long item
+      name used to push its whole line past the row and the quantity 22px out of the column,
+      attuned or not; this probe is what found it;
+    - in Edit the word goes and an "Attuned" tick takes the note's line rather than adding one;
+    - the print rules that hide both ticks and keep both marks are PARSED (the unbalanced-
+      comment trap in CLAUDE.md).
+
+  Run it like the others; it prints ALL PASS or the failures. It reseeds localStorage,
+  including the layout keys, so it never inherits another run's arrangement.
+-->
+<meta charset="utf-8">
+<title>row marks probe</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, monospace; margin: 0; }
+  #frame { width: 390px; height: 844px; border: 0; position: absolute; left: -9999px; }
+  #out { white-space: pre-wrap; padding: 8px; }
+</style>
+<pre id="out">pending</pre>
+<iframe id="frame" src="about:blank"></iframe>
+<script type="module">
+const out = document.getElementById('out');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const ok = (name, cond, detail = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? `   ${detail}` : ''}`);
+// Equality form — see probe-spells.html for why a three-argument ok() is not an assertion.
+const is = (name, actual, expected) => {
+  const pass = Object.is(actual, expected);
+  results.push(`${pass ? 'PASS' : 'FAIL'}  ${name}   got ${JSON.stringify(actual)}${pass ? '' : ` — expected ${JSON.stringify(expected)}`}`);
+};
+const eq = (name, actual, expected) => {
+  const pass = JSON.stringify(actual) === JSON.stringify(expected);
+  results.push(`${pass ? 'PASS' : 'FAIL'}  ${name}   got ${JSON.stringify(actual)}${pass ? '' : ` — expected ${JSON.stringify(expected)}`}`);
+};
+
+try {
+  // Hold virtual time across the non-timer teardown (CLAUDE.md, the virtual-time trap).
+  let spin = 0;
+  const hold = setInterval(() => { for (let i = 0; i < 5e5; i++) spin = (spin * 31 + i) | 0; }, 10);
+  if (navigator.serviceWorker) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if (window.caches) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+  clearInterval(hold);
+
+  const { STORAGE_KEY, SCHEMA_VERSION, blankCharacter, ROW_TEMPLATES } = await import('../js/constants.js');
+  const spell = (over) => ({ ...ROW_TEMPLATES.spells(), prepared: true, ...over });
+
+  const c = blankCharacter();
+  c.name = 'Probe'; c.class = 'Wizard'; c.level = 5;
+  c.abilities.int = 16;
+  c.spellcasting.ability = 'int';
+  // Everything above cantrips is ticked, so it all shows in play mode's collapsed levels.
+  const identify = spell({ name: 'Identify', level: 1, castingTime: '1 minute or Ritual' });
+  delete identify.ritual;   // a spell saved before the flag existed — the load path must mark it
+  c.spellcasting.spells = [
+    spell({ name: 'Fire Bolt', level: 0, prepared: false, castingTime: 'Action' }),                     // 0
+    spell({ name: 'Shield', level: 1, castingTime: 'Reaction, which you take when you are hit by an attack roll' }), // 1
+    spell({ name: 'Healing Word', level: 1, castingTime: 'Bonus Action' }),                             // 2
+    spell({ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', ritual: true }),           // 3
+    identify,                                                                                           // 4
+    spell({ name: 'Homebrew Hex', level: 1, castingTime: '' }),                                         // 5
+    spell({ name: 'Otiluke’s Irresistible Dance', level: 2, castingTime: 'Action' }),              // 6
+  ];
+  c.inventory = [
+    { item: 'Longsword', qty: 1, notes: '' },
+    { item: 'Cloak of Protection', qty: 1, attuned: true, notes: '' },
+    { item: 'Ring of Spell Storing (Shield and Misty Step)', qty: 1, attuned: true, notes: 'Holds up to five levels.' },
+    { item: 'Potion of Healing', qty: 3, notes: '2d4+2' },
+    // Long and NOT attuned: on main this pushed its line 22px past the row (fixed with this probe),
+    // so the column check would pass on the attuned rows and still be false for this one.
+    { item: 'Bag of Holding (rope, rations, torches and a crowbar)', qty: 1, notes: '' },
+  ];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    version: SCHEMA_VERSION, schemaVersion: SCHEMA_VERSION, activeId: c.id, characters: [c],
+  }));
+  localStorage.removeItem('dnd-character-sheets:layout');
+  localStorage.removeItem('dnd-character-sheets:layout-default');
+
+  const frame = document.getElementById('frame');
+  const load = async (src) => {
+    await new Promise((res) => { frame.onload = res; frame.src = src; });
+    await wait(1200);
+  };
+  await load('../index.html');
+  let d = frame.contentDocument;
+  const stored = () => JSON.parse(localStorage.getItem(STORAGE_KEY)).characters[0];
+
+  /* ------------------------------------------------------------------ spells, play mode */
+
+  const card = () => d.getElementById('card-spells');
+  const editBtn = () => card().querySelector('[data-action="toggle-card-edit"]');
+  const rowNamed = (name) => [...d.querySelectorAll('#spells .row--spell')]
+    .find((r) => r.querySelector('[data-bind$=".name"]').value === name);
+  const castOf = (row) => row.querySelector('.row__cast');
+  const tagOf = (row) => (castOf(row).hidden ? '' : row.querySelector('.row__castshort').textContent);
+  const ritualShown = (row) => row.querySelector('.row__ritual').checkVisibility();
+  const rect = (el) => el.getBoundingClientRect();
+
+  d.getElementById('tab-spells').click();
+  await wait(300);
+
+  eq('the casting-time tags reach the rows',
+    ['Fire Bolt', 'Shield', 'Healing Word', 'Detect Magic', 'Identify', 'Otiluke’s Irresistible Dance'].map((n) => tagOf(rowNamed(n))),
+    ['A', 'R', 'BA', 'A', '1 min', 'A']);
+  is('a screen reader hears the long form, not "R"', rowNamed('Shield').querySelector('.row__castlong').textContent, 'Reaction');
+  is('...and the abbreviation is hidden from it', rowNamed('Shield').querySelector('.row__castshort').getAttribute('aria-hidden'), 'true');
+  is('...and a hover title says it too', castOf(rowNamed('Healing Word')).title, 'Bonus action');
+  ok('no casting time, no tag', castOf(rowNamed('Homebrew Hex')).hidden && !castOf(rowNamed('Homebrew Hex')).checkVisibility());
+
+  ok('a flagged ritual shows the word', ritualShown(rowNamed('Detect Magic')));
+  ok('a spell saved before the flag existed is marked from its casting time', ritualShown(rowNamed('Identify')));
+  ok('a non-ritual does not', !ritualShown(rowNamed('Shield')) && !ritualShown(rowNamed('Homebrew Hex')));
+
+  const visibleSpells = () => [...d.querySelectorAll('#spells .row--spell')].filter((r) => r.checkVisibility());
+  const rights = visibleSpells().map((r) => castOf(r)).filter((el) => el.checkVisibility()).map((el) => Math.round(rect(el).right));
+  ok('the tags share one right edge, so they read as a column', rights.length >= 6 && new Set(rights).size === 1, JSON.stringify(rights));
+  const heights = visibleSpells().map((r) => r.querySelector('.row__primary').offsetHeight);
+  ok('every spell is still one 44px line, the widest slot included', heights.every((h) => h === 44), JSON.stringify(heights));
+
+  // The empty slot: the name must get every pixel the tick, the caret and the two gaps leave.
+  {
+    const row = rowNamed('Homebrew Hex');
+    const primary = row.querySelector('.row__primary');
+    const name = row.querySelector('[data-bind$=".name"]');
+    const tick = row.querySelector('.row__prepared');
+    const caret = row.querySelector('.row__expand');
+    const gap = parseFloat(getComputedStyle(primary).columnGap);
+    const expected = primary.clientWidth - rect(tick).width - rect(caret).width - 2 * gap;
+    ok('an empty slot costs the name nothing', Math.abs(rect(name).width - expected) < 1,
+      `name ${rect(name).width.toFixed(1)} of ${expected.toFixed(1)}`);
+  }
+  {
+    const name = rowNamed('Otiluke’s Irresistible Dance').querySelector('[data-bind$=".name"]');
+    ok('#154 holds: a 28-character name reads in full in play mode beside its tag',
+      name.scrollWidth <= name.clientWidth, `needs ${name.scrollWidth} in ${name.clientWidth}`);
+  }
+
+  // Play mode never shows the Ritual tick — the word is the answer there.
+  rowNamed('Detect Magic').querySelector('.row__expand').click();
+  await wait(200);
+  ok('play mode shows no Ritual tick, even on a ritual\'s open details',
+    rowNamed('Detect Magic').classList.contains('is-expanded')
+      && !rowNamed('Detect Magic').querySelector('.row__ritualpick').checkVisibility());
+  rowNamed('Detect Magic').querySelector('.row__expand').click();
+
+  /* ------------------------------------------------------------------ spells, Edit */
+
+  editBtn().click();
+  await wait(400);
+  d.querySelector('#spells .spelllevel[data-level="1"] .spelllevel__summary').click();
+  await wait(200);
+  ok('Edit hides the slot, where the ✕ needs the room',
+    !rowNamed('Detect Magic').querySelector('.row__meta').checkVisibility()
+      && !rowNamed('Shield').querySelector('.row__meta').checkVisibility());
+
+  rowNamed('Shield').querySelector('.row__expand').click();
+  await wait(200);
+  const pick = () => rowNamed('Shield').querySelector('.row__ritualpick');
+  const box = () => pick().querySelector('input');
+  ok('Edit offers the Ritual tick', pick().checkVisibility());
+  ok('...unlocked', box().disabled === false);
+  ok('...on a 44px target', rect(pick()).height >= 44, `${Math.round(rect(pick()).width)}x${Math.round(rect(pick()).height)}`);
+  const shieldNode = rowNamed('Shield');
+  box().click();
+  await wait(600);   // past the 400ms storage debounce
+  is('ticking it stores the flag', stored().spellcasting.spells[1].ritual, true);
+  ok('...without rebuilding the section it was ticked in (a derived change, #146)',
+    rowNamed('Shield') === shieldNode && shieldNode.classList.contains('is-expanded'));
+
+  // Retype a casting time: the tag follows on the same pass.
+  const hwNode = rowNamed('Healing Word');
+  hwNode.querySelector('.row__expand').click();
+  await wait(200);
+  const hwTime = hwNode.querySelector('[data-bind$=".castingTime"]');
+  hwTime.focus();
+  d.execCommand('selectAll');                       // execCommand, not .value (CLAUDE.md)
+  d.execCommand('insertText', false, '1 reaction');
+  await wait(600);
+  is('retyping the casting time stores it', stored().spellcasting.spells[2].castingTime, '1 reaction');
+  is('...and the tag follows as you type', tagOf(hwNode), 'R');
+  ok('...without rebuilding the row', rowNamed('Healing Word') === hwNode);
+
+  // Untick the backfilled one: a stored false must outlive "or Ritual" in its casting time.
+  rowNamed('Identify').querySelector('.row__expand').click();
+  await wait(200);
+  rowNamed('Identify').querySelector('.row__ritualpick input').click();
+  await wait(600);
+  is('unticking a backfilled ritual stores false', stored().spellcasting.spells[4].ritual, false);
+
+  editBtn().click();
+  await wait(400);
+  ok('back in play, a newly ticked ritual shows the word', ritualShown(rowNamed('Shield')));
+  ok('...and an unticked one does not', !ritualShown(rowNamed('Identify')));
+
+  await load('../index.html?reload=1');
+  d = frame.contentDocument;
+  d.getElementById('tab-spells').click();
+  await wait(300);
+  ok('after a reload, the stored false wins over a casting time that still says "Ritual"',
+    !ritualShown(rowNamed('Identify')) && stored().spellcasting.spells[4].castingTime === '1 minute or Ritual');
+  ok('...and the stored true is still true', ritualShown(rowNamed('Shield')));
+
+  /* ------------------------------------------------------------------ inventory */
+
+  const inv = () => d.querySelector('section[data-editcard="inventory"]');
+  // The tab is read off where the card IS (#164's lesson), never assumed.
+  d.getElementById(`tab-${inv().closest('.tabpanel').id.replace('panel-', '')}`).click();
+  await wait(300);
+  const invRows = () => [...d.querySelectorAll('#inventory .row--inventory')];
+  const word = (row) => row.querySelector('.row__attuned');
+  const qtyX = () => invRows().map((r) => Math.round(rect(r.querySelector('[data-bind$=".qty"]')).left));
+
+  eq('the word shows on attuned items only', invRows().map((r) => word(r).checkVisibility()), [false, true, true, false, false]);
+  ok('the quantities stay in one column, attuned or not', new Set(qtyX()).size === 1, JSON.stringify(qtyX()));
+  eq('every item is still one 44px line, the long attuned one included',
+    invRows().map((r) => r.querySelector('.row__primary').offsetHeight), [44, 44, 44, 44, 44]);
+  ok('no line is wider than its own row, however long the item',
+    invRows().every((r) => rect(r.querySelector('.row__primary')).right <= rect(r).right),
+    invRows().map((r) => `${Math.round(rect(r.querySelector('.row__primary')).right)}/${Math.round(rect(r).right)}`).join(' '));
+  ok('the slot holds its word without cropping it',
+    invRows().filter((r) => word(r).checkVisibility()).every((r) => word(r).scrollWidth <= word(r).clientWidth),
+    invRows().map((r) => `${word(r).scrollWidth}/${word(r).clientWidth}`).join(' '));
+  // Tap-to-reveal still works on a row carrying the word, tapping the word itself.
+  word(invRows()[2]).click();
+  await wait(200);
+  ok('tapping the word still opens the note, like the rest of the row',
+    invRows()[2].classList.contains('is-expanded') && invRows()[2].querySelector('.row__notes').checkVisibility());
+
+  inv().querySelector('[data-action="toggle-card-edit"]').click();
+  await wait(400);
+  const picks = () => invRows().map((r) => r.querySelector('.row__attunepick'));
+  ok('Edit swaps the word out', invRows().every((r) => !word(r).checkVisibility()));
+  ok('...for an Attuned tick on every row', picks().every((p) => p.checkVisibility()));
+  eq('...reflecting what is stored', picks().map((p) => p.querySelector('input').checked), [false, true, true, false, false]);
+  ok('...unlocked', picks().every((p) => p.querySelector('input').disabled === false));
+  ok('...on 44px targets', picks().every((p) => rect(p).height >= 44));
+  ok('...sharing the note\'s line rather than adding one',
+    invRows().every((r) => Math.abs(rect(r.querySelector('.row__attunepick')).top - rect(r.querySelector('.row__notes')).top) < 1),
+    invRows().map((r) => `${Math.round(rect(r.querySelector('.row__attunepick')).top)}/${Math.round(rect(r.querySelector('.row__notes')).top)}`).join(' '));
+  picks()[0].querySelector('input').click();
+  await wait(600);
+  is('ticking Attuned stores it', stored().inventory[0].attuned, true);
+  inv().querySelector('[data-action="toggle-card-edit"]').click();
+  await wait(400);
+  ok('back in play the newly attuned item shows the word', word(invRows()[0]).checkVisibility());
+  ok('...and the quantities are still one column', new Set(qtyX()).size === 1, JSON.stringify(qtyX()));
+
+  /* ------------------------------------------------------------------ print, parsed */
+
+  const printRules = [...d.styleSheets]
+    .flatMap((sheet) => { try { return [...sheet.cssRules]; } catch { return []; } })
+    .filter((rule) => rule.media && [...rule.media].includes('print'))
+    .flatMap((rule) => [...rule.cssRules]);
+  const findRule = (part) => printRules.find((rule) => rule.selectorText && rule.selectorText.includes(part));
+  const hideTicks = findRule('.row__ritualpick');
+  ok('a print rule hides both ticks', Boolean(hideTicks) && hideTicks.selectorText.includes('.row__attunepick'),
+    `${printRules.length} print rules parsed`);
+  is('...as display:none !important', hideTicks && `${hideTicks.style.display} ${hideTicks.style.getPropertyPriority('display')}`, 'none important');
+  ok('a print rule keeps the spell marks from a card left in Edit', Boolean(findRule('.is-editing .row__meta')));
+  ok('...and the attuned word', Boolean(findRule('.is-editing .row--inventory.is-attuned .row__attuned')));
+
+  ok('the document does not scroll sideways at 390px',
+    d.documentElement.scrollWidth <= 390, `scrollWidth ${d.documentElement.scrollWidth}`);
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  out.textContent = `${failed === 0 ? 'ALL PASS' : `${failed} FAILURE(S)`} — ${results.length} checks\n\n${results.join('\n')}`;
+} catch (err) {
+  out.textContent = `ERROR ${err && err.stack || err}\n\n${results.join('\n')}`;
+}
+</script>

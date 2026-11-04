@@ -255,7 +255,7 @@ why — reopening the app re-checks the worker, and it then offers a reload.
 
 The Spells card's per-level **Search** button opens a picker over the ~340 spells of the SRD
 5.2.1, filterable by level, class and school. Picking one fills the row — school, casting time,
-range, components, duration and the full description — and it is an ordinary row from then on: editable,
+range, components, duration, whether it is a ritual, and the full description — and it is an ordinary row from then on: editable,
 deletable, yours. Anything not in the SRD is still one tap away, as a blank row with whatever you
 typed into the search as its name.
 

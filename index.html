@@ -939,6 +939,21 @@
         <span class="visually-hidden">Always prepared</span>
       </span>
       <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
+      <!-- What you need to know before you cast, without opening the row: is it a ritual, and
+           what does it cost — an action, a bonus action, a reaction, or ten minutes. Both are
+           written by renderDerived (.is-ritual, and the tag's text from rules.castingTimeTag),
+           because both change with a field in the detail and neither may rebuild the section.
+
+           "ritual" is a WORD, not a letter: R is the casting-time tag for a reaction, and the
+           book's own spell lists use R for ritual, so one letter could not say both. Hidden in
+           Edit, where the ✕ needs the room and the detail block holds the same two facts. -->
+      <span class="row__meta">
+        <span class="row__ritual">ritual</span>
+        <span class="row__cast" hidden>
+          <span class="row__castshort" aria-hidden="true"></span>
+          <span class="row__castlong visually-hidden"></span>
+        </span>
+      </span>
       <button type="button" class="row__remove" data-action="remove-row" data-list="spells" aria-label="Remove spell">✕</button>
       <button type="button" class="row__expand" data-action="toggle-row" aria-expanded="false" aria-label="Details">▸</button>
     </div>
@@ -957,6 +972,11 @@
       <label class="row__alwayspick">
         <input type="checkbox" data-bind-suffix="alwaysPrepared" data-type="checkbox">
         <span>Always prepared</span>
+      </label>
+      <!-- Edit-only: outside Edit the word "ritual" on the row's line already says it. -->
+      <label class="row__ritualpick">
+        <input type="checkbox" data-bind-suffix="ritual" data-type="checkbox">
+        <span>Ritual</span>
       </label>
       <!-- Casting time and Range hold words ("1 action", "120 ft") and pair on one line.
            Duration holds a phrase — "Concentration, up to 1 minute" — so `.row__wide` gives it
@@ -1087,11 +1107,23 @@
          Tapping anywhere on the row toggles the notes line below (main.js). -->
     <div class="row__primary">
       <input type="text" data-bind-suffix="item" placeholder="Item" aria-label="Item">
+      <!-- Shown only on an attuned item (.is-attuned, set by renderDerived), in a fixed-width
+           slot just before the quantity, so the marks form a column and the quantities stay in
+           theirs. A word rather than a glyph: three rows in a list of twenty, and nothing to learn.
+           Capitalised and in the accent colour (the owner's call): it is the one fact on the line
+           the rules count, so it is the one mark on the card that should catch the eye. -->
+      <span class="row__attuned">Attuned</span>
       <input type="number" inputmode="numeric" class="row__narrow" size="4" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
       <button type="button" class="row__remove" data-action="remove-row" data-list="inventory" aria-label="Remove item">✕</button>
     </div>
     <!-- Items usually carry the most notes — full-width, wrapping line of its own. -->
     <textarea rows="1" class="row__notes" data-bind-suffix="notes" placeholder="Notes" aria-label="Notes"></textarea>
+    <!-- Edit-only, sharing the note's line rather than adding one to every row: attuning is a
+         short-rest decision, not something done mid-fight, so it is set where the item is. -->
+    <label class="row__attunepick">
+      <input type="checkbox" data-bind-suffix="attuned" data-type="checkbox">
+      <span>Attuned</span>
+    </label>
   </li>
 </template>
 
