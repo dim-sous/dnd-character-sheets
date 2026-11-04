@@ -1414,6 +1414,41 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 }
 .is-editing .row__alwayspick, .row--spell.is-always .row__alwayspick { display: inline-flex; }
 .spelllevel[data-level="0"] .row__alwayspick { display: none; }
+/* The ritual flag's Edit half. Edit-only and nowhere else: outside Edit the word "ritual" on the
+   line is the whole answer, so a disabled box under it would be the same fact twice. */
+.row__ritualpick {
+  display: none; flex: 0 0 auto; align-items: center; gap: var(--space-2);
+  min-height: var(--tap); cursor: pointer; font-size: var(--text-sm);
+}
+.is-editing .row__ritualpick { display: inline-flex; }
+
+/* THE CASTING FACTS ON A SPELL'S LINE: "ritual", and the casting time as A / BA / R / "10 min".
+   Quiet on purpose — small, soft, and between the name and the reveal caret, so the name is
+   still the first thing read and the tags read as a column down the card rather than as part of
+   it. The tags line up on their RIGHT edge, against the caret, which is what a column of A, BA
+   and R needs and costs nothing — a centring min-width was measured at 19px off every name.
+
+   Every pixel here comes out of the name, so it is spent carefully. Measured at 390px: the name
+   has 220px with no tags, and "Otiluke's Irresistible Dance" (#154's 28-character fixture) needs
+   207. An "A" with the line's 8px gap left it 188; with a 4px margin — the name input already
+   pads its text 4px from its own edge — it gets exactly its 207 back. Spacing is each child's own
+   margin, with the slot pulled back by the line's gap, so an EMPTY slot (no ritual, no casting
+   time) costs the name nothing at all, where a `gap` would still charge 8px for an empty box.
+
+   A ritual row pays ~46px for the word, and a long ritual name ("Comprehend Languages") gives up
+   its last couple of letters at 390px. That is the price of a word over a letter: R already
+   means Reaction in the tag beside it. In Edit the slot goes — the ✕ needs the width, and the
+   detail block shows both facts in full. */
+.row__meta {
+  flex: none; display: inline-flex; align-items: baseline;
+  margin-left: calc(-1 * var(--space-2));
+  font-size: var(--text-xs); color: var(--ink-soft); white-space: nowrap;
+}
+.row__meta > * { margin-left: var(--space-1); }
+.row__ritual { display: none; font-style: italic; }
+.row--spell.is-ritual .row__ritual { display: inline; }
+.row__cast { display: inline-block; font-weight: 600; letter-spacing: .02em; }
+.is-editing .row__meta { display: none; }
 /* The level select sits first in the detail block and stays narrow — it is a closed set of ten
    short strings, so letting it flex like the free-text fields beside it would spend a third of
    the line on whitespace. */
@@ -1575,6 +1610,43 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    attack rows' primary from wrapping too, and probe.html reports 6 scenes scrolling sideways at
    390px. Reserving width is the change that fits in one row type. */
 .row--inventory > .row__primary > input:first-child { max-width: calc(100% - 6rem); }
+/* ...and the cap only holds if the LINE is the row's width, which it was not. A long enough item
+   ("Ring of Spell Storing (Shield and Misty Step)", 342px of text) made the stretched primary
+   343.6px inside a 322px row — the item's percentage cap then resolved against that wider line,
+   so the quantity sat 22px right of every other quantity and the line poked out past the slab's
+   own edge. Measured, not reasoned: `min-width: 0` was already here and did not stop it, and
+   nothing scrolled sideways, so no audit noticed. Pinning the line to its row ends the loop. */
+.row--inventory > .row__primary { max-width: 100%; }
+
+/* ATTUNED. A capital A in the accent colour, in a FIXED-width slot between the item and its
+   quantity, and the item gives up exactly that slot plus its gap — so the quantity stays in the
+   same column on an attuned row as on every other, and the marks form a column of their own.
+   Fixed rather than content-sized because the cap above is the knife edge #137 measured: a slot
+   whose width depended on the font would put the quantity back on a second line on some phone,
+   at a tie. 1rem holds one bold capital in any face with room to spare, and costs a long item
+   name 24px. Bold and upright like the spell row's A / BA / R, and set apart from them by colour.
+   Not in Edit, where the "Attuned" tick on the note's line says the same thing and the ✕ is back. */
+.row__attuned { display: none; }
+.row--inventory.is-attuned .row__attuned {
+  display: inline-block; flex: 0 0 auto; width: 1rem; overflow: hidden;
+  text-align: center; white-space: nowrap;
+  font-size: var(--text-sm); font-weight: 700; color: var(--accent);
+}
+.row--inventory.is-attuned > .row__primary > input:first-child { max-width: calc(100% - 6rem - 1rem - var(--space-2)); }
+.is-editing .row--inventory.is-attuned .row__attuned { display: none; }
+.is-editing .row--inventory.is-attuned > .row__primary > input:first-child { max-width: calc(100% - 6rem); }
+
+/* The tick that sets it, Edit-only, sharing the note's line rather than adding a 44px line to
+   every row. In Edit the row becomes a wrapping flex ROW so the two can sit side by side: the
+   primary line takes all of the first line, the note takes what the tick leaves of the second. */
+.row__attunepick { display: none; }
+.is-editing .row--inventory { flex-direction: row; flex-wrap: wrap; align-items: flex-start; column-gap: var(--space-2); }
+.is-editing .row--inventory > .row__primary { flex: 1 1 100%; }
+.is-editing .row--inventory > .row__notes { flex: 1 1 8rem; min-width: 0; width: auto; }
+.is-editing .row__attunepick {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--space-2);
+  min-height: var(--tap); cursor: pointer; font-size: var(--text-sm);
+}
 
 .row--attack > .row__hitcalc { display: none; }
 /* wrap, not shrink: these three are fixed-basis, so a narrower phone must drop one to a
@@ -2208,6 +2280,15 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   /* An unticked "Always prepared" box is Edit chrome; paper carries the flag only where it is set,
      so a card left in Edit does not print an empty box under every spell. */
   .row--spell:not(.is-always) .row__alwayspick { display: none !important; }
+  /* The same for the two newer flags: paper gets the mark, never the tick that sets it, and gets
+     the mark even from a card left in Edit — the inverse of the screen, where Edit swaps one for
+     the other — which means putting back the width the item gives up for its slot, too. */
+  .row__ritualpick, .row__attunepick { display: none !important; }
+  .is-editing .row__meta { display: inline-flex !important; }
+  .is-editing .row--inventory.is-attuned .row__attuned { display: inline-block !important; }
+  .is-editing .row--inventory.is-attuned > .row__primary > input:first-child {
+    max-width: calc(100% - 6rem - 1rem - var(--space-2)) !important;
+  }
   /* #155: the SECTIONS are revealed from here now, in one rule, and the beforeprint handler that
      used to do it in JS is gone. It existed because a closed <details> is content containment —
      `details:not([open]) > *` stays unrendered whatever `display` you give it, the same trap

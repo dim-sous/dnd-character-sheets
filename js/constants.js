@@ -199,9 +199,17 @@ export const ROW_TEMPLATES = {
    * a FILTER, not a rule about what a row may say. A spell saved before it existed backfills to
    * '' through the same free ride and stays blank: nothing looks it up, because nothing in the
    * app ever looks a spell back up (see spellToRow).
+   *
+   * `ritual` is a flag rather than something read out of `castingTime`, so marking a spell is a
+   * tick in Edit like `alwaysPrepared`, not remembering to type a magic word. The one place the
+   * text is read is the load path (storage.js): a spell saved before the flag existed is marked
+   * when its casting time says "Ritual", which is how every SRD ritual the picker ever added
+   * reads ("Action or Ritual"). After that the flag is the only truth, and the text is just text.
+   * What the row shows for the casting time itself is derived on every render
+   * (`rules.castingTimeTag`) and never stored.
    */
   spells: () => ({
-    name: '', level: 0, prepared: false, alwaysPrepared: false,
+    name: '', level: 0, prepared: false, alwaysPrepared: false, ritual: false,
     school: '', castingTime: '', range: '', duration: '', components: '', notes: '',
   }),
   // #67: source (Species / Background / Class / Other) and level stay FREE TEXT — the sheet
@@ -209,7 +217,11 @@ export const ROW_TEMPLATES = {
   // name+text; normalizeRow is template-driven, so they backfill to '' with no migration code.
   features: () => ({ name: '', source: '', level: '', text: '' }),
   feats: () => ({ name: '', source: '', text: '' }),
-  inventory: () => ({ item: '', qty: 1, notes: '' }),
+  // `attuned` is the one fact about an item the rules count (three at a time), so it is a flag
+  // the row can show rather than a word buried in its note. Not capped and not counted here: a
+  // tracker records what the player says, and the limit has exceptions the app would not know.
+  // Absent in every older save, so normalizeRow backfills it false with no SCHEMA_VERSION bump.
+  inventory: () => ({ item: '', qty: 1, attuned: false, notes: '' }),
   hitDice: () => ({ size: 'd8', total: 1, remaining: 1 }),
   // #140: `remaining`/`total` named to match the hitDice row above, so the two tiles read the
   // same way and share their row CSS. Both start at 0 rather than 1: a resource's size is

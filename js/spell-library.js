@@ -148,6 +148,9 @@ export function spellToRow(spell) {
     level: Number.isFinite(Number(spell?.level)) ? Number(spell.level) : 0,
     prepared: false,
     alwaysPrepared: false,
+    // Unlike the two ticks above this IS a fact about the spell, so it comes across. Every SRD
+    // ritual also says so in its casting time ("Action or Ritual"); the flag is what the row shows.
+    ritual: Boolean(spell?.ritual),
     school: String(spell?.school ?? ''),
     castingTime: String(spell?.castingTime ?? ''),
     range: String(spell?.range ?? ''),

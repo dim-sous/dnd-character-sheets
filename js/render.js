@@ -862,6 +862,30 @@ export function renderDerived(char) {
     const always = Boolean(flag && flag.checked);
     row.classList.toggle('is-always', always);
     row.classList.toggle('is-prepared', always || Boolean(tick && tick.checked));
+
+    // The line's two casting facts, off the same fields for the same reason: the ritual tick and
+    // the casting-time text both live in the detail block, and changing either is a derived
+    // change. Written only on a real difference, like the readouts at the top of this pass.
+    const ritual = $('[data-bind$=".ritual"]', row);
+    row.classList.toggle('is-ritual', Boolean(ritual && ritual.checked));
+    const cast = $('.row__cast', row);
+    if (cast) {
+      const tag = rules.castingTimeTag($('[data-bind$=".castingTime"]', row)?.value);
+      const short = tag ? tag.short : '';
+      const long = tag ? tag.long : '';
+      cast.hidden = !tag;
+      const shortEl = $('.row__castshort', cast);
+      if (shortEl.textContent !== short) shortEl.textContent = short;
+      const longEl = $('.row__castlong', cast);
+      if (longEl.textContent !== long) longEl.textContent = long;
+      if (cast.title !== long) cast.title = long;
+    }
+  }
+
+  // An attuned item shows its A on the line. Off the checkbox, like the spell flags above.
+  for (const row of $$('.row--inventory')) {
+    const flag = $('[data-bind$=".attuned"]', row);
+    row.classList.toggle('is-attuned', Boolean(flag && flag.checked));
   }
 
   // The Prepared spells tile. Untracked (a limit of 0) hides the "/ 0" outside Edit; over the

@@ -51,6 +51,27 @@ function normalizeRows(listName, raw) {
 }
 
 /**
+ * Spell rows, plus the one backfill the template's free ride cannot do on its own: `ritual`.
+ *
+ * Every spell the picker added before the flag existed already SAYS it is a ritual — the SRD
+ * writes it into the casting time ("Action or Ritual", "1 minute or Ritual") the way the 2024
+ * book does — so a missing key is read off that text rather than defaulting every one of them to
+ * false and leaving the player to find and tick each ritual by hand. Only when the key is ABSENT:
+ * a stored `ritual: false` is the player's answer, and a casting time that still says "Ritual"
+ * does not overrule it. Old exports take the same path on import, for the same reason.
+ */
+function normalizeSpells(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => {
+    const row = normalizeRow('spells', item);
+    if (!item || typeof item !== 'object' || item.ritual === undefined) {
+      row.ritual = /\britual\b/i.test(row.castingTime);
+    }
+    return row;
+  });
+}
+
+/**
  * Merge a raw object over the canonical shape.
  *
  * Used by BOTH load and import, so a hand-edited file, an export from an older version,
@@ -171,7 +192,7 @@ export function normalizeCharacter(raw) {
     attackBonus: num(raw.spellcasting?.attackBonus, base.spellcasting.attackBonus),
     dcBonus: num(raw.spellcasting?.dcBonus, base.spellcasting.dcBonus),
     slots,
-    spells: normalizeRows('spells', raw.spellcasting?.spells),
+    spells: normalizeSpells(raw.spellcasting?.spells),
   };
 
   char.currency = { ...base.currency };

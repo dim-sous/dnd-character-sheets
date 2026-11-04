@@ -281,6 +281,41 @@ export function isOverPrepared(char) {
   return max > 0 && preparedCount(char) > max;
 }
 
+/**
+ * A spell's casting time as the short tag its row shows on the one visible line: A, BA, R, or a
+ * length for the slow ones ("10 min", "1 hr"). `long` is the same thing spelled out, for a
+ * screen reader and a hover title. null means "show nothing" — an empty field, or text this does
+ * not recognise, whose full wording is still one tap away in the row's details.
+ *
+ * Read from the FIRST clause only. The SRD hangs riders off a comma ("Reaction, which you take
+ * when you see a creature … casting a spell") and alternatives off a parenthesis ("Action
+ * (Overgrowth) or 8 hours (Enrichment)"), and a rider can name another kind of action — the
+ * first clause is the casting time, the rest is when or why. Bonus is tested before action
+ * because "bonus action" contains it; "reaction" cannot match `\baction` at all.
+ *
+ * Never stored: the field stays the player's free text, and this is recomputed on every render,
+ * so a casting time typed as "1 bonus action" or pasted from the book reads the same.
+ *
+ * "R" is Reaction, not Ritual, and that only works because a ritual is shown as the WORD on the
+ * row (`.row__ritual`) — the 2024 book's spell lists use R for ritual, so a single letter for it
+ * would be ambiguous on exactly the row type where both can appear.
+ */
+export function castingTimeTag(text) {
+  const clause = String(text ?? '').toLowerCase().split(/[,(]/)[0].trim();
+  if (!clause) return null;
+  if (/\bbonus\b/.test(clause)) return { short: 'BA', long: 'Bonus action' };
+  if (/\breaction\b/.test(clause)) return { short: 'R', long: 'Reaction' };
+  if (/\baction\b/.test(clause)) return { short: 'A', long: 'Action' };
+  const time = clause.match(/(\d+)\s*(minutes?|mins?|hours?|hrs?)\b/);
+  if (!time) return null;
+  const count = Number(time[1]);
+  const minutes = time[2].startsWith('m');
+  return {
+    short: `${count} ${minutes ? 'min' : 'hr'}`,
+    long: `${count} ${minutes ? 'minute' : 'hour'}${count === 1 ? '' : 's'}`,
+  };
+}
+
 /* ------------------------------------------------------------ attack to-hit (#84) */
 
 /**

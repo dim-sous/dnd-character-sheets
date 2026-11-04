@@ -95,7 +95,15 @@ try {
     { name: 'Longbow of the Deep Wood', ability: 'dex', proficient: true, damage: '1d8+2 piercing', notes: 'Range 150/600' },
   ];
   // `item`, not `name`: that is what the row binds, and the wrong key rendered an empty box (#145).
-  c.inventory = [{ item: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' }];
+  // Plus two ATTUNED items, short and long: an attuned row is the only one that shows the A in
+  // its fixed slot before the quantity, and gives the item that slot's width — so the long one is
+  // the fixture that decides whether the quantity still shares the line at 390px. Unseeded, the
+  // mark would never be measured, and neither would the Attuned tick on the note's line in Edit.
+  c.inventory = [
+    { item: 'Explorer’s pack with bedroll and rations', qty: 1, notes: '' },
+    { item: 'Cloak of Protection', qty: 1, attuned: true, notes: '' },
+    { item: 'Ring of Spell Storing (Shield and Misty Step)', qty: 1, attuned: true, notes: 'Holds up to five levels of spells.' },
+  ];
   /*
    * #145: features and feats, seeded for the reason every list above is seeded — an empty one
    * renders its empty-state line and nothing else, so the row is never measured and the card
@@ -176,6 +184,16 @@ try {
     },
     { name: 'Shield', level: 1, prepared: true, school: 'Abjuration', castingTime: '1 reaction', range: 'Self', duration: '1 round', components: 'V, S', notes: '' },
     { name: 'Magic Missile', level: 1, prepared: false, school: 'Evocation', castingTime: '1 action', range: '120 ft', duration: 'Instant', components: 'V, S', notes: '' },
+    /*
+     * A RITUAL, the only row that shows the word "ritual" on its line beside the casting-time tag
+     * — the widest that slot gets, so a long name, which is the pairing that crops. Unticked, so
+     * the prepared counts the tile seed below relies on are unchanged; it is measured in the
+     * "levels open" scene and in Edit.
+     */
+    {
+      name: 'Comprehend Languages', level: 1, prepared: false, ritual: true, school: 'Divination',
+      castingTime: 'Action or Ritual', range: 'Self', duration: '1 hour', components: 'V, S, M (a pinch of soot and salt)', notes: '',
+    },
     /*
      * ALWAYS prepared — a subclass, species, feat or item gave it. Two things only this row
      * renders: a ★ in the tick's 44px column (a glyph, so a contrast pairing of its own), and the
