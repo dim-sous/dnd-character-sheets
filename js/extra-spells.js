@@ -205,7 +205,7 @@ export const EXTRA_SPELLS = [
     duration: 'Concentration, up to 1 minute',
     concentration: true,
     ritual: false,
-    source: 'Arcana Unleashed',
+    source: 'AU',
     text: 'A jarring melody fills a 20-foot-radius Sphere centered on a point you choose within range. '
       + 'Each creature in it makes a Constitution saving throw. On a failed save, the creature loses '
       + 'Concentration on any spell it is maintaining, and until this spell ends it has Disadvantage '
