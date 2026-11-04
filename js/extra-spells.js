@@ -106,4 +106,69 @@ export const EXTRA_SPELLS = [
     text: 'You teleport up to 60 feet to an unoccupied space you can see. Until the spell ends, '
       + 'you can do it again as a Bonus Action on each of your later turns.',
   },
+  {
+    name: 'Thunder Step',
+    level: 3,
+    school: 'Conjuration',
+    classes: ['Sorcerer', 'Warlock', 'Wizard'],
+    castingTime: 'Action',
+    range: '90 feet',
+    components: 'V',
+    duration: 'Instantaneous',
+    concentration: false,
+    ritual: false,
+    source: 'PHB 2024',
+    text: [
+      'You teleport to an unoccupied space you can see within range, leaving a thunderclap behind. '
+        + 'Each creature within 10 feet of the space you left makes a Constitution saving throw, '
+        + 'taking 3d10 Thunder damage on a failed save or half as much on a success.',
+      'You can bring one willing creature within 5 feet of you along. It arrives in an unoccupied '
+        + 'space of your choice within 5 feet of where you land.',
+      'Using a Higher-Level Spell Slot. The damage increases by 1d10 for each spell slot level above 3.',
+    ].join('\n\n'),
+  },
+  {
+    name: 'Summon Celestial',
+    level: 5,
+    school: 'Conjuration',
+    classes: ['Cleric', 'Paladin'],
+    castingTime: 'Action',
+    range: '90 feet',
+    components: 'V, S, M (a reliquary worth 500+ GP)',
+    duration: 'Concentration, up to 1 hour',
+    concentration: true,
+    ritual: false,
+    source: 'PHB 2024',
+    text: [
+      'You call forth a celestial spirit. It manifests in an unoccupied space that you can see within '
+        + 'range and uses the Celestial Spirit stat block. When you cast the spell, choose Avenger or '
+        + 'Defender: the choice sets the lines of the stat block marked with it. The creature '
+        + 'disappears when it drops to 0 Hit Points or when the spell ends.',
+      'The creature is an ally to you and your allies. In combat, the creature shares your Initiative '
+        + 'count, but it takes its turn immediately after yours. It obeys your verbal commands (no '
+        + "action required by you). If you don't issue any, it takes the Dodge action and uses its "
+        + 'movement to avoid danger.',
+      "Using a Higher-Level Spell Slot. Use the spell slot's level for the spell's level in the stat block.",
+      'Celestial Spirit',
+      'Large Celestial, Neutral',
+      "AC 11 + the spell's level + 2 (Defender only)\n"
+        + 'HP 40 + 10 for each spell level above 5\n'
+        + 'Speed 30 ft., Fly 40 ft.',
+      'STR 16 (+3), DEX 14 (+2), CON 16 (+3)\nINT 10 (+0), WIS 14 (+2), CHA 16 (+3)',
+      'Resistances Radiant\n'
+        + 'Immunities Charmed, Frightened\n'
+        + 'Senses Darkvision 60 ft.; Passive Perception 12\n'
+        + 'Languages Celestial, understands the languages you know\n'
+        + 'CR None (XP 0; PB equals your Proficiency Bonus)',
+      'Actions\n'
+        + "Multiattack. The spirit makes a number of attacks equal to half the spell's level (round down).\n"
+        + 'Radiant Bow (Avenger only). Ranged Attack Roll: Bonus equals your spell attack modifier, '
+        + "range 150/600 feet. Hit: 2d6 + 2 + the spell's level Radiant damage.\n"
+        + 'Radiant Mace (Defender only). Melee Attack Roll: Bonus equals your spell attack modifier, '
+        + "reach 5 feet. Hit: 1d10 + 3 + the spell's level Radiant damage, and the spirit gives "
+        + '1d10 Temporary Hit Points to itself or another creature it can see within 10 feet of the target.\n'
+        + 'Healing Touch (1/Day). The spirit touches another creature, which regains Hit Points equal '
+        + "to 2d8 + the spell's level.",
+    ].join('\n\n'),
+  },
 ];
