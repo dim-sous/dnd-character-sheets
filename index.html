@@ -1109,10 +1109,13 @@
       <input type="text" data-bind-suffix="item" placeholder="Item" aria-label="Item">
       <!-- Shown only on an attuned item (.is-attuned, set by renderDerived), in a fixed-width
            slot just before the quantity, so the marks form a column and the quantities stay in
-           theirs. A word rather than a glyph: three rows in a list of twenty, and nothing to learn.
-           Capitalised and in the accent colour (the owner's call): it is the one fact on the line
-           the rules count, so it is the one mark on the card that should catch the eye. -->
-      <span class="row__attuned">Attuned</span>
+           theirs. A capital A in the accent colour (the owner's call): the one fact on the line
+           the rules count, as small as a mark can be and still be read. The letter is for the eye
+           only; a screen reader and a hover title get the word. -->
+      <span class="row__attuned" title="Attuned">
+        <span aria-hidden="true">A</span>
+        <span class="visually-hidden">Attuned</span>
+      </span>
       <input type="number" inputmode="numeric" class="row__narrow" size="4" data-bind-suffix="qty" data-type="number" placeholder="1" aria-label="Quantity">
       <button type="button" class="row__remove" data-action="remove-row" data-list="inventory" aria-label="Remove item">✕</button>
     </div>

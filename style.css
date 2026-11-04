@@ -1618,21 +1618,21 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    nothing scrolled sideways, so no audit noticed. Pinning the line to its row ends the loop. */
 .row--inventory > .row__primary { max-width: 100%; }
 
-/* ATTUNED. The word sits in a FIXED-width slot between the item and its quantity, and the item
-   gives up exactly that slot plus its gap — so the quantity stays in the same column on an
-   attuned row as on every other, and the marks form a column of their own. Fixed rather than
-   content-sized because the cap above is the knife edge #137 measured: a slot whose width
-   depended on the font would put the quantity back on a second line on some phone, at a tie.
-   3.25rem holds "Attuned" (44px measured in Chromium's sans) with room for a wider phone font —
-   the slot clips rather than wraps, so it is sized for the widest likely face, not the measured one.
+/* ATTUNED. A capital A in the accent colour, in a FIXED-width slot between the item and its
+   quantity, and the item gives up exactly that slot plus its gap — so the quantity stays in the
+   same column on an attuned row as on every other, and the marks form a column of their own.
+   Fixed rather than content-sized because the cap above is the knife edge #137 measured: a slot
+   whose width depended on the font would put the quantity back on a second line on some phone,
+   at a tie. 1rem holds one bold capital in any face with room to spare, and costs a long item
+   name 24px. Bold and upright like the spell row's A / BA / R, and set apart from them by colour.
    Not in Edit, where the "Attuned" tick on the note's line says the same thing and the ✕ is back. */
 .row__attuned { display: none; }
 .row--inventory.is-attuned .row__attuned {
-  display: inline-block; flex: 0 0 auto; width: 3.25rem; overflow: hidden;
-  text-align: right; white-space: nowrap;
-  font-size: var(--text-xs); font-style: italic; color: var(--accent);
+  display: inline-block; flex: 0 0 auto; width: 1rem; overflow: hidden;
+  text-align: center; white-space: nowrap;
+  font-size: var(--text-sm); font-weight: 700; color: var(--accent);
 }
-.row--inventory.is-attuned > .row__primary > input:first-child { max-width: calc(100% - 6rem - 3.25rem - var(--space-2)); }
+.row--inventory.is-attuned > .row__primary > input:first-child { max-width: calc(100% - 6rem - 1rem - var(--space-2)); }
 .is-editing .row--inventory.is-attuned .row__attuned { display: none; }
 .is-editing .row--inventory.is-attuned > .row__primary > input:first-child { max-width: calc(100% - 6rem); }
 
@@ -2287,7 +2287,7 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   .is-editing .row__meta { display: inline-flex !important; }
   .is-editing .row--inventory.is-attuned .row__attuned { display: inline-block !important; }
   .is-editing .row--inventory.is-attuned > .row__primary > input:first-child {
-    max-width: calc(100% - 6rem - 3.25rem - var(--space-2)) !important;
+    max-width: calc(100% - 6rem - 1rem - var(--space-2)) !important;
   }
   /* #155: the SECTIONS are revealed from here now, in one rule, and the beforeprint handler that
      used to do it in JS is gone. It existed because a closed <details> is content containment —

@@ -882,7 +882,7 @@ export function renderDerived(char) {
     }
   }
 
-  // An attuned item shows the word on its line. Off the checkbox, like the spell flags above.
+  // An attuned item shows its A on the line. Off the checkbox, like the spell flags above.
   for (const row of $$('.row--inventory')) {
     const flag = $('[data-bind$=".attuned"]', row);
     row.classList.toggle('is-attuned', Boolean(flag && flag.checked));

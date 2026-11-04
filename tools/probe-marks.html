@@ -16,12 +16,13 @@
       without rebuilding the section they happen in (#146), and both are stored;
     - a stored `ritual: false` survives a reload against a casting time that still says
       "Ritual" — the key-present half of the backfill rule, end to end;
-    - on the inventory, the attuned word shows only on attuned rows and the quantities stay in
-      ONE column whether a row carries the word or not, with no row wrapping — the fixed slot
+    - on the inventory, the attuned A shows only on attuned rows (with "Attuned" for a screen
+      reader) and the quantities stay in ONE column whether a row carries the A or not, with no
+      row wrapping — the fixed slot
       and the item's matching give-back are exactly the knife edge #137 measured. A long item
       name used to push its whole line past the row and the quantity 22px out of the column,
       attuned or not; this probe is what found it;
-    - in Edit the word goes and an "Attuned" tick takes the note's line rather than adding one;
+    - in Edit the A goes and an "Attuned" tick takes the note's line rather than adding one;
     - the print rules that hide both ticks and keep both marks are PARSED (the unbalanced-
       comment trap in CLAUDE.md).
 
@@ -231,29 +232,35 @@ try {
   d.getElementById(`tab-${inv().closest('.tabpanel').id.replace('panel-', '')}`).click();
   await wait(300);
   const invRows = () => [...d.querySelectorAll('#inventory .row--inventory')];
-  const word = (row) => row.querySelector('.row__attuned');
+  const word = (row) => row.querySelector('.row__attuned');   // the A
   const qtyX = () => invRows().map((r) => Math.round(rect(r.querySelector('[data-bind$=".qty"]')).left));
 
-  eq('the word shows on attuned items only', invRows().map((r) => word(r).checkVisibility()), [false, true, true, false, false]);
+  eq('the A shows on attuned items only', invRows().map((r) => word(r).checkVisibility()), [false, true, true, false, false]);
+  is('it reads A on screen', word(invRows()[1]).querySelector('[aria-hidden="true"]').textContent, 'A');
+  is('..."Attuned" to a screen reader', word(invRows()[1]).querySelector('.visually-hidden').textContent, 'Attuned');
+  is('...and as a hover title', word(invRows()[1]).title, 'Attuned');
+  ok('...in the accent colour, not the ink the quantity uses',
+    getComputedStyle(word(invRows()[1])).color !== getComputedStyle(invRows()[1].querySelector('[data-bind$=".qty"]')).color,
+    getComputedStyle(word(invRows()[1])).color);
   ok('the quantities stay in one column, attuned or not', new Set(qtyX()).size === 1, JSON.stringify(qtyX()));
   eq('every item is still one 44px line, the long attuned one included',
     invRows().map((r) => r.querySelector('.row__primary').offsetHeight), [44, 44, 44, 44, 44]);
   ok('no line is wider than its own row, however long the item',
     invRows().every((r) => rect(r.querySelector('.row__primary')).right <= rect(r).right),
     invRows().map((r) => `${Math.round(rect(r.querySelector('.row__primary')).right)}/${Math.round(rect(r).right)}`).join(' '));
-  ok('the slot holds its word without cropping it',
+  ok('the slot holds its A without cropping it',
     invRows().filter((r) => word(r).checkVisibility()).every((r) => word(r).scrollWidth <= word(r).clientWidth),
     invRows().map((r) => `${word(r).scrollWidth}/${word(r).clientWidth}`).join(' '));
   // Tap-to-reveal still works on a row carrying the word, tapping the word itself.
   word(invRows()[2]).click();
   await wait(200);
-  ok('tapping the word still opens the note, like the rest of the row',
+  ok('tapping the A still opens the note, like the rest of the row',
     invRows()[2].classList.contains('is-expanded') && invRows()[2].querySelector('.row__notes').checkVisibility());
 
   inv().querySelector('[data-action="toggle-card-edit"]').click();
   await wait(400);
   const picks = () => invRows().map((r) => r.querySelector('.row__attunepick'));
-  ok('Edit swaps the word out', invRows().every((r) => !word(r).checkVisibility()));
+  ok('Edit swaps the A out', invRows().every((r) => !word(r).checkVisibility()));
   ok('...for an Attuned tick on every row', picks().every((p) => p.checkVisibility()));
   eq('...reflecting what is stored', picks().map((p) => p.querySelector('input').checked), [false, true, true, false, false]);
   ok('...unlocked', picks().every((p) => p.querySelector('input').disabled === false));
@@ -266,7 +273,7 @@ try {
   is('ticking Attuned stores it', stored().inventory[0].attuned, true);
   inv().querySelector('[data-action="toggle-card-edit"]').click();
   await wait(400);
-  ok('back in play the newly attuned item shows the word', word(invRows()[0]).checkVisibility());
+  ok('back in play the newly attuned item shows the A', word(invRows()[0]).checkVisibility());
   ok('...and the quantities are still one column', new Set(qtyX()).size === 1, JSON.stringify(qtyX()));
 
   /* ------------------------------------------------------------------ print, parsed */
@@ -281,7 +288,7 @@ try {
     `${printRules.length} print rules parsed`);
   is('...as display:none !important', hideTicks && `${hideTicks.style.display} ${hideTicks.style.getPropertyPriority('display')}`, 'none important');
   ok('a print rule keeps the spell marks from a card left in Edit', Boolean(findRule('.is-editing .row__meta')));
-  ok('...and the attuned word', Boolean(findRule('.is-editing .row--inventory.is-attuned .row__attuned')));
+  ok('...and the attuned A', Boolean(findRule('.is-editing .row--inventory.is-attuned .row__attuned')));
 
   ok('the document does not scroll sideways at 390px',
     d.documentElement.scrollWidth <= 390, `scrollWidth ${d.documentElement.scrollWidth}`);
