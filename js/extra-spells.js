@@ -166,7 +166,7 @@ export const EXTRA_SPELLS = [
       'Actions\n'
         + "Multiattack. The spirit makes a number of attacks equal to half the spell's level (round down).\n"
         + 'Radiant Bow (Avenger only). Ranged Attack Roll: Bonus equals your spell attack modifier, '
-        + "range 150/600 feet. Hit: 2d6 + 2 + the spell's level Radiant damage.\n"
+        + "range 600 feet. Hit: 2d6 + 2 + the spell's level Radiant damage.\n"
         + 'Radiant Mace (Defender only). Melee Attack Roll: Bonus equals your spell attack modifier, '
         + "reach 5 feet. Hit: 1d10 + 3 + the spell's level Radiant damage, and the spirit gives "
         + '1d10 Temporary Hit Points to itself or another creature it can see within 10 feet of the target.\n'
