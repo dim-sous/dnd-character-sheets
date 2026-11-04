@@ -1414,14 +1414,8 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 }
 .is-editing .row__alwayspick, .row--spell.is-always .row__alwayspick { display: inline-flex; }
 .spelllevel[data-level="0"] .row__alwayspick { display: none; }
-/* The ritual flag's Edit half. Edit-only and nowhere else: outside Edit the circled R on the
-   line is the whole answer, so a disabled box under it would be the same fact twice.
-   Concentration has no tick at all: its C is read off the duration (rules.isConcentration). */
-.row__ritualpick {
-  display: none; flex: 0 0 auto; align-items: center; gap: var(--space-2);
-  min-height: var(--tap); cursor: pointer; font-size: var(--text-sm);
-}
-.is-editing .row__ritualpick { display: inline-flex; }
+/* There is no Ritual or Concentration tick. Both circles on the line are read off the spell's own
+   text (rules.isRitual off the casting time, rules.isConcentration off the duration). */
 
 /* THE CASTING FACTS ON A SPELL'S LINE: a circled C for Concentration, a circled R for Ritual, and
    the casting time as A / BA / R / "10 min". The tag is quiet on purpose — small, soft, and
@@ -2304,10 +2298,11 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   /* An unticked "Always prepared" box is Edit chrome; paper carries the flag only where it is set,
      so a card left in Edit does not print an empty box under every spell. */
   .row--spell:not(.is-always) .row__alwayspick { display: none !important; }
-  /* The same for the two newer flags: paper gets the mark, never the tick that sets it, and gets
-     the mark even from a card left in Edit — the inverse of the screen, where Edit swaps one for
-     the other — which means putting back the width the item gives up for its slot, too. */
-  .row__ritualpick, .row__attunepick { display: none !important; }
+  /* The same for attunement: paper gets the mark, never the tick that sets it, and gets the mark
+     even from a card left in Edit — the inverse of the screen, where Edit swaps one for the other —
+     which means putting back the width the item gives up for its slot, too. A spell's C and R have
+     no tick to hide; they print from the same rule that keeps the slot. */
+  .row__attunepick { display: none !important; }
   .is-editing .row__meta { display: inline-flex !important; }
   .is-editing .row--inventory.is-attuned .row__attuned { display: inline-block !important; }
   .is-editing .row--inventory.is-attuned > .row__primary > input:first-child {

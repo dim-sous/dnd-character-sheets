@@ -863,16 +863,15 @@ export function renderDerived(char) {
     row.classList.toggle('is-always', always);
     row.classList.toggle('is-prepared', always || Boolean(tick && tick.checked));
 
-    // The line's three casting facts, off the same fields for the same reason: the ritual tick,
-    // the duration and the casting-time text all live in the detail block, and changing any of
-    // them is a derived change. Written only on a real difference, like the readouts at the top
-    // of this pass.
-    const ritual = $('[data-bind$=".ritual"]', row);
-    row.classList.toggle('is-ritual', Boolean(ritual && ritual.checked));
+    // The line's three casting facts, all read off text in the detail block — the duration for
+    // the C, the casting time for the R and the tag — so retyping either is a derived change.
+    // Written only on a real difference, like the readouts at the top of this pass.
+    const castingTime = $('[data-bind$=".castingTime"]', row)?.value;
+    row.classList.toggle('is-ritual', rules.isRitual(castingTime));
     row.classList.toggle('is-concentration', rules.isConcentration($('[data-bind$=".duration"]', row)?.value));
     const cast = $('.row__cast', row);
     if (cast) {
-      const tag = rules.castingTimeTag($('[data-bind$=".castingTime"]', row)?.value);
+      const tag = rules.castingTimeTag(castingTime);
       const short = tag ? tag.short : '';
       const long = tag ? tag.long : '';
       cast.hidden = !tag;

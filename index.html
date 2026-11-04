@@ -941,9 +941,10 @@
       <input type="text" data-bind-suffix="name" placeholder="Spell name" aria-label="Spell name">
       <!-- What you need to know before you cast, without opening the row: does it need
            Concentration, is it a ritual, and what does it cost — an action, a bonus action, a
-           reaction, or ten minutes. All three are written by renderDerived (.is-concentration from
-           the duration, .is-ritual from the tick, the tag's text from rules.castingTimeTag),
+           reaction, or ten minutes. All three are read off the spell's own text by renderDerived
+           (.is-concentration from the duration, .is-ritual and the tag from the casting time),
            because each changes with a field in the detail and none may rebuild the section.
+           Nothing here is ticked: the spell says it, the way the SRD and the book write it.
 
            C and R are letters in a CIRCLE, in the accent colour, in the book's own order (the
            2024 spell lists' C and R). The circle is what keeps a ritual's R apart from the bare
@@ -982,13 +983,6 @@
       <label class="row__alwayspick">
         <input type="checkbox" data-bind-suffix="alwaysPrepared" data-type="checkbox">
         <span>Always prepared</span>
-      </label>
-      <!-- Edit-only: outside Edit the circled R on the row's line already says it. Concentration
-           has no tick at all — it is read off the Duration field below, which is where the
-           SRD and the book both write it. -->
-      <label class="row__ritualpick">
-        <input type="checkbox" data-bind-suffix="ritual" data-type="checkbox">
-        <span>Ritual</span>
       </label>
       <!-- Casting time and Range hold words ("1 action", "120 ft") and pair on one line.
            Duration holds a phrase — "Concentration, up to 1 minute" — so `.row__wide` gives it

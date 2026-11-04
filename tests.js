@@ -1963,7 +1963,7 @@ describe('spell list (#141)');
   // everything new is free text — the app does not know that V/S/M is a closed set.
   is('blank character starts with no spells', blankCharacter().spellcasting.spells, []);
   is('row template', ROW_TEMPLATES.spells(), {
-    name: '', level: 0, prepared: false, alwaysPrepared: false, ritual: false,
+    name: '', level: 0, prepared: false, alwaysPrepared: false,
     school: '', castingTime: '', range: '', duration: '', components: '', notes: '',
   });
 
@@ -1981,7 +1981,7 @@ describe('spell list (#141)');
     ROW_TEMPLATES.spells());
   is('unknown row keys are dropped',
     Object.keys(normalizeCharacter({ spellcasting: { spells: [{ name: 'X', classes: ['Wizard'] }] } }).spellcasting.spells[0]),
-    ['name', 'level', 'prepared', 'alwaysPrepared', 'ritual', 'school', 'castingTime', 'range', 'duration', 'components', 'notes']);
+    ['name', 'level', 'prepared', 'alwaysPrepared', 'school', 'castingTime', 'range', 'duration', 'components', 'notes']);
   // A spell saved before the row had a school comes back blank, not missing: the detail field
   // binds to it, and nothing guesses one from the name.
   is('a spell saved before `school` existed backfills it blank',
@@ -2198,28 +2198,52 @@ describe('rituals and casting times on the spell row');
 {
   const load = (spells) => normalizeCharacter({ spellcasting: { spells } }).spellcasting.spells;
 
-  // The backfill: a spell saved before `ritual` existed is read off its casting time, which is
-  // how the SRD (and so every spell the picker ever added) writes it. Only when the key is ABSENT.
-  is('a pre-flag "Action or Ritual" spell loads as a ritual',
-    load([{ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual' }])[0].ritual, true);
-  is('...and so does "1 minute or Ritual"',
-    load([{ name: 'Alarm', level: 1, castingTime: '1 minute or Ritual' }])[0].ritual, true);
-  is('...and a hand-typed "1 action (ritual)"',
-    load([{ name: 'Alarm', level: 1, castingTime: '1 action (ritual)' }])[0].ritual, true);
-  is('a pre-flag spell that does not say so is not one',
-    load([{ name: 'Shield', level: 1, castingTime: 'Reaction' }])[0].ritual, false);
-  is('a pre-flag spell with no casting time is not one', load([{ name: 'Shield', level: 1 }])[0].ritual, false);
-  is('"spiritual" is not "ritual"',
-    load([{ name: 'X', level: 2, castingTime: 'Bonus action (spiritual)' }])[0].ritual, false);
-  // Once the key exists it is the player's answer, and the text no longer gets a say.
-  is('a stored false is kept, whatever the casting time says',
-    load([{ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', ritual: false }])[0].ritual, false);
-  is('a stored true is kept with no casting time at all',
-    load([{ name: 'Homebrew', level: 1, castingTime: '', ritual: true }])[0].ritual, true);
+  // isRitual: the circled R, read off the casting time and never stored.
+  const ritual = rules.isRitual;
+  is('"Action or Ritual"', ritual('Action or Ritual'), true);
+  is('"1 minute or Ritual"', ritual('1 minute or Ritual'), true);
+  is('a hand-typed "1 action (ritual)"', ritual('1 action (ritual)'), true);
+  is('a casting time that does not say so', ritual('Reaction'), false);
+  is('"spiritual" is not "ritual"', ritual('Bonus action (spiritual)'), false);
+  is('empty', ritual(''), false);
+  is('undefined', ritual(undefined), false);
+  // The rule must agree with the library's own flag, or a picked spell's R would contradict the
+  // data it was picked from — and it is what puts the R on every spell picked before the R existed.
+  is('it agrees with every SRD spell\'s own ritual flag',
+    SRD_SPELLS.filter((s) => ritual(s.castingTime) !== s.ritual).map((s) => s.name), []);
+  is('...and with every extra spell\'s',
+    EXTRA_SPELLS.filter((s) => ritual(s.castingTime) !== s.ritual).map((s) => s.name), []);
+
+  // Retiring the old tick. `ritual` is no longer a key on the row, so the load path drops it —
+  // but a TICK on a spell whose casting time does not say "Ritual" is moved into the text first,
+  // so a ritual the player marked by hand keeps its R.
+  is('the row no longer stores a ritual key',
+    'ritual' in load([{ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', ritual: true }])[0], false);
+  is('a tick the casting time already states leaves the text alone',
+    load([{ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', ritual: true }])[0].castingTime, 'Action or Ritual');
+  is('a tick on a casting time that does not say it is written into it',
+    load([{ name: 'Homebrew Hex', level: 1, castingTime: '1 action', ritual: true }])[0].castingTime, '1 action or Ritual');
+  is('...so the R survives', ritual(load([{ name: 'Homebrew Hex', level: 1, castingTime: '1 action', ritual: true }])[0].castingTime), true);
+  is('...and the tag still reads the first clause', rules.castingTimeTag('1 action or Ritual').short, 'A');
+  is('a tick on an empty casting time becomes "Ritual"',
+    load([{ name: 'Homebrew', level: 1, castingTime: '', ritual: true }])[0].castingTime, 'Ritual');
+  is('...and on no casting time at all', load([{ name: 'Homebrew', level: 1, ritual: true }])[0].castingTime, 'Ritual');
+  is('trailing space is not doubled', load([{ name: 'H', level: 1, castingTime: '1 action ', ritual: true }])[0].castingTime, '1 action or Ritual');
+  // The spell is what says it, so an untick against "or Ritual" does not survive the change.
+  is('a stored false does not strip a casting time that says Ritual',
+    load([{ name: 'Detect Magic', level: 1, castingTime: 'Action or Ritual', ritual: false }])[0].castingTime, 'Action or Ritual');
+  is('a stored false on a non-ritual changes nothing',
+    load([{ name: 'Shield', level: 1, castingTime: 'Reaction', ritual: false }])[0].castingTime, 'Reaction');
+  is('only a real true counts, not a truthy string',
+    load([{ name: 'X', level: 1, castingTime: 'Action', ritual: 'yes' }])[0].castingTime, 'Action');
+  is('the load is idempotent: a migrated row loads the same twice', (() => {
+    const once = load([{ name: 'Hex', level: 1, castingTime: '1 action', ritual: true }]);
+    return load(once)[0].castingTime;
+  })(), '1 action or Ritual');
   is('a garbage row is still a template row', load(['nope'])[0], ROW_TEMPLATES.spells());
-  is('the other fields are untouched by the backfill',
-    load([{ name: 'Detect Magic', level: 1, prepared: true, castingTime: 'Action or Ritual' }])[0],
-    { ...ROW_TEMPLATES.spells(), name: 'Detect Magic', level: 1, prepared: true, ritual: true, castingTime: 'Action or Ritual' });
+  is('the other fields are untouched by the migration',
+    load([{ name: 'Detect Magic', level: 1, prepared: true, castingTime: 'Action or Ritual', ritual: true }])[0],
+    { ...ROW_TEMPLATES.spells(), name: 'Detect Magic', level: 1, prepared: true, castingTime: 'Action or Ritual' });
 
   // castingTimeTag: what the row shows. The SRD's own wordings first, then hand-typed ones.
   const tag = (text) => rules.castingTimeTag(text)?.short ?? null;
@@ -2273,8 +2297,9 @@ describe('rituals and casting times on the spell row');
     SRD_SPELLS.filter((s) => conc(s.duration) !== s.concentration).map((s) => s.name), []);
   is('...and with every extra spell\'s',
     EXTRA_SPELLS.filter((s) => conc(s.duration) !== s.concentration).map((s) => s.name), []);
-  // Nothing new on the row: the C is computed, so the stored shape does not change for it.
+  // Nothing on the row for either circle: both are computed from its text.
   is('the spell row stores no concentration key', 'concentration' in ROW_TEMPLATES.spells(), false);
+  is('...and no ritual key', 'ritual' in ROW_TEMPLATES.spells(), false);
 }
 
 /* ------------------------------------------------- the spell library (#149) */
@@ -2347,11 +2372,13 @@ describe('rituals and casting times on the spell row');
   // Adding a spell is not preparing it. The tick is the one thing on this card a player touches
   // every long rest, and pre-ticking it would claim they had already made that call.
   is('it is not prepared', row.prepared, false);
-  // Being a ritual, unlike being prepared, is a fact about the spell, so it comes across.
-  is('a ritual arrives flagged', spellToRow(lib[3]).ritual, true);
-  is('a non-ritual arrives unflagged', row.ritual, false);
-  is('the flag survives the load path as stored',
-    normalizeCharacter({ spellcasting: { spells: [spellToRow(lib[3]), row] } }).spellcasting.spells.map((s) => s.ritual),
+  // Being a ritual, unlike being prepared, is a fact about the spell — and it arrives as one, in
+  // the casting time the row copies, which is what the circled R is read from.
+  is('a ritual arrives saying so in its casting time', rules.isRitual(spellToRow(lib[3]).castingTime), true);
+  is('a non-ritual does not', rules.isRitual(row.castingTime), false);
+  is('no flag is stored for it', 'ritual' in spellToRow(lib[3]), false);
+  is('...and the load path keeps it that way',
+    normalizeCharacter({ spellcasting: { spells: [spellToRow(lib[3]), row] } }).spellcasting.spells.map((s) => rules.isRitual(s.castingTime)),
     [true, false]);
   is('a cantrip keeps level 0', spellToRow(lib[0]).level, 0);
   is('garbage in still produces a valid row', Object.keys(spellToRow(undefined)).sort(),

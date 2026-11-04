@@ -326,14 +326,27 @@ export function castingTimeTag(text) {
  * backfill: every spell already on a sheet, picked or typed, carries the C the moment its
  * duration says "Concentration", with nothing to migrate.
  *
- * `ritual` is the opposite choice for the opposite reason: nothing a player naturally types into
- * a casting time says "ritual", so that one is a tick (see ROW_TEMPLATES.spells).
- *
  * Anywhere in the text, as a whole word, so a hand-typed "1 min (conc.)" counts and
  * "concentrated" does not.
  */
 export function isConcentration(text) {
   return /\bconc(?:entration)?\b/i.test(String(text ?? ''));
+}
+
+/**
+ * Whether a spell's casting time says it can be cast as a ritual — the circled R on its row.
+ *
+ * The twin of isConcentration, off the casting time instead of the duration: the SRD and the 2024
+ * book write a ritual into its casting time ("Action or Ritual", "1 minute or Ritual"), all 29 in
+ * the library, so being a ritual is a fact about the spell the row already carries, not a choice
+ * for the player to tick (the owner's call, 2026-11-04 — it was a stored flag until then; see
+ * normalizeSpells in storage.js for what happened to the ticks).
+ *
+ * A whole word anywhere, so a hand-typed "1 action (ritual)" counts and "spiritual" does not.
+ * castingTimeTag reads only the first clause, so "Action or Ritual" is still tagged A.
+ */
+export function isRitual(text) {
+  return /\britual\b/i.test(String(text ?? ''));
 }
 
 /* ------------------------------------------------------------ attack to-hit (#84) */

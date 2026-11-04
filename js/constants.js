@@ -200,20 +200,16 @@ export const ROW_TEMPLATES = {
    * '' through the same free ride and stays blank: nothing looks it up, because nothing in the
    * app ever looks a spell back up (see spellToRow).
    *
-   * `ritual` is a flag rather than something read out of `castingTime`, so marking a spell is a
-   * tick in Edit like `alwaysPrepared`, not remembering to type a magic word. The one place the
-   * text is read is the load path (storage.js): a spell saved before the flag existed is marked
-   * when its casting time says "Ritual", which is how every SRD ritual the picker ever added
-   * reads ("Action or Ritual"). After that the flag is the only truth, and the text is just text.
-   * What the row shows for the casting time itself is derived on every render
-   * (`rules.castingTimeTag`) and never stored.
-   *
-   * There is deliberately no `concentration` key: the circled C is read out of `duration` on
-   * every render (`rules.isConcentration`), because the duration already says it ("Concentration,
-   * up to 1 minute"). That is the opposite of `ritual`, and on purpose — see isConcentration.
+   * There is deliberately no `concentration` or `ritual` key. Both are facts about the spell that
+   * its own text already states — "Concentration, up to 1 minute" in the duration, "Action or
+   * Ritual" in the casting time, exactly as the SRD and the book write them — so the row's circled
+   * C and R are read out of that text on every render (`rules.isConcentration`, `rules.isRitual`),
+   * like the casting-time tag (`rules.castingTimeTag`), and nothing is ticked or stored. `ritual`
+   * was a stored tick for a while; storage.js's normalizeSpells moves any tick the text did not
+   * already say into the casting time, so no ritual a player marked is lost.
    */
   spells: () => ({
-    name: '', level: 0, prepared: false, alwaysPrepared: false, ritual: false,
+    name: '', level: 0, prepared: false, alwaysPrepared: false,
     school: '', castingTime: '', range: '', duration: '', components: '', notes: '',
   }),
   // #67: source (Species / Background / Class / Other) and level stay FREE TEXT — the sheet
