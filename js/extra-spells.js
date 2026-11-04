@@ -174,4 +174,58 @@ export const EXTRA_SPELLS = [
         + "to 2d8 + the spell's level.",
     ].join('\n\n'),
   },
+  {
+    name: 'Arcane Vigor',
+    level: 2,
+    school: 'Abjuration',
+    classes: ['Sorcerer', 'Wizard'],
+    castingTime: 'Bonus Action',
+    range: 'Self',
+    components: 'V, S',
+    duration: 'Instantaneous',
+    concentration: false,
+    ritual: false,
+    source: 'PHB 2024',
+    text: [
+      'You heal yourself by drawing on your own stamina. Roll one or two of your unspent Hit Point '
+        + 'Dice; you regain Hit Points equal to the total plus your spellcasting ability modifier, '
+        + 'and the dice you rolled are spent.',
+      'Using a Higher-Level Spell Slot. You can roll one more Hit Point Die for each spell slot '
+        + 'level above 2.',
+    ].join('\n\n'),
+  },
+  {
+    name: 'Disruptive Tune',
+    level: 2,
+    school: 'Abjuration',
+    classes: ['Bard', 'Sorcerer', 'Wizard'],
+    castingTime: 'Action',
+    range: '120 feet',
+    components: 'V, S',
+    duration: 'Concentration, up to 1 minute',
+    concentration: true,
+    ritual: false,
+    source: 'AU',
+    text: 'A jarring melody fills a 20-foot-radius Sphere centered on a point you choose within range. '
+      + 'Each creature in it makes a Constitution saving throw. On a failed save, the creature loses '
+      + 'Concentration on any spell it is maintaining, and until this spell ends it has Disadvantage '
+      + 'on Constitution saving throws made to keep Concentration.',
+  },
+  {
+    name: 'Circle of Power',
+    level: 5,
+    school: 'Abjuration',
+    classes: ['Cleric', 'Paladin', 'Wizard'],
+    castingTime: 'Action',
+    range: 'Self',
+    components: 'V',
+    duration: 'Concentration, up to 10 minutes',
+    concentration: true,
+    ritual: false,
+    source: 'PHB 2024',
+    text: 'For the duration, an aura surrounds you in a 30-foot Emanation. You and your allies in it '
+      + 'have Advantage on saving throws against spells and other magical effects, and an affected '
+      + 'creature that succeeds on such a save against an effect that deals half damage on a success '
+      + 'takes no damage instead.',
+  },
 ];
