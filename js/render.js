@@ -863,11 +863,13 @@ export function renderDerived(char) {
     row.classList.toggle('is-always', always);
     row.classList.toggle('is-prepared', always || Boolean(tick && tick.checked));
 
-    // The line's two casting facts, off the same fields for the same reason: the ritual tick and
-    // the casting-time text both live in the detail block, and changing either is a derived
-    // change. Written only on a real difference, like the readouts at the top of this pass.
+    // The line's three casting facts, off the same fields for the same reason: the ritual tick,
+    // the duration and the casting-time text all live in the detail block, and changing any of
+    // them is a derived change. Written only on a real difference, like the readouts at the top
+    // of this pass.
     const ritual = $('[data-bind$=".ritual"]', row);
     row.classList.toggle('is-ritual', Boolean(ritual && ritual.checked));
+    row.classList.toggle('is-concentration', rules.isConcentration($('[data-bind$=".duration"]', row)?.value));
     const cast = $('.row__cast', row);
     if (cast) {
       const tag = rules.castingTimeTag($('[data-bind$=".castingTime"]', row)?.value);

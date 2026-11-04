@@ -2252,6 +2252,29 @@ describe('rituals and casting times on the spell row');
   is('long forms', ['Action', 'Bonus Action', 'Reaction', '1 minute', '10 minutes', '1 hour', '8 hours']
     .map((t) => rules.castingTimeTag(t).long),
   ['Action', 'Bonus action', 'Reaction', '1 minute', '10 minutes', '1 hour', '8 hours']);
+
+  // isConcentration: the circled C, read off the duration and never stored.
+  const conc = rules.isConcentration;
+  is('the SRD wording', conc('Concentration, up to 1 minute'), true);
+  is('...at any length', conc('Concentration, up to 8 hours'), true);
+  is('a duration without it', conc('1 hour'), false);
+  is('"Up to 1 minute" alone is not concentration', conc('Up to 1 minute'), false);
+  is('Instantaneous', conc('Instantaneous'), false);
+  is('hand-typed "conc. 1 min"', conc('conc. 1 min'), true);
+  is('hand-typed, at the end', conc('1 minute (Conc)'), true);
+  is('case does not matter', conc('CONCENTRATION'), true);
+  is('"concentrated" is not "concentration"', conc('a concentrated blast'), false);
+  is('empty', conc(''), false);
+  is('undefined', conc(undefined), false);
+  // The rule must agree with the library's own flag, or a picked spell's C would contradict the
+  // data it was picked from. This is also what makes the C reach every spell picked before it
+  // existed: those rows carry the SRD duration, so the mark needs nothing stored.
+  is('it agrees with every SRD spell\'s own concentration flag',
+    SRD_SPELLS.filter((s) => conc(s.duration) !== s.concentration).map((s) => s.name), []);
+  is('...and with every extra spell\'s',
+    EXTRA_SPELLS.filter((s) => conc(s.duration) !== s.concentration).map((s) => s.name), []);
+  // Nothing new on the row: the C is computed, so the stored shape does not change for it.
+  is('the spell row stores no concentration key', 'concentration' in ROW_TEMPLATES.spells(), false);
 }
 
 /* ------------------------------------------------- the spell library (#149) */

@@ -207,6 +207,10 @@ export const ROW_TEMPLATES = {
    * reads ("Action or Ritual"). After that the flag is the only truth, and the text is just text.
    * What the row shows for the casting time itself is derived on every render
    * (`rules.castingTimeTag`) and never stored.
+   *
+   * There is deliberately no `concentration` key: the circled C is read out of `duration` on
+   * every render (`rules.isConcentration`), because the duration already says it ("Concentration,
+   * up to 1 minute"). That is the opposite of `ritual`, and on purpose — see isConcentration.
    */
   spells: () => ({
     name: '', level: 0, prepared: false, alwaysPrepared: false, ritual: false,

@@ -1414,18 +1414,19 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
 }
 .is-editing .row__alwayspick, .row--spell.is-always .row__alwayspick { display: inline-flex; }
 .spelllevel[data-level="0"] .row__alwayspick { display: none; }
-/* The ritual flag's Edit half. Edit-only and nowhere else: outside Edit the word "ritual" on the
-   line is the whole answer, so a disabled box under it would be the same fact twice. */
+/* The ritual flag's Edit half. Edit-only and nowhere else: outside Edit the circled R on the
+   line is the whole answer, so a disabled box under it would be the same fact twice.
+   Concentration has no tick at all: its C is read off the duration (rules.isConcentration). */
 .row__ritualpick {
   display: none; flex: 0 0 auto; align-items: center; gap: var(--space-2);
   min-height: var(--tap); cursor: pointer; font-size: var(--text-sm);
 }
 .is-editing .row__ritualpick { display: inline-flex; }
 
-/* THE CASTING FACTS ON A SPELL'S LINE: "ritual", and the casting time as A / BA / R / "10 min".
-   Quiet on purpose — small, soft, and between the name and the reveal caret, so the name is
-   still the first thing read and the tags read as a column down the card rather than as part of
-   it. The tags line up on their RIGHT edge, against the caret, which is what a column of A, BA
+/* THE CASTING FACTS ON A SPELL'S LINE: a circled C for Concentration, a circled R for Ritual, and
+   the casting time as A / BA / R / "10 min". The tag is quiet on purpose — small, soft, and
+   between the name and the reveal caret, so the name is still the first thing read and the tags
+   read as a column down the card rather than as part of it. The tags line up on their RIGHT edge, against the caret, which is what a column of A, BA
    and R needs and costs nothing — a centring min-width was measured at 19px off every name.
 
    Every pixel here comes out of the name, so it is spent carefully. Measured at 390px: the name
@@ -1435,18 +1436,31 @@ details[open] > .conditions__summary .conditions__marker { transform: rotate(90d
    margin, with the slot pulled back by the line's gap, so an EMPTY slot (no ritual, no casting
    time) costs the name nothing at all, where a `gap` would still charge 8px for an empty box.
 
-   A ritual row pays ~46px for the word, and a long ritual name ("Comprehend Languages") gives up
-   its last couple of letters at 390px. That is the price of a word over a letter: R already
-   means Reaction in the tag beside it. In Edit the slot goes — the ✕ needs the width, and the
-   detail block shows both facts in full. */
+   The two circles are NOT quiet, and that is the owner's call (2026-11-04): accent-coloured,
+   because Concentration and Ritual change how you cast where the tag only says how fast. The
+   ring is what tells a ritual's R from the reaction's bare R in the tag beside it — the reason
+   the word "ritual" stood here before — so the tag must never grow a border. Each circle costs the
+   name 19px (a 15px ring and its 4px margin): a long ritual name gets back most of the ~46px the
+   word took, but a long CONCENTRATION name now gives way. At 390px "Otiluke's Irresistible Dance"
+   (C + A) has 188 of the 207 it needs and ellipsizes by about two letters in play mode, and
+   "Detect Poison and Disease" (C + R + A) has 169 of 210; probe-marks.html prints both as NOTEs.
+   10px bold in a 1.5em ring is about as small as the letter stays legible on a phone, and a
+   smaller ring buys a pixel or two, not a name. In Edit the slot goes — the ✕ needs the width,
+   and the detail block shows the same facts in full. */
 .row__meta {
   flex: none; display: inline-flex; align-items: baseline;
   margin-left: calc(-1 * var(--space-2));
   font-size: var(--text-xs); color: var(--ink-soft); white-space: nowrap;
 }
 .row__meta > * { margin-left: var(--space-1); }
-.row__ritual { display: none; font-style: italic; }
-.row--spell.is-ritual .row__ritual { display: inline; }
+.row__mark {
+  display: none; box-sizing: border-box;
+  width: 1.5em; height: 1.5em; align-items: center; justify-content: center;
+  border: 1px solid currentColor; border-radius: 50%;
+  font-size: 10px; font-weight: 700; line-height: 1; color: var(--accent);
+}
+.row--spell.is-concentration .row__conc,
+.row--spell.is-ritual .row__ritual { display: inline-flex; }
 .row__cast { display: inline-block; font-weight: 600; letter-spacing: .02em; }
 .is-editing .row__meta { display: none; }
 /* The level select sits first in the detail block and stays narrow — it is a closed set of ten
