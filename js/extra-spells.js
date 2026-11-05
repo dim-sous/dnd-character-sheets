@@ -217,4 +217,59 @@ export const EXTRA_SPELLS = [
       + 'creature that succeeds on such a save against an effect that deals half damage on a success '
       + 'takes no damage instead.',
   },
+  {
+    name: 'Zephyr Strike',
+    level: 1,
+    school: 'Transmutation',
+    classes: ['Ranger'],
+    castingTime: { unit: 'bonusAction' },
+    range: { unit: 'self' },
+    components: { verbal: true },
+    duration: { unit: 'minute', amount: 1, concentration: true },
+    source: 'PHB 2024',
+    text: 'You move like the wind. While the spell lasts, your movement does not provoke '
+      + 'Opportunity Attacks. Once before it ends, you can give yourself Advantage on one weapon '
+      + 'attack roll on your turn, and if that attack hits it deals an extra 1d8 Force damage. '
+      + 'Hit or miss, your Speed is 30 feet higher until the end of that turn.',
+  },
+  {
+    name: 'Lightning Arrow',
+    level: 3,
+    school: 'Transmutation',
+    classes: ['Ranger'],
+    castingTime: { unit: 'bonusAction', trigger: 'immediately after making a ranged attack with a weapon' },
+    range: { unit: 'self' },
+    components: { verbal: true, somatic: true },
+    duration: { unit: 'instantaneous' },
+    source: 'PHB 2024',
+    text: [
+      'The ammunition or weapon you just used turns into a bolt of lightning. The target of the '
+        + 'attack takes 4d8 Lightning damage if the attack hit, or half as much if it missed. Each '
+        + 'other creature within 10 feet of the target makes a Dexterity saving throw, taking 2d8 '
+        + 'Lightning damage on a failed save or half as much on a success.',
+      'Using a Higher-Level Spell Slot. The damage of both effects increases by 1d8 for each spell '
+        + 'slot level above 3.',
+    ].join('\n\n'),
+  },
+  {
+    name: 'Conjure Barrage',
+    level: 3,
+    school: 'Conjuration',
+    classes: ['Ranger'],
+    castingTime: { unit: 'action' },
+    range: { unit: 'self' },
+    components: {
+      verbal: true, somatic: true,
+      material: 'a piece of Ammunition or a Thrown weapon',
+    },
+    duration: { unit: 'instantaneous' },
+    source: 'PHB 2024',
+    text: [
+      'You brandish the weapon or ammunition you used as the component, and spectral copies of it '
+        + 'fill a 60-foot Cone. Each creature in the Cone makes a Dexterity saving throw, taking '
+        + '5d8 damage on a failed save or half as much on a success. The damage is of the same type '
+        + 'as the weapon or ammunition you used.',
+      'Using a Higher-Level Spell Slot. The damage increases by 1d8 for each spell slot level above 3.',
+    ].join('\n\n'),
+  },
 ];
