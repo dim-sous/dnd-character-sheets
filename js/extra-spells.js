@@ -226,27 +226,28 @@ export const EXTRA_SPELLS = [
     range: { unit: 'self' },
     components: { verbal: true },
     duration: { unit: 'minute', amount: 1, concentration: true },
-    source: 'PHB 2024',
+    source: 'XGtE',
     text: 'You move like the wind. While the spell lasts, your movement does not provoke '
       + 'Opportunity Attacks. Once before it ends, you can give yourself Advantage on one weapon '
       + 'attack roll on your turn, and if that attack hits it deals an extra 1d8 Force damage. '
-      + 'Hit or miss, your Speed is 30 feet higher until the end of that turn.',
+      + 'Hit or miss, your walking Speed is 30 feet higher until the end of that turn.',
   },
   {
     name: 'Lightning Arrow',
     level: 3,
     school: 'Transmutation',
     classes: ['Ranger'],
-    castingTime: { unit: 'bonusAction', trigger: 'immediately after making a ranged attack with a weapon' },
+    castingTime: { unit: 'bonusAction', trigger: 'immediately after hitting or missing a target with a ranged attack using a weapon' },
     range: { unit: 'self' },
     components: { verbal: true, somatic: true },
     duration: { unit: 'instantaneous' },
     source: 'PHB 2024',
     text: [
-      'The ammunition or weapon you just used turns into a bolt of lightning. The target of the '
-        + 'attack takes 4d8 Lightning damage if the attack hit, or half as much if it missed. Each '
-        + 'other creature within 10 feet of the target makes a Dexterity saving throw, taking 2d8 '
-        + 'Lightning damage on a failed save or half as much on a success.',
+      'The ammunition or weapon you just used turns into a bolt of lightning, then returns to '
+        + 'normal. The target takes 4d8 Lightning damage on a hit or half as much on a miss, '
+        + 'instead of any damage or other effects the attack would have had. Each creature within '
+        + '10 feet of the target then makes a Dexterity saving throw, taking 2d8 Lightning damage '
+        + 'on a failed save or half as much on a success.',
       'Using a Higher-Level Spell Slot. The damage of both effects increases by 1d8 for each spell '
         + 'slot level above 3.',
     ].join('\n\n'),
@@ -260,15 +261,15 @@ export const EXTRA_SPELLS = [
     range: { unit: 'self' },
     components: {
       verbal: true, somatic: true,
-      material: 'a piece of Ammunition or a Thrown weapon',
+      material: 'a Melee or Ranged weapon worth 1+ CP',
     },
     duration: { unit: 'instantaneous' },
     source: 'PHB 2024',
     text: [
-      'You brandish the weapon or ammunition you used as the component, and spectral copies of it '
-        + 'fill a 60-foot Cone. Each creature in the Cone makes a Dexterity saving throw, taking '
-        + '5d8 damage on a failed save or half as much on a success. The damage is of the same type '
-        + 'as the weapon or ammunition you used.',
+      'You brandish the weapon you used as the component, and spectral copies of it (or fitting '
+        + 'ammunition) launch forward and vanish. Each creature of your choice that you can see in '
+        + 'a 60-foot Cone makes a Dexterity saving throw, taking 5d8 Force damage on a failed save '
+        + 'or half as much on a success.',
       'Using a Higher-Level Spell Slot. The damage increases by 1d8 for each spell slot level above 3.',
     ].join('\n\n'),
   },
