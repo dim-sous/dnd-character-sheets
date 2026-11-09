@@ -32,10 +32,12 @@ import {
   moveObject, toggleObjectHidden, setObjectSpan, setObjectHeight, renameObject,
   LAYOUT_FILE_KIND, layoutExportEnvelope, serializeLayout, layoutFilename,
   parseLayoutFile, layoutImportSummary,
+  desktopColumns, desktopPosition, moveTabColumn, moveTabInColumn, foldColumns,
 } from './js/layout.js';
 import {
   CARD_REGISTRY, CARD_ORDER, TAB_REGISTRY, OBJECT_REGISTRY, OBJECT_ORDER,
   GRID_COLUMNS, SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_SET_MIN, HEIGHT_MAX,
+  DESKTOP_DEFAULT_COLUMNS, DESKTOP_COLUMNS_MAX,
 } from './js/layout-registry.js';
 // #149: the spell picker's search is pure, so the ranking is testable — and the ranking is the
 // half of a picker that fails quietly (a search for "fire" that does not offer Fireball first is
@@ -1790,9 +1792,194 @@ describe('the shipped default arrangement (#164)');
     combatTiles.every((o) => o.label === undefined), true);
   is('no tile ships hidden', combatTiles.every((o) => o.hidden === false), true);
 
+  // The laptop columns: fight | magic | reference. Abilities sits under Status and Attacks
+  // because that is what balances the three (see DESKTOP_DEFAULT_COLUMNS).
+  is('the laptop columns', DEFAULT_LAYOUT.desktop.columns,
+    [['combat', 'gear', 'abilities'], ['spells'], ['character']]);
+
   // The arrangement has to survive its own file format, or it cannot be handed to anyone.
   is('the shipped default round-trips through an export',
     parseLayoutFile(serializeLayout(DEFAULT_LAYOUT, '2026-01-01')).layout, DEFAULT_LAYOUT);
+}
+describe('laptop columns');
+{
+  /*
+   * A laptop used to pour every card into one balanced CSS multi-column flow, which cut tabs
+   * apart and re-cut them whenever a card changed height. The columns are now data: which TABS
+   * stand in which column. These hold the reconciliation (every tab in exactly one column, none
+   * empty, at most DESKTOP_COLUMNS_MAX), the two mutators the arrange controls call, and the fold
+   * a narrow window applies.
+   */
+  const TAB_IDS = TAB_REGISTRY.map((t) => t.id);
+  const flat = (layout) => desktopColumns(layout).flat();
+  const once = (layout) => {
+    const ids = flat(layout);
+    return ids.length === layout.tabs.length && layout.tabs.every((t) => ids.includes(t.id));
+  };
+  const tabsOnly = (ids) => ({ tabs: ids.map((id) => ({ id, label: id, cards: [] })) });
+
+  is('the registry default names only registry tabs, each once',
+    DESKTOP_DEFAULT_COLUMNS.flat().slice().sort(), [...TAB_IDS].sort());
+  is('the default is within the cap', DESKTOP_DEFAULT_COLUMNS.length <= DESKTOP_COLUMNS_MAX, true);
+
+  // Every layout saved before columns existed has no `desktop` at all: it must read as the default
+  // columns, not as one long column (the very layout this replaces).
+  const preColumns = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+  delete preColumns.desktop;
+  is('a layout saved before columns reads as the default columns',
+    normalizeLayout(preColumns).desktop.columns, DEFAULT_LAYOUT.desktop.columns);
+  is('…and normalizing it twice changes nothing',
+    normalizeLayout(normalizeLayout(preColumns)), normalizeLayout(preColumns));
+
+  // No desktop field, but the tabs are the player's own: each unmentioned tab opens a column
+  // until there are as many as the default, then joins the last.
+  is('five custom tabs fall into three columns, not one',
+    normalizeLayout(tabsOnly(['a', 'b', 'c', 'd', 'e'])).desktop.columns, [['a'], ['b'], ['c', 'd', 'e']]);
+  is('a removed default tab leaves its column; an added one fills in',
+    normalizeLayout(tabsOnly(['combat', 'abilities', 'spells', 'character', 'loot'])).desktop.columns,
+    [['combat', 'abilities'], ['spells'], ['character', 'loot']]);
+  is('one tab is one column', normalizeLayout(tabsOnly(['solo'])).desktop.columns, [['solo']]);
+
+  // A desktop field that IS there is the player's: honoured, and a tab it misses goes to the foot
+  // of the last column.
+  const own = normalizeLayout({
+    ...tabsOnly(['combat', 'abilities', 'spells', 'gear', 'character']),
+    desktop: { columns: [['spells', 'combat'], ['character']] },
+  });
+  is('explicit columns are honoured, in order',
+    own.desktop.columns.slice(0, 2).map((c) => c.slice(0, 2)), [['spells', 'combat'], ['character', 'abilities']]);
+  is('tabs the columns do not mention join the last column, in tab order',
+    own.desktop.columns, [['spells', 'combat'], ['character', 'abilities', 'gear']]);
+
+  const junk = normalizeLayout({
+    ...tabsOnly(['a', 'b', 'c']),
+    desktop: { columns: [['a', 'a', 'ghost', 42, null], 'nope', [], ['b'], [' a ', 'c']] },
+  });
+  // ' a ' trims to 'a', already placed, so that column is just 'c'.
+  is('junk: unknown, duplicate and non-string ids dropped; empty and non-array columns gone',
+    junk.desktop.columns, [['a'], ['b'], ['c']]);
+  is('junk: every tab still in exactly one column', once(junk), true);
+
+  is('`columns: []` reads as absent, not as one column of everything',
+    normalizeLayout({ ...tabsOnly(['combat', 'spells', 'character']), desktop: { columns: [] } }).desktop.columns,
+    [['combat'], ['spells'], ['character']]);
+  is('a desktop that is not an object reads as absent',
+    normalizeLayout({ ...tabsOnly(['a', 'b']), desktop: 'wide' }).desktop.columns, [['a'], ['b']]);
+
+  const wide = normalizeLayout({
+    ...tabsOnly(['a', 'b', 'c', 'd', 'e', 'f']),
+    desktop: { columns: [['a'], ['b'], ['c'], ['d'], ['e'], ['f']] },
+  });
+  is(`over the cap: ${DESKTOP_COLUMNS_MAX} columns, the overflow joins the last`,
+    wide.desktop.columns, [['a'], ['b'], ['c'], ['d', 'e', 'f']]);
+
+  // A column names a tab by the same sanitized id the tab list uses, or the two stop matching.
+  const unsafe = normalizeLayout({
+    tabs: [{ id: 'my tab', cards: [] }, { id: 'other', cards: [] }],
+    desktop: { columns: [['other'], ['my tab']] },
+  });
+  is('an unsafe id in a column is sanitized like the tab\'s own', unsafe.desktop.columns, [['other'], ['my-tab']]);
+
+  const explicitRound = JSON.parse(JSON.stringify(own));
+  is('explicit columns JSON round-trip', normalizeLayout(explicitRound), own);
+
+  // Tab CRUD keeps the columns honest without waiting for a reload.
+  const added = addTab(DEFAULT_LAYOUT, 'loot', 'Loot');
+  is('addTab puts the new tab at the foot of the last column',
+    added.desktop.columns, [['combat', 'gear', 'abilities'], ['spells'], ['character', 'loot']]);
+  const removed = removeTab(DEFAULT_LAYOUT, 'spells');
+  is('removeTab takes the tab out, and the column it emptied goes',
+    removed.desktop.columns, [['combat', 'gear', 'abilities'], ['character']]);
+  is('moveTab (the phone order) leaves the laptop columns alone',
+    moveTab(DEFAULT_LAYOUT, 'character', -1).desktop.columns, DEFAULT_LAYOUT.desktop.columns);
+  is('renameTab leaves them alone too',
+    renameTab(DEFAULT_LAYOUT, 'spells', 'Magic').desktop.columns, DEFAULT_LAYOUT.desktop.columns);
+
+  // Where a tab stands, and which of its four buttons can act.
+  is('position of Attacks', desktopPosition(DEFAULT_LAYOUT, 'gear'), {
+    column: 0, index: 1, columnCount: 3, size: 3, left: true, right: true, up: true, down: true,
+  });
+  is('Spells is alone in the middle: across both ways, never up or down',
+    desktopPosition(DEFAULT_LAYOUT, 'spells'), {
+      column: 1, index: 0, columnCount: 3, size: 1, left: true, right: true, up: false, down: false,
+    });
+  is('Character, alone at the right edge, cannot open a column',
+    desktopPosition(DEFAULT_LAYOUT, 'character').right, false);
+  is('an unknown tab has no position', desktopPosition(DEFAULT_LAYOUT, 'ghost'), null);
+
+  // Sideways: slides across at the same height.
+  const across = moveTabColumn(DEFAULT_LAYOUT, 'gear', 1);
+  is('Attacks right: into Spells at the same height',
+    across.desktop.columns, [['combat', 'abilities'], ['spells', 'gear'], ['character']]);
+  is('…and back left: home again, at its old height',
+    moveTabColumn(across, 'gear', -1).desktop.columns, DEFAULT_LAYOUT.desktop.columns);
+  is('the input layout is not mutated', DEFAULT_LAYOUT.desktop.columns, [['combat', 'gear', 'abilities'], ['spells'], ['character']]);
+  is('a lone tab moved out empties its column, which goes',
+    moveTabColumn(DEFAULT_LAYOUT, 'spells', 1).desktop.columns,
+    [['combat', 'gear', 'abilities'], ['spells', 'character']]);
+  is('past the left edge opens a column when the tab has company',
+    moveTabColumn(DEFAULT_LAYOUT, 'abilities', -1).desktop.columns,
+    [['abilities'], ['combat', 'gear'], ['spells'], ['character']]);
+  const twoCols = moveTabColumn(DEFAULT_LAYOUT, 'spells', 1);
+  is('past the right edge opens a column too',
+    moveTabColumn(twoCols, 'character', 1).desktop.columns,
+    [['combat', 'gear', 'abilities'], ['spells'], ['character']]);
+  is('a lone tab at the edge does not move', moveTabColumn(DEFAULT_LAYOUT, 'character', 1), DEFAULT_LAYOUT);
+  const four = moveTabColumn(DEFAULT_LAYOUT, 'abilities', -1);
+  // `four` is at the cap. Walk Attacks to the right edge, where it has company but no room.
+  const atEdge = moveTabColumn(moveTabColumn(four, 'gear', 1), 'gear', 1);
+  is('at the cap: Attacks reached the last column with company',
+    atEdge.desktop.columns, [['abilities'], ['combat'], ['spells'], ['character', 'gear']]);
+  is('at the cap no new column opens', desktopPosition(atEdge, 'gear').right, false);
+  is('…so the move is a no-op', moveTabColumn(atEdge, 'gear', 1), atEdge);
+  is('an unknown tab is a no-op', moveTabColumn(DEFAULT_LAYOUT, 'ghost', 1), DEFAULT_LAYOUT);
+
+  // `room`: a window with space for three never opens a fourth it would only stack under the third.
+  is('room for three: Abilities cannot open a fourth column',
+    desktopPosition(DEFAULT_LAYOUT, 'abilities', 3).left, false);
+  is('…so ← at the edge is a no-op there', moveTabColumn(DEFAULT_LAYOUT, 'abilities', -1, 3), DEFAULT_LAYOUT);
+  is('…while moving into an existing column still works with no room to spare',
+    moveTabColumn(DEFAULT_LAYOUT, 'abilities', 1, 3).desktop.columns[1], ['spells', 'abilities']);
+  is('room beyond the cap is the cap', desktopPosition(atEdge, 'gear', 99).right, false);
+  is('garbage room reads as the cap', desktopPosition(DEFAULT_LAYOUT, 'abilities', 'lots').left, true);
+
+  // Up and down, within the column.
+  is('Abilities up: above Attacks',
+    moveTabInColumn(DEFAULT_LAYOUT, 'abilities', -1).desktop.columns[0], ['combat', 'abilities', 'gear']);
+  is('Status down: below Attacks',
+    moveTabInColumn(DEFAULT_LAYOUT, 'combat', 1).desktop.columns[0], ['gear', 'combat', 'abilities']);
+  is('up at the top is a no-op', moveTabInColumn(DEFAULT_LAYOUT, 'combat', -1), DEFAULT_LAYOUT);
+  is('down at the foot is a no-op', moveTabInColumn(DEFAULT_LAYOUT, 'abilities', 1), DEFAULT_LAYOUT);
+  is('every mutator keeps every tab exactly once',
+    [across, four, moveTabInColumn(DEFAULT_LAYOUT, 'gear', 1), moveTabColumn(DEFAULT_LAYOUT, 'spells', -1)]
+      .every((l) => once(l)), true);
+
+  // A mutated layout is a normal one: saving and loading it changes nothing.
+  is('a moved layout is already normal', normalizeLayout(JSON.parse(JSON.stringify(four))), four);
+
+  // The fold: what a window narrower than the layout shows. Neighbours stack, from the right.
+  const cols = [['a'], ['b'], ['c']];
+  is('three columns in three', foldColumns(cols, 3), [['a'], ['b'], ['c']]);
+  is('three in two: the second and third stack, the first stays itself', foldColumns(cols, 2), [['a'], ['b', 'c']]);
+  is('three in one', foldColumns(cols, 1), [['a', 'b', 'c']]);
+  is('four in three', foldColumns([['a'], ['b'], ['c'], ['d']], 3), [['a'], ['b'], ['c', 'd']]);
+  is('four in two: two and two', foldColumns([['a'], ['b'], ['c'], ['d']], 2), [['a', 'b'], ['c', 'd']]);
+  is('a column keeps its own order when it stacks', foldColumns([['a', 'x'], ['b', 'y'], ['c', 'z']], 2),
+    [['a', 'x'], ['b', 'y', 'c', 'z']]);
+  is('more room than columns: the columns are just wider', foldColumns([['a'], ['b']], 4), [['a'], ['b']]);
+  is('garbage room reads as one column', foldColumns(cols, 'wide'), [['a', 'b', 'c']]);
+  is('no columns, nothing to fold', foldColumns([], 3), []);
+  const before = JSON.stringify(cols);
+  foldColumns(cols, 2);
+  is('folding does not mutate the input', JSON.stringify(cols), before);
+
+  // They travel in the layout file, and an older file without them imports as the default.
+  const exported = parseLayoutFile(serializeLayout(four, '2026-11-09'));
+  is('columns survive an export and import', exported.layout.desktop.columns, four.desktop.columns);
+  const oldFile = JSON.parse(serializeLayout(DEFAULT_LAYOUT, '2026-11-01'));
+  delete oldFile.layout.desktop;
+  is('a file saved before columns imports with the default columns',
+    parseLayoutFile(JSON.stringify(oldFile)).layout.desktop.columns, DEFAULT_LAYOUT.desktop.columns);
 }
 describe('layout export / import (#162)');
 {

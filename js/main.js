@@ -29,6 +29,7 @@ import {
   loadLayout, applyLayout, getLayout, getTabIds, flushLayout,
   toggleArrange, isArranging, reorderCard, sendCardToTab, resetLayout, saveDefault,
   tabAdd, tabRemove, tabRename, tabMove, toggleObject, resizeObject, resizeObjectHeight, endResize,
+  moveTabOnDesktop,
   renameCardTitle, renameObjectLabel, dropCard, dropObject,
   selectObject, getSelectedObject,
   startPlacing, cancelPlacing, placeObject, isPlacing, undoLayout,
@@ -237,6 +238,11 @@ function tabIdOf(el) {
   return el.closest('.tabrow')?.dataset.tab;
 }
 
+/** The tab a laptop-column control moves (its group's `data-tab`). */
+function deskTabOf(el) {
+  return el.closest('.tabpanel__move')?.dataset.tab;
+}
+
 /** The object id an object control lives in (its `data-object`). */
 function objIdOf(el) {
   return el.closest('[data-object]')?.dataset.object ?? getSelectedObject()?.objectId;
@@ -341,8 +347,15 @@ const ACTIONS = {
   // usually carries the same tabs, so bouncing the player to Combat is a gratuitous surprise —
   // and reactivateTab is the only one of the two that guards an active tab the import deleted.
   // activateTab with a dead key hides EVERY panel, which is a blank sheet at phone width and a
-  // silent pass at 1440px, where .tabpanel[hidden]{display:contents!important} reveals them all.
+  // silent pass at 1440px, where .tabpanel[hidden]{display:flex!important} reveals them all.
   'layout-import': async () => { if (await importLayoutFromDialog()) reactivateTab(); },
+
+  // A tab's laptop column (the ← → ↑ ↓ in its group label while arranging at >=900px). Columns
+  // reorder panels, never the tab set, so there is no active tab to re-apply.
+  'desk-col-left': (el) => moveTabOnDesktop(deskTabOf(el), 'left'),
+  'desk-col-right': (el) => moveTabOnDesktop(deskTabOf(el), 'right'),
+  'desk-col-up': (el) => moveTabOnDesktop(deskTabOf(el), 'up'),
+  'desk-col-down': (el) => moveTabOnDesktop(deskTabOf(el), 'down'),
 
   // Tab CRUD (#54 Phase 4b). Each tab-set change re-applies the active tab (which tolerates
   // the active one having been removed). Removing a non-empty tab confirms first.

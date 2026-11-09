@@ -30,6 +30,32 @@ export const TAB_REGISTRY = [
  */
 
 /**
+ * The laptop arrangement: which TABS stand in which column at >=900px, top to bottom.
+ *
+ * A laptop used to dissolve the tabs and pour every card into one CSS multi-column flow, so the
+ * columns were cut wherever the heights happened to balance. That split tabs across columns
+ * (Identity stranded at the foot of the Spells column, away from the rest of Character) and,
+ * worse, re-cut them whenever a card changed height: opening two spells' details moved Identity
+ * to the next column and every card there dropped ~470px, under the player's pointer, mid-game.
+ *
+ * Explicit columns fix both, and the unit is the TAB on purpose. A tab is already the player's
+ * own grouping — they built it on the phone — and a card's place stays defined exactly once
+ * (its tab, its index there). A per-card desktop placement would be a second answer to "where
+ * is Spells?" that drifts from the first every time a card moves on the phone.
+ *
+ * The default reads fight | magic | reference. Abilities joins the fight column because that is
+ * what balances: measured with a level-9 caster at 1440px, about 2640 / 1730 / 2600px tall.
+ */
+export const DESKTOP_DEFAULT_COLUMNS = [
+  ['combat', 'gear', 'abilities'],
+  ['spells'],
+  ['character'],
+];
+
+/** Four columns is ~310px each at 1600px wide — the narrowest a column already is at 1280px. */
+export const DESKTOP_COLUMNS_MAX = 4;
+
+/**
  * The 8 cards, keyed by id (also each card's `data-editcard` value, which is how the
  * DOM apply step finds the live node — `sel`).
  *

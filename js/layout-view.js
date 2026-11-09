@@ -12,6 +12,7 @@ import {
   addTab, removeTab, renameTab, moveTab, moveObject, toggleObjectHidden,
   setObjectSpan, setObjectHeight, renameObject,
   serializeLayout, parseLayoutFile, layoutFilename, layoutImportSummary,
+  desktopColumns, desktopPosition, moveTabColumn, moveTabInColumn, foldColumns,
 } from './layout.js';
 // #162. The only thing taken from storage.js is the Blob/anchor download, which knows nothing
 // about characters — reusing it beats a second copy that revokes the object URL too early.
@@ -105,6 +106,92 @@ function ensurePanel(id) {
   return panel;
 }
 
+/**
+ * The group label a panel shows above its cards on a laptop, created once per panel. The text is
+ * aria-hidden: the panel is already named by its tab (`aria-labelledby`), and saying it twice
+ * helps nobody. Shown only where it adds something — see `.tabpanel__head` in style.css.
+ */
+function ensurePanelHead(panel, label) {
+  let head = panel.querySelector(':scope > .tabpanel__head');
+  if (!head) {
+    head = document.createElement('div');
+    head.className = 'tabpanel__head';
+    const text = document.createElement('span');
+    text.className = 'tabpanel__label';
+    text.setAttribute('aria-hidden', 'true');
+    head.append(text);
+    panel.prepend(head); // first child; cards are appended after it
+  }
+  head.querySelector('.tabpanel__label').textContent = label;
+  return head;
+}
+
+/*
+ * How many laptop columns the window has room for. The widths keep each column at least ~290px,
+ * the narrowest the old flow ever made one (two columns at 900px): 900 → 2, 1280 → 3, 1600 → 4.
+ * Below 900 there is no laptop view — the answer is 1 and the column wrappers are
+ * `display: contents`, so the phone's tabs never see them.
+ */
+const DESK_ROOM = [[1600, 4], [1280, 3], [900, 2]];
+let deskQueries = null;
+
+function roomForColumns() {
+  if (!deskQueries) {
+    deskQueries = DESK_ROOM.map(([px, n]) => ({ n, mq: window.matchMedia(`(min-width: ${px}px)`) }));
+    // Width, not content, is the only thing that re-cuts the columns — so a resize across one of
+    // these lines is the only event that needs to.
+    // While arranging, the ← → buttons depend on the room too (no opening a column the window
+    // cannot show), so they are refreshed with it.
+    for (const { mq } of deskQueries) {
+      mq.addEventListener('change', () => { placeColumns(); if (arranging) renderColumnControls(); });
+    }
+  }
+  const hit = deskQueries.find((q) => q.mq.matches);
+  return hit ? hit.n : 1;
+}
+
+/** Put `node` at `index` among `parent`'s children, moving it only if it is not there already —
+ *  a moved node takes focus with it to <body>, so a no-op move must not happen at all. */
+function placeAt(parent, node, index) {
+  const at = parent.children[index] || null;
+  if (at !== node) parent.insertBefore(node, at);
+}
+
+/**
+ * Stand each tab panel in its laptop column. The player's columns are folded into the room this
+ * window has (foldColumns), and each folded column is a `.deskcol` wrapper inside `.cards`.
+ *
+ * The panels' DOM order is the same at every width — a fold is contiguous, so flattening it gives
+ * back the player's own reading order — which is what print and the phone's tabs both read.
+ */
+function placeColumns() {
+  const cardsWrap = document.querySelector('.cards');
+  if (!cardsWrap) return;
+  const folded = foldColumns(desktopColumns(currentLayout), roomForColumns());
+  folded.forEach((tabIds, c) => {
+    let col = cardsWrap.querySelector(`:scope > .deskcol[data-col="${c}"]`);
+    if (!col) {
+      col = document.createElement('div');
+      col.className = 'deskcol';
+      col.dataset.col = String(c);
+    }
+    placeAt(cardsWrap, col, c);
+    tabIds.forEach((id, i) => {
+      const panel = document.getElementById(`panel-${id}`);
+      if (panel) placeAt(col, panel, i);
+    });
+  });
+  // Fewer columns than last time. Every live panel has moved out above, so these should be empty;
+  // anything still inside goes to the last column rather than out of the document with its
+  // wrapper — a panel holds `cost:'js'` hosts, and a detached host is the next render's crash.
+  const last = cardsWrap.querySelector(`:scope > .deskcol[data-col="${folded.length - 1}"]`);
+  for (const col of [...cardsWrap.querySelectorAll(':scope > .deskcol')]) {
+    if (Number(col.dataset.col) < folded.length) continue;
+    while (last && col.firstElementChild) last.append(col.firstElementChild);
+    if (!col.firstElementChild) col.remove();
+  }
+}
+
 /** An object's span expressed as a `grid-column` value. Config owns object width (#54 Phase 6),
  *  so it is written inline on every object, beating the static `.tiles` rules. A span equal to
  *  the column count is the whole row — `span 12` in a twelve-column grid needs no special case,
@@ -161,10 +248,11 @@ function applyObjects(cardNode, card) {
  * markup — so every render.js host stays alive by identity and the data layer never learns.
  *
  * Reconciles the tab set too (#54 Tab CRUD): ensure a button + panel per config tab (create
- * missing ones with the `#tab-<id>`/`#panel-<id>` convention the nav relies on), order both
- * by append, relabel; relocate each tab's cards into its panel; then drop the button + panel
- * of any tab no longer in the config (a removed tab's cards were re-homed by the loop above,
- * so its panel is already empty). On the default layout every step is a no-op reposition.
+ * missing ones with the `#tab-<id>`/`#panel-<id>` convention the nav relies on), order the
+ * buttons by append, relabel; relocate each tab's cards into its panel; then drop the button +
+ * panel of any tab no longer in the config (a removed tab's cards were re-homed by the loop
+ * above, so its panel is already empty). Last, stand every panel in its laptop column
+ * (placeColumns) — which is also what orders the panels, in the player's column order.
  */
 export function applyLayout() {
   const tabbar = document.getElementById('tabbar');
@@ -175,7 +263,9 @@ export function applyLayout() {
     const btn = ensureTabButton(tab.id, tab.label);
     const panel = ensurePanel(tab.id);
     if (tabbar) tabbar.append(btn); // append = create-or-reorder into config order
-    if (cardsWrap) cardsWrap.append(panel);
+    // A new panel joins the document here; placeColumns below stands it in its laptop column.
+    if (cardsWrap && !panel.isConnected) cardsWrap.append(panel);
+    ensurePanelHead(panel, tab.label);
     for (const card of tab.cards) {
       const reg = CARD_REGISTRY[card.componentId];
       const node = reg && document.querySelector(reg.sel);
@@ -199,6 +289,7 @@ export function applyLayout() {
       if (!liveIds.has(panel.id.replace('panel-', ''))) panel.remove();
     }
   }
+  placeColumns(); // after the reap, so a removed tab's empty panel is not stood in a column
 }
 
 /* ----------------------------------------------------------- persistence */
@@ -338,11 +429,101 @@ function renderArrangeControls() {
     down.disabled = pos.index === pos.count - 1;
     fillTabOptions(group.querySelector('.card__movetab'), label); // always fresh (never stale)
   }
+  renderColumnControls();
+}
+
+/*
+ * A tab's laptop-column controls, in its group label: "Column 2 of 3" and ← → ↑ ↓. The head is
+ * only drawn at >=900px (style.css), which is the only width where columns exist, so on a phone
+ * these are built but never reachable. Refreshed with the card controls, because every layout
+ * change that can move a tab already refreshes those.
+ */
+const COLUMN_MOVES = [
+  ['desk-col-left', '←', 'left'],
+  ['desk-col-right', '→', 'right'],
+  ['desk-col-up', '↑', 'up'],
+  ['desk-col-down', '↓', 'down'],
+];
+
+function columnMoveLabel(tab, way, pos) {
+  if (way === 'up') return `Move ${tab.label} up its column`;
+  if (way === 'down') return `Move ${tab.label} down its column`;
+  const opens = way === 'left' ? pos.column === 0 : pos.column === pos.columnCount - 1;
+  if (opens) return `Move ${tab.label} to a new column on the ${way}`;
+  return `Move ${tab.label} to the column on the ${way}`;
+}
+
+function renderColumnControls() {
+  for (const tab of currentLayout.tabs) {
+    const panel = document.getElementById(`panel-${tab.id}`);
+    const head = panel && panel.querySelector(':scope > .tabpanel__head');
+    const pos = desktopPosition(currentLayout, tab.id, roomForColumns());
+    if (!head || !pos) continue;
+    let group = head.querySelector('.tabpanel__move');
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'tabpanel__move';
+      group.dataset.tab = tab.id;
+      const where = document.createElement('span');
+      where.className = 'tabpanel__where';
+      group.append(where);
+      for (const [action, glyph] of COLUMN_MOVES) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'icon-btn';
+        btn.dataset.action = action;
+        btn.textContent = glyph;
+        group.append(btn);
+      }
+      head.append(group);
+    }
+    group.querySelector('.tabpanel__where').textContent = `Column ${pos.column + 1} of ${pos.columnCount}`;
+    for (const [action, , way] of COLUMN_MOVES) {
+      const btn = group.querySelector(`[data-action="${action}"]`);
+      btn.setAttribute('aria-label', columnMoveLabel(tab, way, pos));
+      btn.disabled = !pos[way];
+    }
+  }
+}
+
+/** Move a tab across (left/right) or within (up/down) its laptop column; persist and re-lay-out. */
+export function moveTabOnDesktop(tabId, way) {
+  const delta = way === 'left' || way === 'up' ? -1 : 1;
+  const next = way === 'left' || way === 'right'
+    ? moveTabColumn(currentLayout, tabId, delta, roomForColumns())
+    : moveTabInColumn(currentLayout, tabId, delta);
+  if (next === currentLayout) return; // at an edge — the button was disabled anyway
+  cancelPlacing({ silent: true }); // same reason as reorderCard: applyLayout re-appends tiles
+  pushUndo();
+  currentLayout = next;
+  saveLayout();
+  applyLayout(); // stands the panel in its new column
+  renderArrangeControls();
+  const tab = currentLayout.tabs.find((t) => t.id === tabId);
+  const pos = desktopPosition(currentLayout, tabId);
+  if (tab && pos) {
+    announce(way === 'left' || way === 'right'
+      ? `Moved ${tab.label} to column ${pos.column + 1} of ${pos.columnCount}.`
+      : `Moved ${tab.label} to position ${pos.index + 1} of ${pos.size} in column ${pos.column + 1}.`);
+  }
+  // The panel moved, and focus went to <body> with it. Back to the button that was pressed; if
+  // the move took the tab to an edge and disabled it, to the opposite one on the same axis (as a
+  // card's ↑ ↓ do), and only then to whatever is still live.
+  const group = document.querySelector(`.tabpanel__move[data-tab="${tabId}"]`);
+  if (group) {
+    const opposite = { left: 'right', right: 'left', up: 'down', down: 'up' }[way];
+    const live = (w) => {
+      const btn = group.querySelector(`[data-action="desk-col-${w}"]`);
+      return btn && !btn.disabled ? btn : null;
+    };
+    (live(way) || live(opposite) || group.querySelector('button:not(:disabled)'))?.focus();
+  }
 }
 
 function removeArrangeControls() {
   for (const group of document.querySelectorAll('.card__move')) group.remove();
   for (const input of document.querySelectorAll('.card__rename')) input.remove();
+  for (const group of document.querySelectorAll('.tabpanel__move')) group.remove();
 }
 
 /**
@@ -485,6 +666,10 @@ const undoStack = [];
 function pushUndo() {
   undoStack.push(JSON.stringify(currentLayout));
   if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  // Here, where the entry is made, rather than in each caller. The button used to be enabled only
+  // by renderObjectControls, so moving a CARD or a TAB pushed an entry the player could not reach:
+  // Undo sat disabled until they happened to touch a tile.
+  renderUndo();
 }
 
 export function canUndo() { return undoStack.length > 0; }

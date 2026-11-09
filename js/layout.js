@@ -8,7 +8,11 @@
  *
  * Shape (one object, per device — never part of a character export):
  *
- *   { layoutSchemaVersion, tabs: [ { id, label, cards: [ { componentId } ] } ] }
+ *   { layoutSchemaVersion, tabs: [ { id, label, cards: [ { componentId } ] } ],
+ *     desktop: { columns: [ [tabId, …], … ] } }
+ *
+ * `desktop` is the laptop arrangement: which tabs stand in which column at >=900px. It names
+ * TABS, never cards, so a card's place is still defined once — see DESKTOP_DEFAULT_COLUMNS.
  *
  * Cards are `{ componentId }` objects rather than bare strings so later phases can add
  * fields (colSpan, pinnedCol, objects…) without reshaping the store.
@@ -16,7 +20,7 @@
 
 import {
   TAB_REGISTRY, CARD_REGISTRY, CARD_ORDER, OBJECT_REGISTRY, OBJECT_ORDER,
-  SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_MAX,
+  SPAN_MIN, SPAN_MAX, HEIGHT_MIN, HEIGHT_MAX, DESKTOP_DEFAULT_COLUMNS, DESKTOP_COLUMNS_MAX,
 } from './layout-registry.js';
 
 export const LAYOUT_SCHEMA_VERSION = 2;
@@ -106,7 +110,7 @@ function str(value, fallback = '') {
  * tab-edit rows with `.tabrow[data-tab="<id>"]`. An id holding a SPACE turns `#tab-my tab` into
  * a descendant selector that matches nothing: `activateTab` skips that tab while hiding every
  * other panel, so the sheet goes blank — and only at phone width, because at >=900px and in
- * print `.tabpanel[hidden]{display:contents!important}` reveals them all, so a single-width
+ * print a `.tabpanel[hidden]{display:…!important}` rule reveals them all, so a single-width
  * probe run reports PASS. An id holding a `"` makes the selector invalid and throws straight out
  * of `activateTab`, which breaks the "a corrupt blob can never crash a render... Never throws"
  * promise normalizeLayout makes below.
@@ -170,17 +174,85 @@ function normalizeCard(componentId, rawCard) {
   return card;
 }
 
+/** Columns of tab ids read from raw data: unknown, duplicate and non-string ids dropped, empty
+ *  columns dropped. `seen` is shared with the caller so a tab can only ever be in one column. */
+function readColumns(rawColumns, known, seen) {
+  const columns = [];
+  for (const rawCol of Array.isArray(rawColumns) ? rawColumns : []) {
+    if (!Array.isArray(rawCol)) continue;
+    const col = [];
+    for (const rawId of rawCol) {
+      // Sanitized like a tab's own id (safeTabId), or an id the tab list cleaned up would no
+      // longer match the column that names it, and the tab would fall to the last column.
+      const id = typeof rawId === 'string' ? safeTabId(rawId.trim()) : '';
+      if (!known.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      col.push(id);
+    }
+    if (col.length) columns.push(col);
+  }
+  return columns;
+}
+
+/**
+ * The laptop columns, reconciled against the tab set exactly as cards are against the registry:
+ * every tab in exactly one column, no column empty, at most DESKTOP_COLUMNS_MAX of them.
+ *
+ * Two paths, because "no desktop field" and "a desktop field" mean different things:
+ *  - ABSENT (every layout saved before columns existed, and the factory default): start from
+ *    DESKTOP_DEFAULT_COLUMNS for the tabs that still exist, then give each tab it does not
+ *    mention a column of its own until there are as many columns as the default has, then the
+ *    last column. A player whose five tabs are all their own therefore gets three columns rather
+ *    than one long one.
+ *  - PRESENT: the player's own columns. A tab they have not placed — one added since — goes to
+ *    the foot of the last column, which is where "+ Add tab" puts it on the phone too.
+ * A present field with nothing usable in it is treated as absent: a desktop of one column holding
+ * every tab is the very layout this exists to replace, and it would be the silent answer to a
+ * hand-edited `columns: []`.
+ *
+ * Over the cap, the extra columns join the last one rather than being dropped — dropping them
+ * would only send those tabs to the same place by the append pass, in a different order.
+ */
+function normalizeDesktop(rawDesktop, tabs) {
+  const ids = tabs.map((tab) => tab.id);
+  const known = new Set(ids);
+  let seen = new Set();
+  const rawColumns = rawDesktop && typeof rawDesktop === 'object' ? rawDesktop.columns : undefined;
+  let columns = readColumns(rawColumns, known, seen);
+  const fromDefault = columns.length === 0;
+  if (fromDefault) {
+    seen = new Set();
+    columns = readColumns(DESKTOP_DEFAULT_COLUMNS, known, seen);
+  }
+  if (columns.length > DESKTOP_COLUMNS_MAX) {
+    const overflow = columns.slice(DESKTOP_COLUMNS_MAX - 1).flat();
+    columns = [...columns.slice(0, DESKTOP_COLUMNS_MAX - 1), overflow];
+  }
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (!columns.length || (fromDefault && columns.length < DESKTOP_DEFAULT_COLUMNS.length)) {
+      columns.push([id]);
+    } else {
+      columns[columns.length - 1].push(id);
+    }
+  }
+  return { columns };
+}
+
 /** The current arrangement expressed as data: each tab in registry order holds its home cards. */
 function buildDefaultLayout() {
+  const tabs = TAB_REGISTRY.map((tab) => ({
+    id: tab.id,
+    label: tab.label,
+    cards: CARD_ORDER
+      .filter((id) => CARD_REGISTRY[id].home === tab.id)
+      .map((componentId) => normalizeCard(componentId, null)),
+  }));
   return {
     layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
-    tabs: TAB_REGISTRY.map((tab) => ({
-      id: tab.id,
-      label: tab.label,
-      cards: CARD_ORDER
-        .filter((id) => CARD_REGISTRY[id].home === tab.id)
-        .map((componentId) => normalizeCard(componentId, null)),
-    })),
+    tabs,
+    desktop: normalizeDesktop(undefined, tabs),
   };
 }
 
@@ -311,7 +383,14 @@ export function normalizeLayout(raw) {
     tab.cards.push(normalizeCard(componentId, null));
   }
 
-  return { layoutSchemaVersion: LAYOUT_SCHEMA_VERSION, tabs };
+  // Additive, like `height` was: no version bump and no `migrate` branch. A layout without the
+  // field reads as the default columns, and an older build reading a newer file drops it — which
+  // costs that build nothing, because it has no laptop columns to put it in.
+  return {
+    layoutSchemaVersion: LAYOUT_SCHEMA_VERSION,
+    tabs,
+    desktop: normalizeDesktop(input.desktop, tabs),
+  };
 }
 
 /* ------------------------------------------------- export / import (#162) */
@@ -603,10 +682,20 @@ export function toggleObjectHidden(layout, cardId, objectId) {
 
 /* --------------------------------------------------------- tab mutators */
 
+/**
+ * The layout with its laptop columns re-reconciled against its (changed) tab set: a new tab lands
+ * at the foot of the last column, a removed one leaves its column, and a column it emptied goes.
+ * The tab mutators below return un-normalized layouts, so without this the columns would name a
+ * tab that no longer exists, or miss one that does, until the next load.
+ */
+function withDesktop(layout) {
+  return { ...layout, desktop: normalizeDesktop(layout.desktop, layout.tabs) };
+}
+
 /** Append a new empty tab, returning a NEW layout. No-op if the id already exists or is blank. */
 export function addTab(layout, id, label) {
   if (!id || layout.tabs.some((tab) => tab.id === id)) return layout;
-  return { ...layout, tabs: [...layout.tabs, { id, label: label || id, cards: [] }] };
+  return withDesktop({ ...layout, tabs: [...layout.tabs, { id, label: label || id, cards: [] }] });
 }
 
 /**
@@ -620,12 +709,12 @@ export function removeTab(layout, tabId) {
   if (!victim) return layout;
   const remaining = layout.tabs.filter((tab) => tab.id !== tabId);
   const firstId = remaining[0].id;
-  return {
+  return withDesktop({
     ...layout,
     tabs: remaining.map((tab) => (
       tab.id === firstId ? { ...tab, cards: [...tab.cards, ...victim.cards] } : tab
     )),
-  };
+  });
 }
 
 /** Rename a tab; a blank label keeps the current one (labels are never empty). */
@@ -649,6 +738,101 @@ export function moveTab(layout, tabId, delta) {
   const [moved] = tabs.splice(from, 1);
   tabs.splice(to, 0, moved);
   return { ...layout, tabs };
+}
+
+/* ------------------------------------------------- laptop columns */
+
+/** The layout's laptop columns, reconciled even on a layout that skipped normalizeLayout. */
+export function desktopColumns(layout) {
+  return normalizeDesktop(layout && layout.desktop, (layout && layout.tabs) || []).columns;
+}
+
+/**
+ * Where a tab stands on a laptop and which way it can still move, or null for an unknown tab.
+ * The view disables its ◀ ▶ ↑ ↓ from this, so the buttons and the mutators below cannot disagree.
+ *
+ * Sideways past an edge OPENS a column — that is the only way to add one, and it keeps the
+ * control set to four buttons — so it is allowed while there is room for another column and the
+ * tab is not alone in its own (moving a lone tab off the edge would only empty one column to
+ * fill a new one).
+ *
+ * `room` is how many columns the caller can actually show (the view passes its window's), so a
+ * 1440px laptop with room for three never opens a fourth that it would only stack under the
+ * third — the player would press → and see the tab go DOWN. Capped at DESKTOP_COLUMNS_MAX.
+ */
+export function desktopPosition(layout, tabId, room = DESKTOP_COLUMNS_MAX) {
+  const columns = desktopColumns(layout);
+  const column = columns.findIndex((col) => col.includes(tabId));
+  if (column === -1) return null;
+  const index = columns[column].indexOf(tabId);
+  const size = columns[column].length;
+  const cap = Math.max(1, Math.min(DESKTOP_COLUMNS_MAX, Math.floor(Number(room)) || DESKTOP_COLUMNS_MAX));
+  const canOpen = size > 1 && columns.length < cap;
+  return {
+    column,
+    index,
+    columnCount: columns.length,
+    size,
+    left: column > 0 || canOpen,
+    right: column < columns.length - 1 || canOpen,
+    up: index > 0,
+    down: index < size - 1,
+  };
+}
+
+/**
+ * Move a tab one column left (-1) or right (+1), keeping its height in the column where it can —
+ * it slides across rather than dropping to the foot. Past either edge it opens a new column if
+ * `room` allows (see desktopPosition). A column it leaves empty disappears. A no-op returns the
+ * input unchanged.
+ */
+export function moveTabColumn(layout, tabId, delta, room = DESKTOP_COLUMNS_MAX) {
+  const pos = desktopPosition(layout, tabId, room);
+  if (!pos || !(delta < 0 ? pos.left : pos.right)) return layout;
+  const columns = desktopColumns(layout).map((col) => col.slice());
+  columns[pos.column].splice(pos.index, 1);
+  const to = pos.column + (delta < 0 ? -1 : 1);
+  if (to < 0) columns.unshift([tabId]);
+  else if (to >= columns.length) columns.push([tabId]);
+  else columns[to].splice(Math.min(pos.index, columns[to].length), 0, tabId);
+  return { ...layout, desktop: { columns: columns.filter((col) => col.length) } };
+}
+
+/** Move a tab up (-1) or down (+1) within its laptop column. No-op at the ends. */
+export function moveTabInColumn(layout, tabId, delta) {
+  const pos = desktopPosition(layout, tabId);
+  if (!pos || !(delta < 0 ? pos.up : pos.down)) return layout;
+  const columns = desktopColumns(layout).map((col) => col.slice());
+  const col = columns[pos.column];
+  col.splice(pos.index, 1);
+  col.splice(pos.index + (delta < 0 ? -1 : 1), 0, tabId);
+  return { ...layout, desktop: { columns } };
+}
+
+/**
+ * The player's columns fitted into the `count` a window has room for. A window narrower than the
+ * layout is wide stacks NEIGHBOURING columns, contiguously and from the right: three columns in
+ * two is [1] [2 over 3], four in three is [1] [2] [3 over 4]. So a column's tabs never split,
+ * reading order is kept (left-to-right becomes top-to-bottom), and the first column — the one
+ * you play from — is the last to take a lodger.
+ *
+ * Deterministic in the widths alone, never in content heights: the old balanced flow re-cut its
+ * columns every time a card grew, and that is the bug this replaces.
+ */
+export function foldColumns(columns, count) {
+  const n = columns.length;
+  const k = Math.max(1, Math.min(n, Math.floor(Number(count)) || 1));
+  if (n <= k) return columns.map((col) => col.slice());
+  const base = Math.floor(n / k);
+  const extra = n % k;
+  const out = [];
+  let at = 0;
+  for (let r = 0; r < k; r += 1) {
+    const size = base + (r >= k - extra ? 1 : 0);
+    out.push(columns.slice(at, at + size).flat());
+    at += size;
+  }
+  return out;
 }
 
 /* ----------------------------------------------------------- accessors */
