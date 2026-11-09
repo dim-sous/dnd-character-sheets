@@ -610,9 +610,15 @@ input[type="checkbox"].toggle::after { content: ""; position: absolute; inset: -
 .cards { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); }
 
 /* Each tab panel stacks its own cards. Only the active panel is shown; the rest carry
-   the [hidden] attribute. On a laptop this is overridden to display:contents so every
-   panel's cards flow into one multi-column layout (see § laptop). */
+   the [hidden] attribute. On a laptop every panel is shown, each standing in its column
+   (see § laptop). */
 .tabpanel { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* The laptop columns' wrappers and each panel's group label. layout-view builds both at every
+   width, so the DOM is one shape; on a phone the wrappers dissolve and the label is not drawn,
+   because there the tab bar is what names a panel. */
+.deskcol { display: contents; }
+.tabpanel__head { display: none; }
 
 .card {
   padding: var(--space-3);
@@ -908,13 +914,23 @@ body.is-arranging [data-object].is-hidden {
   outline-offset: 1px;
 }
 
-/* Arrange mode forces the phone-like single-tab view at EVERY width, so cards are reordered
-   on one clean vertical list (on a laptop the panels otherwise merge into multi-column). The
-   compound `body.is-arranging` selectors outrank the ≥900px rules on specificity alone. */
-body.is-arranging .cards { display: flex; flex-direction: column; }
-body.is-arranging .tabpanel { display: flex; flex-direction: column; gap: var(--space-3); }
-body.is-arranging .tabpanel[hidden] { display: none !important; } /* beat the desktop contents-reveal */
-body.is-arranging .tabbar { display: flex; }                      /* keep tab-switching on desktop */
+/* Arrange mode on a laptop shows the laptop: the player's columns, every tab at once. It used
+   to force the phone's one-tab view at every width, because the balanced flow it replaced had
+   no stable place for a card to be arranged INTO — so the columns themselves could never be
+   seen while arranging. With fixed columns, what you arrange is what you get.
+
+   Each tab's label grows its column controls (`.tabpanel__move`, built by layout-view): ◀ ▶
+   across columns, ↑ ↓ within one. Same 44px square buttons as a card's ↑ ↓. */
+/* A line of its own under the label, in every column. Sharing the label's line, a long tab name
+   ("CHARACTER") pushed the group to a second line in one column and not its neighbours, so the
+   heads — and the first card under each — stopped lining up across the columns. */
+.tabpanel__move { display: flex; flex-basis: 100%; gap: var(--space-0); align-items: center; }
+.tabpanel__move .icon-btn {
+  width: var(--tap); height: var(--tap); font-size: var(--text-lg);
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.tabpanel__move .icon-btn:disabled { opacity: .3; cursor: default; }
+.tabpanel__where { font-size: var(--text-xs); color: var(--ink-soft); margin-right: auto; }
 
 /* Card content is inert to the pointer while arranging — only the ↑/↓ controls stay live —
    so a tap can't edit a field mid-reorder. Plus a subtle "this is movable" outline, and the
@@ -2063,21 +2079,50 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   /* No thumb zone on a laptop: the tab bar goes away and every panel shows at once. */
   .tabbar { display: none; }
 
-  /* Reveal every panel and dissolve its wrapper so the cards flow straight into the
-     .cards column layout. The [hidden] variant needs a higher-specificity !important
-     to beat the global `[hidden]{display:none!important}` kill-switch. */
-  .tabpanel { display: contents; }
-  .tabpanel[hidden] { display: contents !important; }
+  /* The player's columns: each `.deskcol` holds whole tabs, top to bottom, and layout-view
+     decides how many there are (the layout's own count, folded into the room this width has —
+     2 from 900px, 3 from 1280px, 4 from 1600px).
 
-  /* Balanced multi-column card flow. break-inside keeps a whole card — and its inner
-     grid — intact, so the WIS/CHA clipping and screen-height gaps the old fixed .col
-     grid fought never arise. Same technique the print block already uses. */
-  .cards { display: block; column-count: 2; column-gap: var(--space-4); padding: var(--space-4); }
-  .card { break-inside: avoid; margin-bottom: var(--space-4); }
-}
+     This replaced a balanced `column-count` flow over every card, which cut a column wherever
+     the heights happened to even out. That split tabs apart, and it re-cut the columns every
+     time a card changed height — opening two spells' details sent Identity to the next column
+     and dropped every card there ~470px, under the pointer, mid-game. A grid of fixed columns
+     cannot do either: a card only ever grows downward inside its own column.
 
-@media (min-width: 1280px) {
-  .cards { column-count: 3; }
+     `grid-auto-flow: column` makes one track per wrapper with no count in the CSS, and
+     `minmax(0, 1fr)` lets a track be narrower than its widest content, which a long unbroken
+     name would otherwise force. `align-items: start` stops a short column stretching to the
+     tallest one's height. */
+  .cards {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+    align-items: start; gap: var(--space-4); padding: var(--space-4);
+  }
+  /* Groups sit further apart than the cards inside one, so a tab reads as a unit. */
+  .deskcol { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+
+  /* Every panel shows. The [hidden] variant needs a higher-specificity !important to beat the
+     global `[hidden]{display:none!important}` kill-switch. */
+  .tabpanel { gap: var(--space-4); }
+  .tabpanel[hidden] { display: flex !important; }
+  /* ...except a panel with nothing to show — a fresh tab, or Spells' cards for a non-caster
+     once those are hidden — which would otherwise cost its column an empty gap. In arrange mode
+     it stays, so its label and controls can still be reached. */
+  body:not(.is-arranging) .tabpanel:not(:has(> [data-editcard]:not([hidden]))) { display: none !important; }
+
+  /* The group label. Shown over two or more cards, where it says what the group is; over one it
+     would repeat the card's own title ("STATUS" over "Status"). Always shown while arranging,
+     because that is where a tab's column controls live. */
+  .tabpanel__head {
+    display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2);
+    padding: 0 var(--space-1);
+  }
+  body:not(.is-arranging) .tabpanel:not(:has(> [data-editcard]:not([hidden]) ~ [data-editcard]:not([hidden]))) > .tabpanel__head {
+    display: none;
+  }
+  .tabpanel__label {
+    font-family: var(--sans); font-size: var(--text-xs); font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft);
+  }
 }
 
 /* ================================================================ dialog */
@@ -2254,9 +2299,14 @@ select:disabled { appearance: none; -webkit-appearance: none; }
   .dropslot { display: none !important; }
   body { background: #fff; color: #000; font-size: 11pt; }
   .main { padding: 0; }
-  /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. */
+  /* Reveal every tab panel, or the print is only the active tab — a fifth of a sheet. The
+     laptop columns dissolve too, and paper keeps its own two-column flow: a page is a fixed
+     height, so balancing it is right there in a way it never was on a screen that scrolls. The
+     cards still come out in the player's column order, which is the panels' DOM order. */
   .tabpanel { display: contents; }
   .tabpanel[hidden] { display: contents !important; }
+  .deskcol { display: contents; }
+  .tabpanel__head { display: none !important; }
   .cards { display: block; column-count: 2; column-gap: var(--space-4); padding: 0; }
   .card { break-inside: avoid; box-shadow: none; margin-bottom: var(--space-2); border-color: #999; }
   /* The merged #14 cards exceed a print column — break-inside:avoid on a card taller
